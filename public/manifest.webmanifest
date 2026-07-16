@@ -1,0 +1,10 @@
+{
+  "name": "Neo Anki",
+  "short_name": "Neo Anki",
+  "description": "Local-first spaced repetition that plans around your time.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f1ea",
+  "theme_color": "#5f5be8",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
