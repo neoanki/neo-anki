@@ -1,5 +1,5 @@
 import { State } from 'ts-fsrs'
-import type { DailyPlan, KnowledgeItem, LearningGoal, PracticeCard, RecoveryStrategy, ReviewEvent, UserSettings } from '../types'
+import type { DailyPlan, KnowledgeItem, LearningGoal, PlannedCard, PracticeCard, RecoveryStrategy, ReviewEvent, SessionBlock, SessionRequest, StudySession, UserSettings } from '../types'
 import { addDays, dayKey, endOfDay, startOfDay } from './date'
 import { goalUrgency, goalsForItem } from './views'
 
@@ -36,6 +36,15 @@ export const buildDailyPlan = (
   goals: LearningGoal[] = [],
 ): DailyPlan => {
   const budgetSeconds = settings.dailyMinutes * 60
+  const todayStart = startOfDay(now).getTime()
+  const todayEnd = endOfDay(now).getTime()
+  const spentSeconds = reviews
+    .filter((review) => {
+      const reviewedAt = new Date(review.reviewedAt).getTime()
+      return reviewedAt >= todayStart && reviewedAt <= todayEnd
+    })
+    .reduce((sum, review) => sum + review.durationSeconds, 0)
+  const remainingSeconds = Math.max(0, budgetSeconds - spentSeconds)
   const avgSeconds = averageReviewSeconds(reviews)
   const active = cards.filter((card) => !card.suspended)
   const due = active
@@ -55,7 +64,7 @@ export const buildDailyPlan = (
   const plannedDue: PracticeCard[] = []
   for (const card of due) {
     const cost = clamp(card.estimatedSeconds || avgSeconds, 7, 45)
-    if (used + cost > budgetSeconds && plannedDue.length > 0) break
+    if (used + cost > remainingSeconds) break
     plannedDue.push(card)
     used += cost
   }
@@ -72,7 +81,7 @@ export const buildDailyPlan = (
     return dueOnDay * avgSeconds
   })
 
-  const remainingToday = Math.max(0, budgetSeconds - used)
+  const remainingToday = Math.max(0, remainingSeconds - used)
   let safeNew = Math.floor(remainingToday / NEW_INTRODUCTION_SECONDS)
   for (let day = 1; day < FUTURE_NEW_COST.length; day += 1) {
     const headroom = Math.max(0, budgetSeconds * UTILIZATION_TARGET - baseForecast[day])
@@ -110,12 +119,14 @@ export const buildDailyPlan = (
   })
 
   const deferred = due.length - plannedDue.length
-  const fill = used / Math.max(1, budgetSeconds)
+  const fill = (spentSeconds + used) / Math.max(1, budgetSeconds)
   return {
     budgetSeconds,
+    spentSeconds,
+    remainingSeconds,
     reviewSeconds: Math.round(used - newSeconds),
     newSeconds,
-    bufferSeconds: Math.max(0, Math.round(budgetSeconds - used)),
+    bufferSeconds: Math.max(0, Math.round(remainingSeconds - used)),
     dueTotal: due.length,
     duePlanned: plannedDue.length,
     newPlanned: plannedNew.length,
@@ -126,5 +137,83 @@ export const buildDailyPlan = (
     goalBreakdown,
     status: deferred > 0 ? 'recovery' : fill > 0.82 ? 'full' : 'comfortable',
     recoveryStrategy: settings.recoveryStrategy,
+  }
+}
+
+const contextFor = (entry: PlannedCard, itemMap: Map<string, KnowledgeItem>) => itemMap.get(entry.card.itemId)?.collection.trim() || 'Unsorted'
+
+const avoidAdjacentSiblings = (entries: PlannedCard[]) => {
+  const remaining = [...entries]
+  const ordered: PlannedCard[] = []
+  while (remaining.length) {
+    const previousItemId = ordered.at(-1)?.card.itemId
+    const nextIndex = remaining.findIndex((entry) => entry.card.itemId !== previousItemId)
+    ordered.push(remaining.splice(nextIndex < 0 ? 0 : nextIndex, 1)[0])
+  }
+  return ordered
+}
+
+export const buildStudySession = (
+  plan: DailyPlan,
+  items: KnowledgeItem[],
+  request: SessionRequest,
+): StudySession => {
+  const itemMap = new Map(items.map((item) => [item.id, item]))
+  const requestedSeconds = Math.max(60, Math.round(request.minutes * 60))
+  const budgetSeconds = Math.min(requestedSeconds, plan.remainingSeconds)
+  const eligible = plan.queue.filter((entry) => {
+    const context = contextFor(entry, itemMap)
+    if (request.intent === 'focus') return context === request.focusCollection
+    if (request.intent === 'urgent') return entry.reason === 'due'
+    return true
+  })
+
+  const grouped = new Map<string, PlannedCard[]>()
+  eligible.forEach((entry) => {
+    const context = contextFor(entry, itemMap)
+    grouped.set(context, [...(grouped.get(context) || []), entry])
+  })
+  grouped.forEach((entries, context) => grouped.set(context, avoidAdjacentSiblings(entries)))
+
+  const contexts = [...grouped.keys()]
+  const blocks: SessionBlock[] = []
+  let plannedSeconds = 0
+  let cursor = 0
+  const targetReviewBlock = budgetSeconds <= 300 ? budgetSeconds : budgetSeconds <= 1_200 ? 150 : 240
+
+  while (contexts.some((context) => (grouped.get(context)?.length || 0) > 0) && plannedSeconds < budgetSeconds) {
+    const context = contexts[cursor % Math.max(1, contexts.length)]
+    cursor += 1
+    const source = grouped.get(context)
+    if (!source?.length) continue
+
+    const blockIndex = blocks.length
+    const blockId = `block-${blockIndex}-${context.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+    const blockCards = []
+    let blockSeconds = 0
+    const containsNew = source[0]?.reason === 'new'
+    const targetSeconds = containsNew ? Math.max(targetReviewBlock, 240) : targetReviewBlock
+
+    while (source.length && blockSeconds < targetSeconds) {
+      const next = source[0]
+      if (plannedSeconds + next.estimatedSeconds > budgetSeconds) break
+      source.shift()
+      blockCards.push({ ...next, blockId, blockIndex, contextKey: context })
+      blockSeconds += next.estimatedSeconds
+      plannedSeconds += next.estimatedSeconds
+    }
+
+    if (blockCards.length) blocks.push({ id: blockId, contextKey: context, estimatedSeconds: blockSeconds, cards: blockCards })
+    else source.length = 0
+  }
+
+  const queue = blocks.flatMap((block) => block.cards)
+  return {
+    request,
+    budgetSeconds,
+    plannedSeconds,
+    queue,
+    blocks,
+    omitted: Math.max(0, eligible.length - queue.length),
   }
 }

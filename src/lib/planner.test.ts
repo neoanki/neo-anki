@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { State } from 'ts-fsrs'
 import { createSeedData } from '../data/seed'
-import type { PracticeCard, ReviewEvent, UserSettings } from '../types'
+import type { KnowledgeItem, PracticeCard, ReviewEvent, UserSettings } from '../types'
 import { makeEmptyFSRSCard } from './fsrs'
-import { buildDailyPlan } from './planner'
+import { buildDailyPlan, buildStudySession } from './planner'
 
 const now = new Date('2026-07-16T10:00:00.000Z')
 const settings = (dailyMinutes: number): UserSettings => ({
@@ -14,13 +14,27 @@ const settings = (dailyMinutes: number): UserSettings => ({
   recoveryStrategy: 'risk',
 })
 
-const makeCard = (state: State, due: Date, id = crypto.randomUUID()): PracticeCard => {
+const makeCard = (state: State, due: Date, id: string = crypto.randomUUID()): PracticeCard => {
   const fsrs = makeEmptyFSRSCard(now)
   fsrs.state = state
   fsrs.due = due.toISOString()
   fsrs.stability = state === State.New ? 0 : 3
   return { id, itemId: `item-${id}`, variant: 'forward', suspended: false, fsrs, estimatedSeconds: 14, createdAt: now.toISOString(), updatedAt: now.toISOString() }
 }
+
+const makeItem = (card: PracticeCard, collection: string): KnowledgeItem => ({
+  id: card.itemId,
+  prompt: `${collection} prompt`,
+  answer: `${collection} answer`,
+  context: '',
+  collection,
+  tags: [],
+  citations: [],
+  mediaIds: [],
+  occlusions: [],
+  createdAt: now.toISOString(),
+  updatedAt: now.toISOString(),
+})
 
 describe('time-budget planner', () => {
   it('introduces more new material when the user offers more time', () => {
@@ -66,5 +80,58 @@ describe('time-budget planner', () => {
     ]
     const plan = buildDailyPlan(cards, [], settings(20), now)
     expect(plan.reviewSeconds + plan.newSeconds).toBeLessThanOrEqual(plan.budgetSeconds)
+  })
+
+  it('subtracts practice already completed today so several sessions share one daily promise', () => {
+    const cards = Array.from({ length: 30 }, (_, index) => makeCard(State.Review, new Date(now.getTime() - index * 86_400_000)))
+    const reviews: ReviewEvent[] = [{
+      id: 'earlier-session',
+      cardId: 'finished-card',
+      rating: 3,
+      reviewedAt: now.toISOString(),
+      durationSeconds: 180,
+      previousDue: now.toISOString(),
+      nextDue: now.toISOString(),
+    }]
+    const plan = buildDailyPlan(cards, reviews, settings(10), now)
+
+    expect(plan.spentSeconds).toBe(180)
+    expect(plan.remainingSeconds).toBe(420)
+    expect(plan.reviewSeconds + plan.newSeconds).toBeLessThanOrEqual(420)
+  })
+})
+
+describe('session composer', () => {
+  it('keeps unrelated categories in coherent blocks instead of alternating every card', () => {
+    const cards = Array.from({ length: 18 }, (_, index) => makeCard(State.Review, new Date(now.getTime() - index * 1_000), `card-${index}`))
+    const items = cards.map((card, index) => makeItem(card, index % 2 === 0 ? 'Spanish' : 'Japanese'))
+    const daily = buildDailyPlan(cards, [], settings(20), now, items)
+    const session = buildStudySession(daily, items, { minutes: 10, intent: 'balanced' })
+
+    expect(session.blocks.length).toBeGreaterThan(1)
+    expect(session.blocks.every((block) => block.cards.every((entry) => entry.contextKey === block.contextKey))).toBe(true)
+    expect(session.queue.some((entry, index) => index > 0 && entry.contextKey === session.queue[index - 1].contextKey)).toBe(true)
+  })
+
+  it('uses one context for a five-minute practice when that context has enough work', () => {
+    const spanish = Array.from({ length: 30 }, (_, index) => makeCard(State.Review, new Date(now.getTime() - index * 1_000), `spanish-${index}`))
+    const japanese = Array.from({ length: 10 }, (_, index) => makeCard(State.Review, new Date(now.getTime() - index * 1_000), `japanese-${index}`))
+    const cards = [...spanish, ...japanese]
+    const items = [...spanish.map((card) => makeItem(card, 'Spanish')), ...japanese.map((card) => makeItem(card, 'Japanese'))]
+    const daily = buildDailyPlan(cards, [], settings(30), now, items)
+    const session = buildStudySession(daily, items, { minutes: 5, intent: 'balanced' })
+
+    expect(new Set(session.queue.map((entry) => entry.contextKey)).size).toBe(1)
+  })
+
+  it('supports a focused session without rescheduling other categories', () => {
+    const cards = Array.from({ length: 16 }, (_, index) => makeCard(State.Review, new Date(now.getTime() - index * 1_000), `focus-${index}`))
+    const items = cards.map((card, index) => makeItem(card, index % 2 === 0 ? 'Spanish' : 'Japanese'))
+    const daily = buildDailyPlan(cards, [], settings(20), now, items)
+    const session = buildStudySession(daily, items, { minutes: 10, intent: 'focus', focusCollection: 'Japanese' })
+
+    expect(session.queue.length).toBeGreaterThan(0)
+    expect(session.queue.every((entry) => entry.contextKey === 'Japanese')).toBe(true)
+    expect(daily.queue.length).toBeGreaterThan(session.queue.length)
   })
 })

@@ -11,7 +11,7 @@ The core is intentionally small, but not minimal at the cost of data safety. A c
 ## Core through Phase 2
 
 - Canonical schemas for knowledge items, prompts, review events, citations, media, goals, saved views, and pack provenance.
-- FSRS scheduling and the time-budget planner.
+- FSRS scheduling, the daily time-target planner, and deterministic session composition.
 - Basic, reverse, cloze, typed-answer, media, and image-occlusion rendering.
 - Visual authoring for those durable prompt primitives.
 - Search, saved views, learning goals, and backlog rescue.
@@ -49,3 +49,5 @@ The core is intentionally small, but not minimal at the cost of data safety. A c
 - Conflicting content edits are preserved until resolved.
 - Every extension-owned datum is namespaced and exportable.
 - Collections remain fully reviewable, searchable, and exportable with all extensions disabled.
+- Session duration, focus, and presentation order never mutate due dates or review history.
+- Interleaving happens within coherent contexts; unrelated contexts switch at explicit block boundaries.

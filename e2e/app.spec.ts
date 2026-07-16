@@ -18,14 +18,14 @@ test('onboarding establishes a daily time contract', async ({ page }) => {
   await expect(page.getByRole('heading', { name: /how much time can learning reliably have/i })).toBeVisible()
   await page.getByRole('button', { name: /45 minutes/i }).click()
   await page.getByRole('button', { name: /build my first plan/i }).click()
-  await expect(page.getByRole('heading', { name: /i have 45 minutes/i })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /45 min available/i })).toBeVisible()
 })
 
 test('daily time changes the automatically planned workload', async ({ page }) => {
   await startWith(page)
-  await page.getByRole('button', { name: '10' }).click()
+  await page.getByRole('button', { name: '10', exact: true }).click()
   const ten = await page.locator('.allocation-row').filter({ hasText: 'Grow carefully' }).textContent()
-  await page.getByRole('button', { name: '60' }).click()
+  await page.getByRole('button', { name: '60', exact: true }).click()
   const sixty = await page.locator('.allocation-row').filter({ hasText: 'Grow carefully' }).textContent()
   const count = (text: string | null) => Number(text?.match(/(\d+) new prompts/)?.[1] || 0)
   expect(count(sixty)).toBeGreaterThan(count(ten))
@@ -57,12 +57,30 @@ test('typed review compares the answer before grading', async ({ page }) => {
   data.cards = [{ ...data.cards[0], itemId: data.items[0].id, variant: 'typed' }]
   data.reviews = []
   await startWith(page, data)
-  await page.getByRole('button', { name: /start focused session/i }).click()
+  await page.getByRole('button', { name: /start .* session/i }).click()
   await page.getByLabel('Type your answer').fill(data.items[0].answer)
   await page.getByRole('button', { name: /check answer/i }).click()
   await expect(page.getByText('Exact match')).toBeVisible()
   await page.locator('button.grade-button.recalled').click()
-  await expect(page.getByRole('heading', { name: /enough for today/i })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /enough for this session/i })).toBeVisible()
+})
+
+test('switches unrelated categories at an explicit block boundary', async ({ page }) => {
+  const data = onboarded()
+  data.cards = data.cards.slice(0, 6)
+  const itemIds = new Set(data.cards.map((card) => card.itemId))
+  data.items = data.items.filter((item) => itemIds.has(item.id)).map((item, index) => ({ ...item, collection: index < 3 ? 'Spanish' : 'Japanese' }))
+  await startWith(page, data)
+  const firstBlockText = await page.locator('.block-preview-row').first().textContent()
+  const firstBlockCount = Number(firstBlockText?.match(/(\d+) prompts/)?.[1] || 0)
+  expect(firstBlockCount).toBeGreaterThan(0)
+  await page.getByRole('button', { name: /start .* session/i }).click()
+  for (let index = 0; index < firstBlockCount; index += 1) {
+    await page.getByRole('button', { name: /reveal answer/i }).click()
+    await page.locator('button.grade-button.recalled').click()
+  }
+  await expect(page.getByText(/context switch/i)).toBeVisible()
+  await expect(page.getByRole('button', { name: /begin (spanish|japanese)/i })).toBeVisible()
 })
 
 test('goals, saved views, and pack updates are manageable', async ({ page }) => {

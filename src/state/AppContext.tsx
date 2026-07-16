@@ -1,8 +1,8 @@
 // @refresh reset
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { AppData, CreateKnowledgeInput, KnowledgeItem, LearningGoal, MediaAsset, PackManifest, PackPatch, RecoveryStrategy, ReviewRating, Route, SavedView } from '../types'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { AppData, CreateKnowledgeInput, KnowledgeItem, LearningGoal, MediaAsset, PackManifest, PackPatch, RecoveryStrategy, ReviewRating, Route, SavedView, SessionRequest, StudySession } from '../types'
 import { makeEmptyFSRSCard, scheduleReview, serializeFSRSCard } from '../lib/fsrs'
-import { buildDailyPlan } from '../lib/planner'
+import { buildDailyPlan, buildStudySession } from '../lib/planner'
 import { loadData, saveData } from '../lib/storage'
 import { createTabSyncTransport, mergeAppData } from '../lib/sync'
 import { applyPackPatch, installPack, resolvePackConflict } from '../lib/packs'
@@ -11,7 +11,10 @@ interface AppContextValue {
   data: AppData
   route: Route
   plan: ReturnType<typeof buildDailyPlan>
+  activeSession: StudySession | null
   navigate: (route: Route) => void
+  startSession: (request: SessionRequest) => void
+  endSession: () => void
   setDailyMinutes: (minutes: number) => void
   setRetention: (retention: number) => void
   setRecoveryStrategy: (strategy: RecoveryStrategy) => void
@@ -39,6 +42,7 @@ const AppContext = createContext<AppContextValue | null>(null)
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [data, setData] = useState<AppData>(() => loadData())
   const [route, setRoute] = useState<Route>('today')
+  const [activeSession, setActiveSession] = useState<StudySession | null>(null)
   const transportRef = useRef<ReturnType<typeof createTabSyncTransport>>(null)
   const receivingRef = useRef(false)
 
@@ -51,10 +55,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const transport = createTabSyncTransport()
     transportRef.current = transport
-    return transport?.subscribe((remote) => {
+    const unsubscribe = transport?.subscribe((remote) => {
       receivingRef.current = true
       setData((current) => mergeAppData(current, remote))
     })
+    return () => {
+      if (transportRef.current === transport) transportRef.current = null
+      unsubscribe?.()
+      transport?.close?.()
+    }
   }, [])
 
   useEffect(() => {
@@ -68,6 +77,20 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const navigate = (next: Route) => {
     setRoute(next)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const startSession = useCallback((request: SessionRequest) => {
+    const session = buildStudySession(plan, data.items, request)
+    if (!session.queue.length) return
+    setActiveSession(session)
+    setRoute('review')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [data.items, plan])
+
+  const endSession = () => {
+    setActiveSession(null)
+    setRoute('today')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -232,7 +255,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     data,
     route,
     plan,
+    activeSession,
     navigate,
+    startSession,
+    endSession,
     setDailyMinutes,
     setRetention,
     setRecoveryStrategy,
@@ -253,7 +279,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     mergeImport,
     replaceData,
     resetData,
-  }), [data, route, plan])
+  }), [data, route, plan, activeSession, startSession])
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
 }

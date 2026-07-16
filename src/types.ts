@@ -5,6 +5,7 @@ export type Theme = 'light' | 'dark'
 export type PromptVariant = 'forward' | 'reverse' | 'cloze' | 'typed' | 'image-occlusion' | 'audio'
 export type ReviewRating = 1 | 2 | 3
 export type RecoveryStrategy = 'risk' | 'oldest' | 'momentum'
+export type SessionIntent = 'balanced' | 'focus' | 'urgent'
 export type CardStateFilter = 'new' | 'due' | 'review' | 'suspended'
 export type ViewSort = 'updated' | 'created' | 'due' | 'difficulty'
 
@@ -239,6 +240,8 @@ export interface GoalBreakdown {
 
 export interface DailyPlan {
   budgetSeconds: number
+  spentSeconds: number
+  remainingSeconds: number
   reviewSeconds: number
   newSeconds: number
   bufferSeconds: number
@@ -252,6 +255,34 @@ export interface DailyPlan {
   goalBreakdown: GoalBreakdown[]
   status: 'comfortable' | 'full' | 'recovery'
   recoveryStrategy: RecoveryStrategy
+}
+
+export interface SessionRequest {
+  minutes: number
+  intent: SessionIntent
+  focusCollection?: string
+}
+
+export interface SessionCard extends PlannedCard {
+  blockId: string
+  blockIndex: number
+  contextKey: string
+}
+
+export interface SessionBlock {
+  id: string
+  contextKey: string
+  estimatedSeconds: number
+  cards: SessionCard[]
+}
+
+export interface StudySession {
+  request: SessionRequest
+  budgetSeconds: number
+  plannedSeconds: number
+  queue: SessionCard[]
+  blocks: SessionBlock[]
+  omitted: number
 }
 
 export interface ImportSummary {

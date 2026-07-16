@@ -21,10 +21,11 @@ describe('deterministic sync merge', () => {
     let handler: ((event: MessageEvent) => void) | undefined
     const posted: unknown[] = []
     class FakeChannel {
+      closed = false
       postMessage(value: unknown) { posted.push(value) }
       addEventListener(_name: string, callback: (event: MessageEvent) => void) { handler = callback }
       removeEventListener() { handler = undefined }
-      close() {}
+      close() { this.closed = true }
     }
     Object.defineProperty(globalThis, 'BroadcastChannel', { value: FakeChannel, configurable: true })
     const transport = createTabSyncTransport('test')!
@@ -35,6 +36,7 @@ describe('deterministic sync merge', () => {
     handler?.({ data } as MessageEvent)
     expect(posted).toEqual([data]); expect(received).toBe(data.deviceId)
     unsubscribe()
+    transport.close?.()
     Object.defineProperty(globalThis, 'BroadcastChannel', { value: original, configurable: true })
   })
 })

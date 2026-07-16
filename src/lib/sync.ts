@@ -30,6 +30,7 @@ export const mergeAppData = (local: AppData, remote: AppData): AppData => {
 export interface SyncTransport {
   publish(data: AppData): void | Promise<void>
   subscribe(listener: (data: AppData) => void): () => void
+  close?(): void
 }
 
 export const createTabSyncTransport = (channelName = 'neo-anki-sync'): SyncTransport | null => {
@@ -40,7 +41,8 @@ export const createTabSyncTransport = (channelName = 'neo-anki-sync'): SyncTrans
     subscribe: (listener) => {
       const handler = (event: MessageEvent<AppData>) => listener(event.data)
       channel.addEventListener('message', handler)
-      return () => { channel.removeEventListener('message', handler); channel.close() }
+      return () => channel.removeEventListener('message', handler)
     },
+    close: () => channel.close(),
   }
 }

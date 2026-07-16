@@ -2,6 +2,7 @@ import { BarChart3, BookOpen, Clock3, Flag, Library, Plus, Settings } from 'luci
 import { useState, type ReactNode } from 'react'
 import { useApp } from '../state/AppContext'
 import type { Route } from '../types'
+import { formatDuration } from '../lib/date'
 import { Brand } from './Brand'
 import { SettingsPanel } from './SettingsPanel'
 
@@ -35,7 +36,7 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
           <div className="sidebar-footer">
             <div className="mini-budget">
               <BookOpen size={17} />
-              <div><strong>{plan.queue.length} planned</strong><span>{Math.round(plan.budgetSeconds / 60)} min today</span></div>
+              <div><strong>{plan.queue.length} available</strong><span>{formatDuration(plan.remainingSeconds)} left today</span></div>
             </div>
             <button className="nav-item" onClick={() => setSettingsOpen(true)}><Settings size={19} /><span>Settings</span></button>
           </div>

@@ -4,7 +4,8 @@ A TypeScript-first, local-first spaced-repetition app that plans learning around
 
 ## Phase 1–2 feature set
 
-- FSRS scheduling with a forecast-aware time planner and risk, oldest-first, or momentum backlog rescue.
+- FSRS scheduling with a forecast-aware daily target, any-size practice sessions, and risk, oldest-first, or momentum backlog rescue.
+- Adaptive session composition: a balanced mix, one-area focus, or urgent reviews, sequenced as coherent context blocks instead of random category switching.
 - Basic, reverse, cloze, typed-answer, image-occlusion, and audio prompts over a canonical knowledge model.
 - Visual authoring with media, multiple citations, duplicate detection, and actionable prompt-health diagnostics.
 - Today, focused Review, searchable Library, Goals, Saved Views, Shared Packs, and Insights.
@@ -34,4 +35,6 @@ Current domain coverage thresholds are 80% statements, functions, and lines, and
 
 ## Planning model
 
-FSRS owns memory state and future due dates. The planner learns review pace, reserves today’s time for due knowledge, forecasts reinforcement cost, and introduces only the new prompts that fit both today and the seven-day outlook. If due work exceeds the budget, new material stops and the selected rescue strategy determines the queue. Goals add a bounded urgency signal without bypassing these safety constraints.
+FSRS owns memory state and future due dates. The planner learns review pace, subtracts practice already completed today, reserves the remaining daily target for due knowledge, forecasts reinforcement cost, and introduces only the new prompts that fit both today and the seven-day outlook. A user can spend that target in one session or several quick sessions.
+
+The session composer is a separate deterministic layer. It can continue today’s mix, focus on one collection, or select urgent reviews only. Unrelated collections stay in short, coherent blocks; cards within a block remain interleaved while sibling prompts are kept apart. Switching context never changes a due date, and ending early leaves the rest of the plan intact.

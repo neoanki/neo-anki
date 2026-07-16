@@ -20,7 +20,7 @@ describe('application workflows', () => {
     await userEvent.click(screen.getByRole('button', { name: /30 minutes/i }))
     await userEvent.click(screen.getByRole('button', { name: /build my first plan/i }))
     expect(screen.getByRole('heading', { name: /make memory fit your life/i })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /i have 30 minutes/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /30 min available/i })).toBeInTheDocument()
   })
 
   it('creates typed knowledge and exposes it in the library', async () => {
