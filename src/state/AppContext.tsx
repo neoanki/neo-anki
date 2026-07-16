@@ -1,11 +1,12 @@
 // @refresh reset
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { AppData, CreateKnowledgeInput, KnowledgeItem, LearningGoal, MediaAsset, PackManifest, PackPatch, RecoveryStrategy, ReviewRating, Route, SavedView, SessionRequest, StudySession } from '../types'
+import type { AppData, CreateKnowledgeInput, KnowledgeItem, MediaAsset, RecoveryStrategy, ReviewRating, Route, SessionRequest, StudySession } from '../types'
 import { makeEmptyFSRSCard, scheduleReview, serializeFSRSCard } from '../lib/fsrs'
 import { buildDailyPlan, buildStudySession } from '../lib/planner'
 import { clearStoredData, loadData, saveData } from '../lib/storage'
-import { createTabSyncTransport, mergeAppData } from '../lib/sync'
-import { applyPackPatch, installPack, resolvePackConflict } from '../lib/packs'
+import { mergeAppData } from '../lib/sync'
+import { extensionRuntime } from '../extensions/runtime'
+import type { SyncTransport } from '../extensions/sdk'
 
 interface AppContextValue {
   data: AppData
@@ -26,13 +27,7 @@ interface AppContextValue {
   deleteItem: (id: string) => void
   toggleSuspend: (cardId: string) => void
   reviewCard: (cardId: string, rating: ReviewRating, durationSeconds: number) => void
-  upsertGoal: (goal: Omit<LearningGoal, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => void
-  deleteGoal: (id: string) => void
-  upsertView: (view: Omit<SavedView, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => void
-  deleteView: (id: string) => void
-  installPackData: (manifest: PackManifest) => void
-  applyPackPatchData: (patch: PackPatch) => void
-  resolveConflict: (id: string, resolution: 'local' | 'upstream') => void
+  runExtensionCommand: (id: string, payload: unknown) => Promise<void>
   mergeImport: (imported: Pick<AppData, 'items' | 'cards' | 'assets'>) => void
   replaceData: (data: AppData) => void
   resetData: () => void
@@ -45,7 +40,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [route, setRoute] = useState<Route>('today')
   const [activeSession, setActiveSession] = useState<StudySession | null>(null)
   const [persistenceError, setPersistenceError] = useState('')
-  const transportRef = useRef<ReturnType<typeof createTabSyncTransport>>(null)
+  const transportRef = useRef<SyncTransport | null>(null)
   const receivingRef = useRef(false)
 
   useEffect(() => {
@@ -59,7 +54,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [data])
 
   useEffect(() => {
-    const transport = createTabSyncTransport()
+    const transport = extensionRuntime.createSyncTransport()
     transportRef.current = transport
     const unsubscribe = transport?.subscribe((remote) => {
       receivingRef.current = true
@@ -77,8 +72,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [data.settings.theme])
 
   const plan = useMemo(
-    () => buildDailyPlan(data.cards, data.reviews, data.settings, new Date(), data.items, data.goals),
-    [data.cards, data.reviews, data.settings, data.items, data.goals],
+    () => buildDailyPlan(data.cards, data.reviews, data.settings, new Date(), data.items, {
+      signalsFor: (item, now) => extensionRuntime.planningSignals(item, data, now),
+      scoreQueuePolicy: (strategy, candidate) => extensionRuntime.scoreQueuePolicy(strategy, candidate),
+    }),
+    [data],
   )
 
   const navigate = (next: Route) => {
@@ -142,23 +140,23 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       createdAt: now,
       updatedAt: now,
     }
-    const variants = [...new Set(input.variants)]
+    const cardSeeds = extensionRuntime.createCards(input)
     setData((current) => ({
       ...current,
       items: [item, ...current.items],
       assets: [...input.assets, ...current.assets.filter((asset) => !input.assets.some((candidate) => candidate.id === asset.id))],
       cards: [
-        ...variants.flatMap((variant) => (variant === 'image-occlusion' && input.occlusions.length ? input.occlusions : [undefined]).map((occlusion) => ({
+        ...cardSeeds.map((seed) => ({
           id: crypto.randomUUID(),
           itemId,
-          variant,
-          occlusionId: occlusion?.id,
+          variant: seed.promptType as CreateKnowledgeInput['variants'][number],
+          occlusionId: seed.occlusionId,
           suspended: false,
           fsrs: makeEmptyFSRSCard(),
-          estimatedSeconds: variant === 'cloze' ? 16 : 14,
+          estimatedSeconds: seed.estimatedSeconds,
           createdAt: now,
           updatedAt: now,
-        }))),
+        })),
         ...current.cards,
       ],
     }))
@@ -220,24 +218,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     })
   }
 
-  const upsertGoal: AppContextValue['upsertGoal'] = (goal) => setData((current) => {
-    const now = new Date().toISOString()
-    const existing = goal.id ? current.goals.find((candidate) => candidate.id === goal.id) : undefined
-    const next: LearningGoal = { ...goal, id: existing?.id || crypto.randomUUID(), createdAt: existing?.createdAt || now, updatedAt: now }
-    return { ...current, goals: existing ? current.goals.map((candidate) => candidate.id === next.id ? next : candidate) : [next, ...current.goals], updatedAt: now }
-  })
-  const deleteGoal = (id: string) => setData((current) => ({ ...current, goals: current.goals.filter((goal) => goal.id !== id), updatedAt: new Date().toISOString() }))
-  const upsertView: AppContextValue['upsertView'] = (view) => setData((current) => {
-    const now = new Date().toISOString()
-    const existing = view.id ? current.views.find((candidate) => candidate.id === view.id) : undefined
-    const next: SavedView = { ...view, id: existing?.id || crypto.randomUUID(), createdAt: existing?.createdAt || now, updatedAt: now }
-    return { ...current, views: existing ? current.views.map((candidate) => candidate.id === next.id ? next : candidate) : [next, ...current.views], updatedAt: now }
-  })
-  const deleteView = (id: string) => setData((current) => ({ ...current, views: current.views.filter((view) => view.id !== id), updatedAt: new Date().toISOString() }))
-
-  const installPackData = (manifest: PackManifest) => setData((current) => installPack(current, manifest).data)
-  const applyPackPatchData = (patch: PackPatch) => setData((current) => applyPackPatch(current, patch).data)
-  const resolveConflict = (id: string, resolution: 'local' | 'upstream') => setData((current) => resolvePackConflict(current, id, resolution))
+  const runExtensionCommand = useCallback(async (id: string, payload: unknown) => {
+    const next = await extensionRuntime.runCommand(id, data, payload)
+    setData(next)
+  }, [data])
   const mergeImport = (imported: Pick<AppData, 'items' | 'cards' | 'assets'>) => setData((current) => {
     const itemIds = new Set(current.items.map((item) => item.id))
     const cardIds = new Set(current.cards.map((card) => card.id))
@@ -275,17 +259,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     deleteItem,
     toggleSuspend,
     reviewCard,
-    upsertGoal,
-    deleteGoal,
-    upsertView,
-    deleteView,
-    installPackData,
-    applyPackPatchData,
-    resolveConflict,
+    runExtensionCommand,
     mergeImport,
     replaceData,
     resetData,
-  }), [data, route, plan, activeSession, persistenceError, startSession])
+  }), [data, route, plan, activeSession, persistenceError, startSession, runExtensionCommand])
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
 }

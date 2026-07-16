@@ -1,53 +1,61 @@
 # Neo Anki core and extension boundary
 
-The core is intentionally small, but not minimal at the cost of data safety. A capability belongs in core when at least one of these is true:
+Neo Anki keeps the memory engine and data-safety envelope small. Everything else is an extension contribution. “Bundled” describes how an extension is distributed; it does not grant a stronger API, hidden capability, or privileged host access.
 
-1. Its absence could strand, corrupt, or silently rewrite user data.
-2. It participates in deterministic scheduling or queue selection.
-3. Every client must render it consistently for a collection to remain portable.
-4. It is required for the baseline capture → author → review workflow.
-5. It enforces security, accessibility, or conflict-resolution invariants that extensions cannot be trusted to reproduce.
+## Kernel
 
-## Core through Phase 2
+The kernel owns only capabilities whose failure could make the baseline capture → schedule → review loop unsafe or unavailable:
 
-- Canonical schemas for knowledge items, prompts, review events, citations, media, goals, saved views, and pack provenance.
-- FSRS scheduling, the daily time-target planner, and deterministic session composition.
-- Basic, reverse, cloze, typed-answer, media, and image-occlusion rendering.
-- Visual authoring for those durable prompt primitives.
-- Search, saved views, learning goals, and backlog rescue.
-- Anki, CSV, Neo backup, pack, and patch import/export formats.
-- Sandboxed desktop shell, atomic local-file persistence, rolling recovery, deterministic merge, and sync-provider interface.
-- Pack installation, three-way updates, conflict resolution, and preservation of personal scheduling history.
-- Keyboard, touch, screen-reader, and reduced-motion behavior.
+- Canonical knowledge items, practice cards, immutable review events, media assets, settings, and migrations.
+- FSRS scheduling and the atomic review transaction.
+- The daily time envelope, forecast, deterministic session composer, and the baseline at-risk queue order.
+- Basic question → answer creation and rendering, including the fallback renderer for unknown prompt types.
+- Local persistence, rolling recovery, native JSON backups, and deterministic data merge.
+- The Today, Library, Create, and Review surfaces plus extension hosts and Settings.
+- The public extension registry: SDK-version validation, permission checks, collision detection, bounded transactions, diagnostics, and failure fallbacks.
 
-## Core mechanism with extension implementations
+The kernel deliberately does not know a closed list of prompt IDs, page routes, importer sources, or recovery-policy IDs. Those identifiers are strings registered through the public SDK.
 
-| Core contract | Extension territory |
+## Extracted extensions
+
+| Extension | Public contributions |
 | --- | --- |
-| Deterministic merge protocol | Hosted sync transports and account providers |
-| Pack manifest, patches, provenance, and conflicts | Signatures, marketplaces, catalogs, ratings, and discovery |
-| Media storage and playback | TTS, pronunciation, transcription, and media generation |
-| Import/export transaction API | Notion, Obsidian, LMS, proprietary database, and niche format connectors |
-| Prompt renderer/editor contribution points | Domain-specific editors and practice widgets |
-| Health finding schema | AI diagnosis and domain-specific lint rule packs |
+| Prompt Types | Reverse, cloze, typed-answer, and audio prompt renderers; typed-answer comparison |
+| Image Occlusion | Prompt renderer, card generation, image authoring panel, mask geometry |
+| Interoperability | Anki package importer, CSV importer, CSV exporter |
+| Recovery Policies | Oldest-overdue and quick-wins queue policies |
+| Goals & Saved Views | Planning signals, transactional commands, workspace panels |
+| Shared Packs | Pack install/update/conflict commands and workspace panel |
+| Insights | An extension-contributed application page |
+| Browser Tab Sync | A BroadcastChannel sync transport |
 
-## Postponed to extensions
+Their source lives under `src/extensions/`. Previous `src/lib/*` and `src/pages/InsightsPage.tsx` paths are compatibility re-exports only; the app itself consumes the registry.
 
+## One SDK, no publisher tiers
+
+Every extension supplies the same `NeoAnkiExtension` object and goes through `ExtensionRegistry.register`. Registration decisions use manifest version, declared permissions, and contribution IDs—not publisher identity. Bundled extensions do not import the private application context; contributed pages and panels receive public, read-only host props and write through the same command API.
+
+The MVP statically registers extensions at application startup. It intentionally does not execute arbitrary downloaded JavaScript. A future signed/local package loader must end by passing the same extension object to the same registry; it must not introduce a second privileged API for bundled code.
+
+See [extension-sdk.md](extension-sdk.md) for the contract and an independently published example.
+
+## Enforced invariants
+
+- Unknown or crashing prompt renderers fall back to the basic renderer, so cards remain reviewable.
+- Contribution failures are isolated and recorded as diagnostics.
+- Duplicate contribution IDs are rejected before startup completes.
+- Planning-signal strength is clamped to a bounded range; non-finite policy scores are ignored.
+- Commands receive a cloned snapshot and have no effect unless they submit a replacement transaction.
+- Command transactions cannot rewrite the append-only review log, device identity, scheduler settings, or schema version.
+- Pack operations preserve scheduling state; conflicting content edits remain explicit.
+- Session duration, focus, and presentation order never mutate due dates or review history.
+- Interleaving happens within coherent contexts; unrelated contexts switch at block boundaries.
+
+## Still postponed
+
+- Runtime package installation, signatures, trust UI, enable/disable, and dependency resolution.
 - AI extraction, generation, rewriting, and grading.
 - OCR, PDF pipelines, web clipping, and external knowledge connectors.
-- Multiple choice, code execution, handwriting, drawing, maps, pronunciation scoring, and other specialized prompt types.
-- Alternative schedulers and experimental scheduling policies.
-- Advanced analytics beyond recall calibration, workload, and repair signals.
-- Social feeds, collaboration presence, public profiles, and marketplace UX.
-- Themes, decorative gamification, and custom study modes.
-
-## Invariants
-
-- Extensions cannot mutate review history directly.
-- Scheduler changes are explicit migrations with previews and rollback.
-- Pack updates never overwrite personal scheduling state.
-- Conflicting content edits are preserved until resolved.
-- Every extension-owned datum is namespaced and exportable.
-- Collections remain fully reviewable, searchable, and exportable with all extensions disabled.
-- Session duration, focus, and presentation order never mutate due dates or review history.
-- Interleaving happens within coherent contexts; unrelated contexts switch at explicit block boundaries.
+- Code execution, handwriting, drawing, maps, pronunciation scoring, and specialized practice widgets.
+- Alternative schedulers. Queue ordering can be extended now; replacing memory-state transitions requires a migration and rollback design.
+- Hosted sync/account providers, collaboration, marketplaces, themes, and decorative gamification.

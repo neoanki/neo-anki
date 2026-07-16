@@ -1,7 +1,7 @@
 import { State } from 'ts-fsrs'
-import type { DailyPlan, KnowledgeItem, LearningGoal, PlannedCard, PracticeCard, RecoveryStrategy, ReviewEvent, SessionBlock, SessionRequest, StudySession, UserSettings } from '../types'
+import type { DailyPlan, KnowledgeItem, PlannedCard, PracticeCard, RecoveryStrategy, ReviewEvent, SessionBlock, SessionRequest, StudySession, UserSettings } from '../types'
+import type { PlanningSignal, QueuePolicyCandidate } from '../extensions/sdk'
 import { addDays, dayKey, endOfDay, startOfDay } from './date'
-import { goalUrgency, goalsForItem } from './views'
 
 const DEFAULT_REVIEW_SECONDS = 14
 const NEW_INTRODUCTION_SECONDS = 72
@@ -18,13 +18,17 @@ export const averageReviewSeconds = (reviews: ReviewEvent[]) => {
   return clamp(weighted / weights, 7, 35)
 }
 
-const priority = (card: PracticeCard, now: Date, strategy: RecoveryStrategy, item?: KnowledgeItem, goals: LearningGoal[] = [], allCards: PracticeCard[] = []) => {
+export interface PlannerExtensionHooks {
+  signalsFor?: (item: KnowledgeItem, now: Date) => PlanningSignal[]
+  scoreQueuePolicy?: (strategy: RecoveryStrategy, candidate: QueuePolicyCandidate) => number | null
+}
+
+const priority = (card: PracticeCard, now: Date, strategy: RecoveryStrategy, item?: KnowledgeItem, hooks: PlannerExtensionHooks = {}) => {
   const overdueDays = Math.max(0, (now.getTime() - new Date(card.fsrs.due).getTime()) / 86_400_000)
-  const matchingGoals = item ? goalsForItem(item, allCards, goals, now) : []
-  const goalBoost = matchingGoals.reduce((highest, goal) => Math.max(highest, goalUrgency(goal, now)), 0)
-  if (strategy === 'oldest') return overdueDays * 2 + card.fsrs.lapses * 0.08 + goalBoost
-  if (strategy === 'momentum') return 35 / Math.max(7, card.estimatedSeconds) + 1 / Math.max(1, card.fsrs.difficulty) + goalBoost
-  return overdueDays / Math.max(0.25, card.fsrs.stability) + card.fsrs.lapses * 0.16 + 1 / Math.max(1, card.fsrs.stability) + goalBoost
+  const extensionBoost = item ? (hooks.signalsFor?.(item, now) || []).reduce((highest, signal) => Math.max(highest, signal.score), 0) : 0
+  const extensionScore = strategy === 'risk' ? null : hooks.scoreQueuePolicy?.(strategy, { card, overdueDays, extensionBoost })
+  if (extensionScore != null) return extensionScore
+  return overdueDays / Math.max(0.25, card.fsrs.stability) + card.fsrs.lapses * 0.16 + 1 / Math.max(1, card.fsrs.stability) + extensionBoost
 }
 
 export const buildDailyPlan = (
@@ -33,7 +37,7 @@ export const buildDailyPlan = (
   settings: UserSettings,
   now = new Date(),
   items: KnowledgeItem[] = [],
-  goals: LearningGoal[] = [],
+  hooks: PlannerExtensionHooks = {},
 ): DailyPlan => {
   const budgetSeconds = settings.dailyMinutes * 60
   const todayStart = startOfDay(now).getTime()
@@ -49,14 +53,14 @@ export const buildDailyPlan = (
   const active = cards.filter((card) => !card.suspended)
   const due = active
     .filter((card) => card.fsrs.state !== State.New && new Date(card.fsrs.due) <= endOfDay(now))
-    .sort((a, b) => priority(b, now, settings.recoveryStrategy, items.find((item) => item.id === b.itemId), goals, cards) - priority(a, now, settings.recoveryStrategy, items.find((item) => item.id === a.itemId), goals, cards))
+    .sort((a, b) => priority(b, now, settings.recoveryStrategy, items.find((item) => item.id === b.itemId), hooks) - priority(a, now, settings.recoveryStrategy, items.find((item) => item.id === a.itemId), hooks))
   const fresh = active
     .filter((card) => card.fsrs.state === State.New)
     .sort((a, b) => {
       const itemA = items.find((item) => item.id === a.itemId)
       const itemB = items.find((item) => item.id === b.itemId)
-      const urgencyA = itemA ? goalsForItem(itemA, cards, goals, now).reduce((value, goal) => Math.max(value, goalUrgency(goal, now)), 0) : 0
-      const urgencyB = itemB ? goalsForItem(itemB, cards, goals, now).reduce((value, goal) => Math.max(value, goalUrgency(goal, now)), 0) : 0
+      const urgencyA = itemA ? (hooks.signalsFor?.(itemA, now) || []).reduce((value, signal) => Math.max(value, signal.score), 0) : 0
+      const urgencyB = itemB ? (hooks.signalsFor?.(itemB, now) || []).reduce((value, signal) => Math.max(value, signal.score), 0) : 0
       return urgencyB - urgencyA || new Date(a.fsrs.due).getTime() - new Date(b.fsrs.due).getTime()
     })
 
@@ -95,17 +99,16 @@ export const buildDailyPlan = (
   used += newSeconds
   const toPlanned = (card: PracticeCard, reason: 'due' | 'new', estimatedSeconds: number) => {
     const item = items.find((candidate) => candidate.id === card.itemId)
-    return { card, reason, estimatedSeconds, goalIds: item ? goalsForItem(item, cards, goals, now).map((goal) => goal.id) : [] }
+    return { card, reason, estimatedSeconds, signalIds: item ? (hooks.signalsFor?.(item, now) || []).map((signal) => signal.id) : [] }
   }
   const queue = [
     ...plannedDue.map((card) => toPlanned(card, 'due', clamp(card.estimatedSeconds || avgSeconds, 7, 45))),
     ...plannedNew.map((card) => toPlanned(card, 'new', NEW_INTRODUCTION_SECONDS)),
   ]
 
-  const goalBreakdown = goals
-    .filter((goal) => goal.active)
-    .map((goal) => ({ goalId: goal.id, name: goal.name, count: queue.filter((entry) => entry.goalIds.includes(goal.id)).length }))
-    .filter((entry) => entry.count > 0)
+  const signals = new Map<string, string>()
+  items.forEach((item) => (hooks.signalsFor?.(item, now) || []).forEach((signal) => signals.set(signal.id, signal.label)))
+  const signalBreakdown = [...signals].map(([signalId, name]) => ({ signalId, name, count: queue.filter((entry) => entry.signalIds.includes(signalId)).length })).filter((entry) => entry.count > 0)
 
   const forecast = baseForecast.map((seconds, index) => {
     const date = addDays(now, index)
@@ -134,7 +137,7 @@ export const buildDailyPlan = (
     averageReviewSeconds: avgSeconds,
     queue,
     forecast,
-    goalBreakdown,
+    signalBreakdown,
     status: deferred > 0 ? 'recovery' : fill > 0.82 ? 'full' : 'comfortable',
     recoveryStrategy: settings.recoveryStrategy,
   }

@@ -102,6 +102,16 @@ test('goals, saved views, and pack updates are manageable', async ({ page }) => 
   await expect(page.getByRole('status')).toContainText('scheduling was preserved')
 })
 
+test('settings exposes the uniform extension boundary', async ({ page }) => {
+  await startWith(page)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await expect(page.getByText('Installed extensions', { exact: true })).toBeVisible()
+  await expect(page.getByText(/same public SDK and permission checks/i)).toBeVisible()
+  await expect(page.locator('.extension-row')).toHaveCount(8)
+  await page.getByText('Image Occlusion', { exact: true }).click()
+  await expect(page.getByText('ui:create-panels', { exact: true })).toBeVisible()
+})
+
 test('production shell is accessible and reloads offline', async ({ page, context }) => {
   await startWith(page)
   const results = await new AxeBuilder({ page }).disableRules(['color-contrast']).analyze()

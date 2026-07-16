@@ -4,6 +4,7 @@ import { formatDuration } from '../lib/date'
 import { buildStudySession } from '../lib/planner'
 import { useApp } from '../state/AppContext'
 import type { SessionIntent } from '../types'
+import { extensionRuntime } from '../extensions/runtime'
 
 const budgetOptions = [10, 20, 30, 45, 60]
 
@@ -31,6 +32,7 @@ export const TodayPage = () => {
   const request = useMemo(() => ({ minutes: effectiveSessionMinutes, intent, focusCollection: intent === 'focus' ? effectiveFocusCollection : undefined }), [effectiveFocusCollection, effectiveSessionMinutes, intent])
   const session = useMemo(() => buildStudySession(plan, data.items, request), [data.items, plan, request])
   const remainingAfterSession = Math.max(0, plan.remainingSeconds - session.plannedSeconds)
+  const recoveryPolicies = [{ id: 'risk', label: 'Most at-risk first' }, ...extensionRuntime.queuePolicies().map(({ id, label }) => ({ id, label }))]
 
   return (
     <div className="page today-page quiet-today">
@@ -80,7 +82,7 @@ export const TodayPage = () => {
       </section>
 
       {plan.deferred > 0 && (
-        <div className="plain-warning"><AlertTriangle size={16} /><div><strong>{plan.deferred} reviews do not fit today’s target.</strong><span>New material is paused.</span></div><label htmlFor="recovery-strategy"><span className="visually-hidden">Recovery strategy</span><select id="recovery-strategy" value={data.settings.recoveryStrategy} onChange={(event) => setRecoveryStrategy(event.target.value as 'risk' | 'oldest' | 'momentum')}><option value="risk">Most at-risk first</option><option value="oldest">Oldest overdue first</option><option value="momentum">Quick wins first</option></select></label></div>
+        <div className="plain-warning"><AlertTriangle size={16} /><div><strong>{plan.deferred} reviews do not fit today’s target.</strong><span>New material is paused.</span></div><label htmlFor="recovery-strategy"><span className="visually-hidden">Recovery strategy</span><select id="recovery-strategy" value={data.settings.recoveryStrategy} onChange={(event) => setRecoveryStrategy(event.target.value)}>{recoveryPolicies.map((policy) => <option value={policy.id} key={policy.id}>{policy.label}</option>)}</select></label></div>
       )}
 
       <details className="planning-details">

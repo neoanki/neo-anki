@@ -2,7 +2,7 @@
 
 A TypeScript-first, local-first desktop spaced-repetition app that plans learning around a daily time budget instead of a fixed new-card quota.
 
-## Phase 1–2 feature set
+## MVP feature set
 
 - FSRS scheduling with a forecast-aware daily target, any-size practice sessions, and risk, oldest-first, or momentum backlog rescue.
 - Adaptive session composition: a balanced mix, one-area focus, or urgent reviews, sequenced as coherent context blocks instead of random category switching.
@@ -13,8 +13,9 @@ A TypeScript-first, local-first desktop spaced-repetition app that plans learnin
 - Current and legacy Anki `.apkg`/`.colpkg` import (SQLite, zstd, protobuf media maps), plus CSV and Neo Anki JSON; JSON/CSV export and complete backups.
 - Patch-based shared packs with three-way merging, explicit conflict resolution, and preserved review history.
 - Electron desktop application with integrated macOS window chrome, native menus and shortcuts, a plain study queue and card browser, atomic filesystem persistence, a rolling recovery copy, native backup export, and light/dark themes.
+- A TypeScript extension SDK with uniform permissions and APIs for every publisher. Prompt types, image occlusion, Anki/CSV interoperability, recovery policies, goals and views, shared packs, Insights, and tab sync are registered extensions rather than kernel features.
 
-The core/extension boundary and postponed features are documented in [docs/core-and-extensions.md](docs/core-and-extensions.md).
+The implemented boundary is documented in [docs/core-and-extensions.md](docs/core-and-extensions.md); extension authors can start with [docs/extension-sdk.md](docs/extension-sdk.md).
 
 ## Run the desktop app
 

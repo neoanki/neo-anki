@@ -1,24 +1,26 @@
-import { BarChart3, BookOpen, Clock3, Flag, Library, Plus, Settings } from 'lucide-react'
+import { BookOpen, Clock3, Flag, Library, Plus, Puzzle, Settings } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useApp } from '../state/AppContext'
 import type { Route } from '../types'
 import { formatDuration } from '../lib/date'
 import { Brand } from './Brand'
 import { SettingsPanel } from './SettingsPanel'
+import { extensionRuntime } from '../extensions/runtime'
 
-const links: { route: Route; label: string; icon: typeof Clock3 }[] = [
+const coreLinks: { route: Route; label: string; icon: typeof Clock3 }[] = [
   { route: 'today', label: 'Today', icon: Clock3 },
   { route: 'library', label: 'Library', icon: Library },
   { route: 'plans', label: 'Plans', icon: Flag },
-  { route: 'insights', label: 'Insights', icon: BarChart3 },
 ]
+const extensionLinks = extensionRuntime.pages().map((page) => ({ route: page.route, label: page.label, icon: Puzzle }))
+const links = [...coreLinks, ...extensionLinks]
 
 const routeTitles: Partial<Record<Route, string>> = {
   today: 'Today',
   library: 'Library',
   create: 'New knowledge',
   plans: 'Plans & sharing',
-  insights: 'Insights',
+  ...Object.fromEntries(extensionLinks.map((link) => [link.route, link.label])),
 }
 
 export const AppShell = ({ children }: { children: ReactNode }) => {
@@ -28,7 +30,7 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => window.neoAnkiDesktop?.onNavigate((destination) => {
     if (destination === 'settings') setSettingsOpen(true)
-    else if (['today', 'library', 'create', 'plans', 'insights'].includes(destination)) navigate(destination as Route)
+    else if (destination === 'create' || links.some((link) => link.route === destination)) navigate(destination)
   }), [navigate])
 
   useEffect(() => {
@@ -39,7 +41,8 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
         return
       }
       if (!(event.metaKey || event.ctrlKey)) return
-      const shortcuts: Record<string, Route> = { '1': 'today', '2': 'library', '3': 'plans', '4': 'insights', n: 'create' }
+      const shortcuts: Record<string, Route> = { '1': 'today', '2': 'library', '3': 'plans', n: 'create' }
+      if (extensionLinks[0]) shortcuts['4'] = extensionLinks[0].route
       const destination = shortcuts[event.key.toLowerCase()]
       if (destination) {
         event.preventDefault()
@@ -66,11 +69,11 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
           <Brand />
           <nav aria-label="Primary navigation">
             <span className="sidebar-section-label">Workspace</span>
-            {links.map(({ route: target, label, icon: Icon }) => (
+            {links.map(({ route: target, label, icon: Icon }, index) => (
               <button key={target} className={route === target ? 'nav-item active' : 'nav-item'} onClick={() => navigate(target)} aria-current={route === target ? 'page' : undefined}>
                 <Icon size={19} />
                 <span>{label}</span>
-                <kbd>{target === 'today' ? '⌘1' : target === 'library' ? '⌘2' : target === 'plans' ? '⌘3' : '⌘4'}</kbd>
+                {index < 4 && <kbd>⌘{index + 1}</kbd>}
               </button>
             ))}
           </nav>

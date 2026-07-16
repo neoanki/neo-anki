@@ -27,22 +27,6 @@ export const mergeAppData = (local: AppData, remote: AppData): AppData => {
   }
 }
 
-export interface SyncTransport {
-  publish(data: AppData): void | Promise<void>
-  subscribe(listener: (data: AppData) => void): () => void
-  close?(): void
-}
-
-export const createTabSyncTransport = (channelName = 'neo-anki-sync'): SyncTransport | null => {
-  if (typeof BroadcastChannel === 'undefined') return null
-  const channel = new BroadcastChannel(channelName)
-  return {
-    publish: (data) => channel.postMessage(data),
-    subscribe: (listener) => {
-      const handler = (event: MessageEvent<AppData>) => listener(event.data)
-      channel.addEventListener('message', handler)
-      return () => channel.removeEventListener('message', handler)
-    },
-    close: () => channel.close(),
-  }
-}
+// Compatibility export for callers that used the pre-extension module path.
+export { createTabSyncTransport } from '../extensions/tab-sync/transport'
+export type { SyncTransport } from '../extensions/sdk'

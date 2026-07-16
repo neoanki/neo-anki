@@ -1,0 +1,100 @@
+import { describe, expect, it } from 'vitest'
+import { createSeedData } from '../data/seed'
+import type { CreateKnowledgeInput } from '../types'
+import { ExtensionRegistry } from './registry'
+import type { ExtensionManifest, ExtensionPermission, NeoAnkiExtension } from './sdk'
+
+const manifest = (id: string, permissions: ExtensionPermission[] = [], publisher = 'Independent developer'): ExtensionManifest => ({
+  id,
+  name: id,
+  version: '1.0.0',
+  sdkVersion: 1,
+  publisher,
+  permissions,
+})
+
+const createInput = (variants: string[]): CreateKnowledgeInput => ({
+  prompt: 'Question',
+  answer: 'Answer',
+  context: 'Context',
+  collection: 'Tests',
+  tags: [],
+  citations: [],
+  assets: [],
+  occlusions: [],
+  variants,
+})
+
+describe('public extension registry', () => {
+  it('applies the same permission checks to every publisher', () => {
+    const registry = new ExtensionRegistry()
+    const contribution: NeoAnkiExtension = {
+      manifest: manifest('independent.prompts'),
+      promptTypes: [{ id: 'independent', label: 'Independent', createCards: () => [], render: () => ({ prompt: '', answer: '', context: '', typed: false, citations: [] }) }],
+    }
+    expect(() => registry.register(contribution)).toThrow('without prompts:contribute')
+    contribution.manifest.permissions = ['prompts:contribute']
+    expect(() => registry.register(contribution)).not.toThrow()
+    expect(registry.list()[0].publisher).toBe('Independent developer')
+  })
+
+  it('rejects colliding public contribution IDs across extensions', () => {
+    const policy = { id: 'fastest', label: 'Fastest', score: () => 1 }
+    const registry = new ExtensionRegistry([{ manifest: manifest('one', ['planning:policies']), queuePolicies: [policy] }])
+    expect(() => registry.register({ manifest: manifest('two', ['planning:policies']), queuePolicies: [policy] })).toThrow('Duplicate extension contribution policy:fastest')
+  })
+
+  it('keeps cards reviewable when a prompt extension is absent or fails', () => {
+    const data = createSeedData()
+    const item = data.items[0]
+    const card = { ...data.cards[0], itemId: item.id, variant: 'broken' }
+    const missing = new ExtensionRegistry().render(item, card)
+    expect(missing.prompt).toBe(item.prompt)
+
+    const registry = new ExtensionRegistry([{
+      manifest: manifest('independent.broken', ['prompts:contribute']),
+      promptTypes: [{ id: 'broken', label: 'Broken', createCards: () => [{ promptType: 'broken', estimatedSeconds: 10 }], render: () => { throw new Error('renderer crashed') } }],
+    }])
+    expect(registry.render(item, card).answer).toBe(item.answer)
+    expect(registry.getDiagnostics()).toContainEqual(expect.objectContaining({ extensionId: 'independent.broken', contribution: 'broken.render', message: 'renderer crashed' }))
+  })
+
+  it('clamps planning signals and isolates invalid queue policy results', () => {
+    const data = createSeedData()
+    const registry = new ExtensionRegistry([{
+      manifest: manifest('independent.planner', ['planning:signals', 'planning:policies']),
+      planningSignals: [{ id: 'priority', signalsFor: () => [{ id: 'high', label: 'High', score: 99 }, { id: 'low', label: 'Low', score: -3 }] }],
+      queuePolicies: [{ id: 'invalid', label: 'Invalid', score: () => Number.NaN }],
+    }])
+    expect(registry.planningSignals(data.items[0], data, new Date()).map((signal) => signal.score)).toEqual([4, 0])
+    expect(registry.scoreQueuePolicy('invalid', { card: data.cards[0], overdueDays: 3, extensionBoost: 0 })).toBeNull()
+  })
+
+  it('requires explicit transactions and protects review history and settings', async () => {
+    const data = createSeedData()
+    const registry = new ExtensionRegistry([{
+      manifest: manifest('independent.commands', ['content:transactions']),
+      commands: [
+        { id: 'mutate-without-transaction', run: (context) => { context.data.items[0].answer = 'Attempted mutation' } },
+        { id: 'bounded-transaction', run: (context) => context.replaceData({ ...context.data, items: context.data.items.map((item, index) => index ? item : { ...item, answer: 'Allowed content change' }), reviews: [{ id: 'forged', cardId: '', rating: 3, reviewedAt: '', durationSeconds: 1, previousDue: '', nextDue: '' }], settings: { ...context.data.settings, dailyMinutes: 999 } }) },
+      ],
+    }])
+
+    const ignored = await registry.runCommand('mutate-without-transaction', data, undefined)
+    expect(ignored.items[0].answer).toBe(data.items[0].answer)
+
+    const committed = await registry.runCommand('bounded-transaction', data, undefined)
+    expect(committed.items[0].answer).toBe('Allowed content change')
+    expect(committed.reviews).toBe(data.reviews)
+    expect(committed.settings).toBe(data.settings)
+    expect(committed.deviceId).toBe(data.deviceId)
+  })
+
+  it('creates cards from an independently published prompt through the public API', () => {
+    const registry = new ExtensionRegistry([{
+      manifest: manifest('independent.cards', ['prompts:contribute'], 'Someone Else'),
+      promptTypes: [{ id: 'diagram', label: 'Diagram', createCards: () => [{ promptType: 'diagram', estimatedSeconds: 9 }], render: (item) => ({ prompt: item.prompt, answer: item.answer, context: item.context, typed: false, citations: item.citations }) }],
+    }])
+    expect(registry.createCards(createInput(['diagram']))).toEqual([{ promptType: 'diagram', estimatedSeconds: 9 }])
+  })
+})

@@ -1,10 +1,10 @@
 import type { Card as FSRSCard } from 'ts-fsrs'
 
-export type Route = 'today' | 'library' | 'create' | 'plans' | 'insights' | 'review'
+export type Route = string
 export type Theme = 'light' | 'dark'
-export type PromptVariant = 'forward' | 'reverse' | 'cloze' | 'typed' | 'image-occlusion' | 'audio'
+export type PromptVariant = string
 export type ReviewRating = 1 | 2 | 3
-export type RecoveryStrategy = 'risk' | 'oldest' | 'momentum'
+export type RecoveryStrategy = string
 export type SessionIntent = 'balanced' | 'focus' | 'urgent'
 export type CardStateFilter = 'new' | 'due' | 'review' | 'suspended'
 export type ViewSort = 'updated' | 'created' | 'due' | 'difficulty'
@@ -222,7 +222,7 @@ export interface PlannedCard {
   card: PracticeCard
   reason: 'due' | 'new'
   estimatedSeconds: number
-  goalIds: string[]
+  signalIds: string[]
 }
 
 export interface ForecastDay {
@@ -232,8 +232,8 @@ export interface ForecastDay {
   plannedMinutes: number
 }
 
-export interface GoalBreakdown {
-  goalId: string
+export interface SignalBreakdown {
+  signalId: string
   name: string
   count: number
 }
@@ -252,7 +252,7 @@ export interface DailyPlan {
   averageReviewSeconds: number
   queue: PlannedCard[]
   forecast: ForecastDay[]
-  goalBreakdown: GoalBreakdown[]
+  signalBreakdown: SignalBreakdown[]
   status: 'comfortable' | 'full' | 'recovery'
   recoveryStrategy: RecoveryStrategy
 }
@@ -286,7 +286,7 @@ export interface StudySession {
 }
 
 export interface ImportSummary {
-  source: 'anki' | 'csv' | 'backup' | 'pack'
+  source: string
   items: KnowledgeItem[]
   cards: PracticeCard[]
   assets: MediaAsset[]

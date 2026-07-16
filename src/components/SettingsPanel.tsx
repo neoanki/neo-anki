@@ -1,22 +1,23 @@
-import { Database, Download, Moon, RotateCcw, Sun, Upload, X } from 'lucide-react'
+import { AlertTriangle, Database, Download, Moon, Puzzle, RotateCcw, Sun, Upload, X } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useApp } from '../state/AppContext'
 import { downloadBackup, getStorageStatus, parseBackup } from '../lib/storage'
-import { importFile as importAnyFile } from '../lib/importers'
-import { exportCsv } from '../lib/importers/csv'
+import { extensionRuntime } from '../extensions/runtime'
 
 export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
   const { data, persistenceError, setRetention, toggleTheme, replaceData, resetData, mergeImport } = useApp()
   const fileRef = useRef<HTMLInputElement>(null)
   const [message, setMessage] = useState('')
   const storage = getStorageStatus()
+  const extensions = extensionRuntime.list()
+  const extensionDiagnostics = extensionRuntime.getDiagnostics()
 
   const importFile = async (file?: File) => {
     if (!file) return
     try {
       if (file.name.toLowerCase().endsWith('.json')) replaceData(await parseBackup(file))
       else {
-        const result = await importAnyFile(file)
+        const result = await extensionRuntime.importFile(file)
         mergeImport(result)
         setMessage(`Imported ${result.items.length} items. ${result.warnings.join(' ')}`)
         return
@@ -27,9 +28,11 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
     }
   }
 
-  const downloadCsv = () => {
-    const url = URL.createObjectURL(new Blob([exportCsv(data.items, data.cards)], { type: 'text/csv;charset=utf-8' }))
-    const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'neo-anki.csv'; anchor.click(); URL.revokeObjectURL(url)
+  const exportWith = async (id: string) => {
+    const exporter = extensionRuntime.exporters().find((candidate) => candidate.id === id)
+    if (!exporter) return
+    const url = URL.createObjectURL(new Blob([await exporter.export(data)], { type: exporter.mimeType }))
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = exporter.filename; anchor.click(); URL.revokeObjectURL(url)
   }
 
   const exportBackup = async () => {
@@ -80,11 +83,25 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
           {(storage.loadError || persistenceError) && <p className="storage-error" role="alert">{storage.loadError || persistenceError}</p>}
           <div className="button-row">
             <button className="secondary-button" onClick={exportBackup}><Download size={18} /> Export</button>
-            <button className="secondary-button" onClick={downloadCsv}><Download size={18} /> CSV</button>
+            {extensionRuntime.exporters().map((exporter) => <button className="secondary-button" key={exporter.id} onClick={() => exportWith(exporter.id)}><Download size={18} /> {exporter.label}</button>)}
             <button className="secondary-button" onClick={() => fileRef.current?.click()}><Upload size={18} /> Import</button>
             <input ref={fileRef} className="visually-hidden" type="file" accept=".json,.csv,.apkg,.colpkg" onChange={(event) => importFile(event.target.files?.[0])} />
           </div>
           {message && <p className="inline-message" role="status">{message}</p>}
+        </div>
+
+        <div className="setting-block">
+          <div className="extensions-heading"><span><Puzzle size={18} /><strong>Installed extensions</strong></span><small>{extensions.length} active</small></div>
+          <p>Every extension uses the same public SDK and permission checks, regardless of publisher.</p>
+          <div className="extension-list">
+            {extensions.map((extension) => (
+              <details className="extension-row" key={extension.id}>
+                <summary><span><strong>{extension.name}</strong><small>{extension.publisher}</small></span><code>v{extension.version}</code></summary>
+                <div className="extension-permissions" aria-label={`${extension.name} permissions`}>{extension.permissions.map((permission) => <code key={permission}>{permission}</code>)}</div>
+              </details>
+            ))}
+          </div>
+          {extensionDiagnostics.length > 0 && <p className="extension-warning" role="status"><AlertTriangle size={15} /> {extensionDiagnostics.length} extension {extensionDiagnostics.length === 1 ? 'error was' : 'errors were'} isolated. Your study data remains available.</p>}
         </div>
 
         <div className="danger-zone">

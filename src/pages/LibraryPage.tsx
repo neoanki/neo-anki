@@ -5,6 +5,7 @@ import { formatDue } from '../lib/date'
 import { analyzeCardHealth } from '../lib/content'
 import { useApp } from '../state/AppContext'
 import type { KnowledgeItem } from '../types'
+import { extensionRuntime } from '../extensions/runtime'
 
 const EditDialog = ({ item, onClose }: { item: KnowledgeItem; onClose: () => void }) => {
   const { updateItem } = useApp()
@@ -36,6 +37,7 @@ export const LibraryPage = () => {
   const [editing, setEditing] = useState<KnowledgeItem | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const collections = ['All collections', ...new Set(data.items.map((item) => item.collection))]
+  const libraryPresets = extensionRuntime.libraryPresets(data)
   const filtered = useMemo(() => data.items.filter((item) => {
     const haystack = `${item.prompt} ${item.answer} ${item.collection} ${item.tags.join(' ')}`.toLowerCase()
     return haystack.includes(query.toLowerCase()) && (collection === 'All collections' || item.collection === collection)
@@ -56,7 +58,7 @@ export const LibraryPage = () => {
       <div className="library-toolbar">
         <label className="search-field"><Search size={19} /><span className="visually-hidden">Search knowledge</span><input ref={searchRef} type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search questions, answers, tags…  /" /></label>
         <label className="filter-field"><Filter size={18} /><span className="visually-hidden">Filter by collection</span><select value={collection} onChange={(event) => setCollection(event.target.value)}>{collections.map((name) => <option key={name}>{name}</option>)}</select></label>
-        {data.views.length > 0 && <label className="filter-field"><span className="visually-hidden">Apply saved view</span><select defaultValue="" onChange={(event) => { const view = data.views.find((candidate) => candidate.id === event.target.value); if (view) { setQuery(view.filter.query); setCollection(view.filter.collections[0] || 'All collections') } }}><option value="">Saved views</option>{data.views.map((view) => <option value={view.id} key={view.id}>{view.name}</option>)}</select></label>}
+        {libraryPresets.length > 0 && <label className="filter-field"><span className="visually-hidden">Apply saved view</span><select defaultValue="" onChange={(event) => { const preset = libraryPresets.find((candidate) => candidate.id === event.target.value); if (preset) { setQuery(preset.query); setCollection(preset.collection || 'All collections') } }}><option value="">Saved views</option>{libraryPresets.map((preset) => <option value={preset.id} key={preset.id}>{preset.label}</option>)}</select></label>}
       </div>
 
       <section className="library-list" aria-label="Knowledge items">

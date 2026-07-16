@@ -1,6 +1,6 @@
 import type { KnowledgeItem, MediaAsset, PracticeCard } from '../types'
-
-const CLOZE_PATTERN = /{{c\d+::(.*?)(?:::.*?)?}}/g
+import type { PortableRenderedCard } from '../extensions/sdk'
+import { extensionRuntime } from '../extensions/runtime'
 
 export interface CardHealthFinding {
   code: string
@@ -9,68 +9,9 @@ export interface CardHealthFinding {
   suggestion: string
 }
 
-export interface RenderedCard {
-  prompt: string
-  answer: string
-  context: string
-  typed: boolean
-  mediaId?: string
-  occlusionId?: string
-  citations: KnowledgeItem['citations']
-}
+export type RenderedCard = PortableRenderedCard
 
-export const renderCard = (item: KnowledgeItem, card: PracticeCard): RenderedCard => {
-  if (card.variant === 'reverse') {
-    return { prompt: item.answer, answer: item.prompt, context: item.context, typed: false, citations: item.citations }
-  }
-
-  if (card.variant === 'cloze') {
-    const answers: string[] = []
-    const prompt = item.prompt.replace(CLOZE_PATTERN, (_, answer: string) => {
-      answers.push(answer)
-      return '[ … ]'
-    })
-    return {
-      prompt,
-      answer: answers.join(' · ') || item.answer,
-      context: item.context,
-      typed: false,
-      citations: item.citations,
-    }
-  }
-
-  if (card.variant === 'image-occlusion') {
-    return {
-      prompt: item.prompt || 'Name the hidden part.',
-      answer: item.occlusions.find((rect) => rect.id === card.occlusionId)?.label || item.answer,
-      context: item.context,
-      typed: false,
-      mediaId: item.mediaIds[0],
-      occlusionId: card.occlusionId,
-      citations: item.citations,
-    }
-  }
-
-  if (card.variant === 'audio') {
-    return {
-      prompt: item.prompt || 'Listen and recall the answer.',
-      answer: item.answer,
-      context: item.context,
-      typed: false,
-      mediaId: item.mediaIds[0],
-      citations: item.citations,
-    }
-  }
-
-  return {
-    prompt: item.prompt,
-    answer: item.answer,
-    context: item.context,
-    typed: card.variant === 'typed',
-    mediaId: item.mediaIds[0],
-    citations: item.citations,
-  }
-}
+export const renderCard = (item: KnowledgeItem, card: PracticeCard): RenderedCard => extensionRuntime.render(item, card)
 
 export const analyzeCardHealth = (prompt: string, answer: string, citations: KnowledgeItem['citations'] = []): CardHealthFinding[] => {
   const findings: CardHealthFinding[] = []
@@ -102,29 +43,6 @@ export const normalizeAnswer = (value: string) => value
   .trim()
   .replace(/\s+/g, ' ')
 
-const levenshtein = (left: string, right: string) => {
-  const rows = left.length + 1
-  const cols = right.length + 1
-  const matrix = Array.from({ length: rows }, () => Array<number>(cols).fill(0))
-  for (let row = 0; row < rows; row += 1) matrix[row][0] = row
-  for (let col = 0; col < cols; col += 1) matrix[0][col] = col
-  for (let row = 1; row < rows; row += 1) {
-    for (let col = 1; col < cols; col += 1) {
-      const cost = left[row - 1] === right[col - 1] ? 0 : 1
-      matrix[row][col] = Math.min(matrix[row - 1][col] + 1, matrix[row][col - 1] + 1, matrix[row - 1][col - 1] + cost)
-    }
-  }
-  return matrix[left.length][right.length]
-}
-
-export const compareTypedAnswer = (attempt: string, expected: string) => {
-  const normalizedAttempt = normalizeAnswer(attempt)
-  const normalizedExpected = normalizeAnswer(expected)
-  if (!normalizedExpected) return { result: 'incorrect' as const, similarity: 0 }
-  if (normalizedAttempt === normalizedExpected) return { result: 'exact' as const, similarity: 1 }
-  const distance = levenshtein(normalizedAttempt, normalizedExpected)
-  const similarity = Math.max(0, 1 - distance / Math.max(normalizedAttempt.length, normalizedExpected.length, 1))
-  return { result: similarity >= 0.82 ? 'close' as const : 'incorrect' as const, similarity }
-}
+export const compareTypedAnswer = (attempt: string, expected: string) => extensionRuntime.compareAnswer('typed', attempt, expected) || { result: 'incorrect' as const, similarity: 0 }
 
 export const getAssetForCard = (item: KnowledgeItem, assets: MediaAsset[]) => assets.find((asset) => item.mediaIds.includes(asset.id))

@@ -1,9 +1,10 @@
 import { ArrowLeft, ArrowRight, Check, Clock3, Edit3, Layers3, RotateCcw } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { compareTypedAnswer, getAssetForCard, renderCard } from '../lib/content'
+import { getAssetForCard } from '../lib/content'
 import { formatDue, formatDuration } from '../lib/date'
 import { previewReview } from '../lib/fsrs'
-import { rectStyle } from '../lib/occlusion'
+import { rectStyle } from '../extensions/image-occlusion'
+import { extensionRuntime } from '../extensions/runtime'
 import { useApp } from '../state/AppContext'
 import type { ReviewRating } from '../types'
 
@@ -103,9 +104,9 @@ export const ReviewPage = () => {
     )
   }
 
-  const content = renderCard(item, card)
+  const content = extensionRuntime.render(item, card)
   const asset = getAssetForCard(item, data.assets)
-  const typedResult = revealed && content.typed ? compareTypedAnswer(typedAnswer, content.answer) : null
+  const typedResult = revealed && content.typed ? extensionRuntime.compareAnswer(card.variant, typedAnswer, content.answer) : null
   const progress = ((index + (revealed ? 0.5 : 0)) / activeSession.queue.length) * 100
 
   return (
