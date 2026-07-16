@@ -19,7 +19,7 @@ describe('application workflows', () => {
     expect(screen.getByRole('heading', { name: /how much time can learning reliably have/i })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /30 minutes/i }))
     await userEvent.click(screen.getByRole('button', { name: /build my first plan/i }))
-    expect(screen.getByRole('heading', { name: /today’s study plan/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Today' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /30 min available/i })).toBeInTheDocument()
   })
 

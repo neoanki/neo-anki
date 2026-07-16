@@ -23,10 +23,10 @@ test('onboarding establishes a daily time contract', async ({ page }) => {
 
 test('daily time changes the automatically planned workload', async ({ page }) => {
   await startWith(page)
-  await page.getByRole('button', { name: '10', exact: true }).click()
-  const ten = await page.locator('.allocation-row').filter({ hasText: 'Grow carefully' }).textContent()
-  await page.getByRole('button', { name: '60', exact: true }).click()
-  const sixty = await page.locator('.allocation-row').filter({ hasText: 'Grow carefully' }).textContent()
+  await page.getByLabel('Daily target').selectOption('10')
+  const ten = await page.locator('.study-launcher-copy').textContent()
+  await page.getByLabel('Daily target').selectOption('60')
+  const sixty = await page.locator('.study-launcher-copy').textContent()
   const count = (text: string | null) => Number(text?.match(/(\d+) new prompts/)?.[1] || 0)
   expect(count(sixty)).toBeGreaterThan(count(ten))
 })
@@ -57,7 +57,7 @@ test('typed review compares the answer before grading', async ({ page }) => {
   data.cards = [{ ...data.cards[0], itemId: data.items[0].id, variant: 'typed' }]
   data.reviews = []
   await startWith(page, data)
-  await page.getByRole('button', { name: /start .* session/i }).click()
+  await page.locator('button.study-button').click()
   await page.getByLabel('Type your answer').fill(data.items[0].answer)
   await page.getByRole('button', { name: /check answer/i }).click()
   await expect(page.getByText('Exact match')).toBeVisible()
@@ -74,7 +74,7 @@ test('switches unrelated categories at an explicit block boundary', async ({ pag
   const firstBlockText = await page.locator('.block-preview-row').first().textContent()
   const firstBlockCount = Number(firstBlockText?.match(/(\d+) prompts/)?.[1] || 0)
   expect(firstBlockCount).toBeGreaterThan(0)
-  await page.getByRole('button', { name: /start .* session/i }).click()
+  await page.locator('button.study-button').click()
   for (let index = 0; index < firstBlockCount; index += 1) {
     await page.getByRole('button', { name: /reveal answer/i }).click()
     await page.locator('button.grade-button.recalled').click()
@@ -114,5 +114,5 @@ test('production shell is accessible and reloads offline', async ({ page, contex
   })).toBe(true)
   await context.setOffline(true)
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: /today’s study plan/i })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible()
 })

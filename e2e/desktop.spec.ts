@@ -19,7 +19,7 @@ test('desktop app persists the workspace to disk across restarts', async () => {
     await expect(firstWindow.getByRole('heading', { name: /how much time can learning reliably have/i })).toBeVisible()
     await firstWindow.getByRole('button', { name: /45 minutes/i }).click()
     await firstWindow.getByRole('button', { name: /build my first plan/i }).click()
-    await expect(firstWindow.getByRole('heading', { name: /today’s study plan/i })).toBeVisible()
+    await expect(firstWindow.getByRole('heading', { name: 'Today' })).toBeVisible()
     await firstRun.close()
 
     const stored = JSON.parse(await readFile(join(userData, 'neo-anki-data.json'), 'utf8')) as { settings: { dailyMinutes: number; onboardingComplete: boolean } }
@@ -28,7 +28,7 @@ test('desktop app persists the workspace to disk across restarts', async () => {
 
     const secondRun = await launch()
     const secondWindow = await secondRun.firstWindow()
-    await expect(secondWindow.getByRole('heading', { name: /today’s study plan/i })).toBeVisible()
+    await expect(secondWindow.getByRole('heading', { name: 'Today' })).toBeVisible()
     await expect(secondWindow.getByRole('heading', { name: /45 min available/i })).toBeVisible()
     await secondRun.close()
   } finally {

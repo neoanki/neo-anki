@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, CalendarDays, Clock3, Gauge, Layers3, Sparkles, Target, Zap } from 'lucide-react'
+import { AlertTriangle, Play } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { formatDuration } from '../lib/date'
 import { buildStudySession } from '../lib/planner'
@@ -18,7 +18,7 @@ export const TodayPage = () => {
   const availableWorkSeconds = plan.reviewSeconds + plan.newSeconds
   const [sessionMinutes, setSessionMinutes] = useState(() => recommendedSessionMinutes(data.settings.dailyMinutes, availableWorkSeconds))
   const [intent, setIntent] = useState<SessionIntent>('balanced')
-  const weekday = new Date().toLocaleDateString(undefined, { weekday: 'long' })
+  const weekday = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
   const collections = useMemo(() => [...new Set(plan.queue.map((entry) => data.items.find((item) => item.id === entry.card.itemId)?.collection || 'Unsorted'))], [data.items, plan.queue])
   const [focusCollection, setFocusCollection] = useState(() => collections[0] || '')
   const effectiveFocusCollection = collections.includes(focusCollection) ? focusCollection : collections[0] || ''
@@ -30,113 +30,70 @@ export const TodayPage = () => {
   }, [availableWorkSeconds])
   const request = useMemo(() => ({ minutes: effectiveSessionMinutes, intent, focusCollection: intent === 'focus' ? effectiveFocusCollection : undefined }), [effectiveFocusCollection, effectiveSessionMinutes, intent])
   const session = useMemo(() => buildStudySession(plan, data.items, request), [data.items, plan, request])
-  const projectedProgress = Math.min(100, Math.round(((plan.spentSeconds + session.plannedSeconds) / Math.max(1, plan.budgetSeconds)) * 100))
-  const maxForecast = Math.max(data.settings.dailyMinutes, ...plan.forecast.map((day) => day.plannedMinutes), 1)
   const remainingAfterSession = Math.max(0, plan.remainingSeconds - session.plannedSeconds)
 
   return (
-    <div className="page today-page">
+    <div className="page today-page quiet-today">
       <header className="page-header today-header">
         <div>
           <p className="eyebrow">{weekday}</p>
-          <h1>Today’s study plan</h1>
-          <p className="page-intro">Choose a session length. Neo Anki has already balanced reviews, new material, and your future workload.</p>
+          <h1>Today</h1>
+          <p className="page-intro">{formatDuration(plan.spentSeconds)} studied · {formatDuration(plan.remainingSeconds)} available</p>
         </div>
-        <div className={`plan-status ${plan.status}`}><span />{plan.remainingSeconds === 0 ? 'Daily target complete' : plan.status === 'recovery' ? 'Recovery mode' : plan.status === 'full' ? 'Plan is full' : 'Comfortable plan'}</div>
+        <label className="daily-target-select" htmlFor="daily-target">
+          <span>Daily target</span>
+          <select id="daily-target" value={data.settings.dailyMinutes} onChange={(event) => setDailyMinutes(Number(event.target.value))}>
+            {budgetOptions.map((minutes) => <option value={minutes} key={minutes}>{minutes} min</option>)}
+          </select>
+        </label>
       </header>
 
-      <section className="budget-card" aria-labelledby="budget-title">
-        <div className="budget-copy">
-          <div className="section-icon"><Clock3 size={20} /></div>
-          <div>
-            <p className="eyebrow">Daily time target</p>
-            <h2 id="budget-title">{formatDuration(plan.spentSeconds)} practiced · {formatDuration(plan.remainingSeconds)} available</h2>
-            <p>Neo Anki adapts new material to stay inside your {data.settings.dailyMinutes}-minute promise.</p>
-          </div>
+      <section className="study-launcher" aria-labelledby="study-launcher-title">
+        <div className="study-launcher-copy">
+          <h2 id="study-launcher-title">{formatDuration(plan.remainingSeconds)} available</h2>
+          <p>{plan.duePlanned} reviews and {plan.newPlanned} new prompts are ready. Neo Anki will keep unrelated subjects in separate blocks.</p>
         </div>
-        <div className="segmented-control" aria-label="Daily time target">
-          {budgetOptions.map((minutes) => (
-            <button key={minutes} className={data.settings.dailyMinutes === minutes ? 'selected' : ''} onClick={() => setDailyMinutes(minutes)} aria-pressed={data.settings.dailyMinutes === minutes}>{minutes}</button>
-          ))}
+        <div className="study-controls">
+          <label htmlFor="session-length"><span>Study for</span><select id="session-length" value={effectiveSessionMinutes} onChange={(event) => setSessionMinutes(Number(event.target.value))}>{sessionOptions.map((minutes) => <option value={minutes} key={minutes}>{minutes === Math.ceil(availableWorkSeconds / 60) ? `Finish (${minutes} min)` : `${minutes} min`}</option>)}</select></label>
+          <label htmlFor="session-mode"><span>Mode</span><select id="session-mode" value={intent} onChange={(event) => setIntent(event.target.value as SessionIntent)}><option value="balanced">Mixed by subject</option><option value="focus">One subject</option><option value="urgent">Reviews only</option></select></label>
+          {intent === 'focus' && <label htmlFor="focus-collection"><span>Subject</span><select id="focus-collection" value={effectiveFocusCollection} onChange={(event) => setFocusCollection(event.target.value)}>{collections.map((collection) => <option key={collection}>{collection}</option>)}</select></label>}
+          <button className="primary-button study-button" disabled={!session.queue.length} onClick={() => startSession(request)}><Play size={15} fill="currentColor" />{session.queue.length ? `Study ${formatDuration(session.plannedSeconds)}` : plan.remainingSeconds === 0 ? 'Done for today' : 'Nothing to study'}</button>
         </div>
       </section>
 
-      <div className="today-grid">
-        <section className="plan-card primary-surface" aria-labelledby="session-title">
-          <div className="card-heading">
-            <div>
-              <p className="eyebrow">Practice now</p>
-              <h2 id="session-title">Choose the shape of this session</h2>
-            </div>
-            <span className="large-count">{session.queue.length}</span>
+      <section className="session-list-pane" aria-labelledby="session-order-title">
+        <header>
+          <div><h2 id="session-order-title">Session order</h2><p>{session.queue.length} prompts in {session.blocks.length} {session.blocks.length === 1 ? 'subject block' : 'subject blocks'}</p></div>
+          <span>{formatDuration(remainingAfterSession)} left for later</span>
+        </header>
+        {session.blocks.length > 0 ? (
+          <div className="session-table" role="table" aria-label="Planned study blocks">
+            <div className="session-table-header" role="row"><span role="columnheader">Subject</span><span role="columnheader">Reviews</span><span role="columnheader">New</span><span role="columnheader">Time</span></div>
+            {session.blocks.map((block, index) => {
+              const reviews = block.cards.filter((entry) => entry.reason === 'due').length
+              const newCards = block.cards.length - reviews
+              return <div className="block-preview-row" role="row" key={block.id}><span className="session-order-number">{index + 1}</span><strong role="cell">{block.contextKey}</strong><span role="cell">{reviews || '—'}</span><span role="cell">{newCards || '—'}</span><span role="cell">{formatDuration(block.estimatedSeconds)}</span><small>{block.cards.length} prompts</small></div>
+            })}
           </div>
-
-          <fieldset className="session-fieldset">
-            <legend>How much time do you have?</legend>
-            <div className="session-time-control">
-              {sessionOptions.map((minutes) => <button type="button" key={minutes} className={effectiveSessionMinutes === minutes ? 'selected' : ''} aria-pressed={effectiveSessionMinutes === minutes} onClick={() => setSessionMinutes(minutes)}>{minutes === Math.ceil(availableWorkSeconds / 60) ? `Finish · ${minutes} min` : `${minutes} min`}</button>)}
-            </div>
-          </fieldset>
-
-          <fieldset className="session-fieldset">
-            <legend>What should Neo Anki optimize for?</legend>
-            <div className="intent-grid">
-              <button type="button" className={intent === 'balanced' ? 'selected' : ''} aria-pressed={intent === 'balanced'} onClick={() => setIntent('balanced')}><Layers3 size={18} /><span><strong>Today’s mix</strong><small>Coherent topic blocks</small></span></button>
-              <button type="button" className={intent === 'focus' ? 'selected' : ''} aria-pressed={intent === 'focus'} onClick={() => setIntent('focus')}><Target size={18} /><span><strong>Focus</strong><small>Stay in one context</small></span></button>
-              <button type="button" className={intent === 'urgent' ? 'selected' : ''} aria-pressed={intent === 'urgent'} onClick={() => setIntent('urgent')}><Zap size={18} /><span><strong>Urgent only</strong><small>No new material</small></span></button>
-            </div>
-            {intent === 'focus' && <div className="focus-select"><label htmlFor="focus-collection">Focus area</label><select id="focus-collection" value={effectiveFocusCollection} onChange={(event) => setFocusCollection(event.target.value)}>{collections.map((collection) => <option key={collection}>{collection}</option>)}</select></div>}
-          </fieldset>
-
-          <div className="progress-track session-budget-progress" role="progressbar" aria-label="Daily time after this session" aria-valuemin={0} aria-valuemax={100} aria-valuenow={projectedProgress}><span style={{ width: `${projectedProgress}%` }} /></div>
-
-          <div className="session-summary" aria-live="polite">
-            <div><strong>{formatDuration(session.plannedSeconds)}</strong><span>planned now</span></div>
-            <div><strong>{session.blocks.length}</strong><span>{session.blocks.length === 1 ? 'context block' : 'context blocks'}</span></div>
-            <div><strong>{formatDuration(remainingAfterSession)}</strong><span>left for later</span></div>
-          </div>
-
-          {session.blocks.length > 0 && <div className="block-preview" aria-label="Session order">{session.blocks.map((block, index) => <div className="block-preview-row" key={block.id}><span>{index + 1}</span><div><strong>{block.contextKey}</strong><small>{block.cards.length} prompts · {formatDuration(block.estimatedSeconds)}</small></div></div>)}</div>}
-
-          {plan.deferred > 0 && (
-            <div className="recovery-note"><Gauge size={20} /><div><strong>{plan.deferred} reviews won’t fit today.</strong><p>New material is paused while Neo Anki protects the most useful part of your queue.</p><label htmlFor="recovery-strategy">Recovery strategy</label><select id="recovery-strategy" value={data.settings.recoveryStrategy} onChange={(event) => setRecoveryStrategy(event.target.value as 'risk' | 'oldest' | 'momentum')}><option value="risk">Protect most at-risk</option><option value="oldest">Oldest overdue first</option><option value="momentum">Quick wins first</option></select></div></div>
-          )}
-
-          <button className="primary-button full-width" disabled={!session.queue.length} onClick={() => startSession(request)}>
-            {session.queue.length ? `Start ${formatDuration(session.plannedSeconds)} session` : plan.remainingSeconds === 0 ? 'Daily target complete' : 'No matching prompts'} <ArrowRight size={19} />
-          </button>
-          <p className="keyboard-hint">You can stop between blocks. Unfinished prompts simply remain available later.</p>
-        </section>
-
-        <section className="forecast-card" aria-labelledby="forecast-title">
-          <div className="card-heading compact-heading">
-            <div><p className="eyebrow">Load forecast</p><h2 id="forecast-title">The next seven days</h2></div>
-            <CalendarDays size={21} />
-          </div>
-          <p className="chart-summary">With {plan.newPlanned} new prompts available today, the forecast remains inside your {data.settings.dailyMinutes}-minute target.</p>
-          <div className="forecast-chart" role="img" aria-label={`Seven-day workload forecast, daily target ${data.settings.dailyMinutes} minutes`}>
-            <div className="budget-line" style={{ bottom: `${(data.settings.dailyMinutes / maxForecast) * 100}%` }}><span>target</span></div>
-            {plan.forecast.map((day) => (
-              <div className="forecast-column" key={day.date}>
-                <div className="forecast-value">{day.plannedMinutes || '—'}</div>
-                <div className="forecast-bar-wrap"><span className="forecast-bar" style={{ height: `${Math.max(4, (day.plannedMinutes / maxForecast) * 100)}%` }} /></div>
-                <span>{day.label}</span>
-              </div>
-            ))}
-          </div>
-          <div className="allocation-list forecast-allocation">
-            <div className="allocation-row"><span className="allocation-dot review" /><div><strong>Protect what you know</strong><span>{plan.duePlanned} due reviews</span></div><b>{formatDuration(plan.reviewSeconds)}</b></div>
-            <div className="allocation-row"><span className="allocation-dot new" /><div><strong>Grow carefully</strong><span>{plan.newPlanned} new prompts</span></div><b>{formatDuration(plan.newSeconds)}</b></div>
-            <div className="allocation-row muted-row"><span className="allocation-dot buffer" /><div><strong>Breathing room</strong><span>For difficult prompts and pauses</span></div><b>{formatDuration(plan.bufferSeconds)}</b></div>
-          </div>
-        </section>
-      </div>
-
-      <section className="principle-strip" aria-label="Planning principles">
-        <div><BookOpen size={20} /><span><strong>Daily target, flexible sessions</strong>Practice in one sitting or several.</span></div>
-        <div><Layers3 size={20} /><span><strong>Contexts stay coherent</strong>Related ideas mix; unrelated topics switch in blocks.</span></div>
-        <div><Sparkles size={20} /><span><strong>New material is elastic</strong>It fills safe future capacity automatically.</span></div>
+        ) : <div className="empty-session">No prompts match these session settings.</div>}
+        <p className="plain-note">You can stop between subject blocks. Anything unfinished stays in the queue.</p>
       </section>
+
+      {plan.deferred > 0 && (
+        <div className="plain-warning"><AlertTriangle size={16} /><div><strong>{plan.deferred} reviews do not fit today’s target.</strong><span>New material is paused.</span></div><label htmlFor="recovery-strategy"><span className="visually-hidden">Recovery strategy</span><select id="recovery-strategy" value={data.settings.recoveryStrategy} onChange={(event) => setRecoveryStrategy(event.target.value as 'risk' | 'oldest' | 'momentum')}><option value="risk">Most at-risk first</option><option value="oldest">Oldest overdue first</option><option value="momentum">Quick wins first</option></select></label></div>
+      )}
+
+      <details className="planning-details">
+        <summary>Planning details</summary>
+        <div className="planning-details-body">
+          <div className="allocation-list">
+            <div className="allocation-row"><div><strong>Reviews</strong><span>{plan.duePlanned} due prompts</span></div><b>{formatDuration(plan.reviewSeconds)}</b></div>
+            <div className="allocation-row"><div><strong>New material</strong><span>{plan.newPlanned} prompts</span></div><b>{formatDuration(plan.newSeconds)}</b></div>
+            <div className="allocation-row"><div><strong>Buffer</strong><span>Difficulty and pauses</span></div><b>{formatDuration(plan.bufferSeconds)}</b></div>
+          </div>
+          <div className="plain-forecast"><strong>Seven-day estimate</strong>{plan.forecast.map((day) => <span key={day.date}><i>{day.label}</i><b>{day.plannedMinutes} min</b></span>)}</div>
+        </div>
+      </details>
     </div>
   )
 }

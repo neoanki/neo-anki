@@ -12,7 +12,7 @@ A TypeScript-first, local-first desktop spaced-repetition app that plans learnin
 - Learning goals feed urgency into the daily planner rather than becoming a separate task list.
 - Current and legacy Anki `.apkg`/`.colpkg` import (SQLite, zstd, protobuf media maps), plus CSV and Neo Anki JSON; JSON/CSV export and complete backups.
 - Patch-based shared packs with three-way merging, explicit conflict resolution, and preserved review history.
-- Electron desktop application with integrated macOS window chrome, native menus and shortcuts, a dense desktop workspace, atomic filesystem persistence, a rolling recovery copy, native backup export, and light/dark themes.
+- Electron desktop application with integrated macOS window chrome, native menus and shortcuts, a plain study queue and card browser, atomic filesystem persistence, a rolling recovery copy, native backup export, and light/dark themes.
 
 The core/extension boundary and postponed features are documented in [docs/core-and-extensions.md](docs/core-and-extensions.md).
 
