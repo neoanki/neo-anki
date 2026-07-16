@@ -19,13 +19,13 @@ describe('application workflows', () => {
     expect(screen.getByRole('heading', { name: /how much time can learning reliably have/i })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /30 minutes/i }))
     await userEvent.click(screen.getByRole('button', { name: /build my first plan/i }))
-    expect(screen.getByRole('heading', { name: /make memory fit your life/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /today’s study plan/i })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /30 min available/i })).toBeInTheDocument()
   })
 
   it('creates typed knowledge and exposes it in the library', async () => {
     renderApp()
-    await userEvent.click(screen.getAllByRole('button', { name: 'Create' })[0])
+    await userEvent.click(screen.getByRole('button', { name: /new item/i }))
     await userEvent.click(screen.getByRole('button', { name: 'Typed answer' }))
     await userEvent.type(screen.getByLabelText('Prompt or cloze sentence'), 'What is the testing pyramid?')
     await userEvent.type(screen.getByLabelText('Answer'), 'Unit, integration, and end-to-end tests')

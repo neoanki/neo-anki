@@ -31,6 +31,7 @@ describe('storage and migrations', () => {
       saveData: async (value) => { saved.push(value) },
       exportBackup: async () => ({ canceled: false, path: '/tmp/backup.json' }),
       resetData: async () => undefined,
+      onNavigate: () => () => undefined,
     }
 
     try {

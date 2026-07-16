@@ -33,7 +33,7 @@ test('daily time changes the automatically planned workload', async ({ page }) =
 
 test('creates typed and image-occlusion prompts from the visual builder', async ({ page }) => {
   await startWith(page)
-  await page.getByRole('button', { name: 'Create' }).first().click()
+  await page.getByRole('button', { name: /new item/i }).click()
   await page.getByRole('button', { name: 'Typed answer' }).click()
   await page.getByLabel('Prompt or cloze sentence').fill('What shape is highlighted?')
   await page.getByLabel('Answer').fill('A square')
@@ -114,5 +114,5 @@ test('production shell is accessible and reloads offline', async ({ page, contex
   })).toBe(true)
   await context.setOffline(true)
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: /make memory fit your life/i })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /today’s study plan/i })).toBeVisible()
 })

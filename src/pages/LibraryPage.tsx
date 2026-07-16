@@ -49,7 +49,7 @@ export const LibraryPage = () => {
   return (
     <div className="page library-page">
       <header className="page-header library-header">
-        <div><p className="eyebrow">Knowledge library</p><h1>{data.items.length} ideas, {data.cards.length} ways to practice.</h1><p className="page-intro">Edit knowledge once and every related prompt stays in sync.</p></div>
+        <div><p className="eyebrow">Knowledge</p><h1>Library</h1><p className="page-intro">{data.items.length} items · {data.cards.length} prompts. Edit knowledge once and every related prompt stays in sync.</p></div>
         <button className="primary-button" onClick={() => navigate('create')}><Plus size={19} /> Add knowledge</button>
       </header>
 

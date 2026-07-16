@@ -35,7 +35,7 @@ export const PlansPage = () => {
 
   return (
     <div className="page plans-page">
-      <header className="page-header"><div><p className="eyebrow">Plans & sharing</p><h1>Shape what matters without micromanaging cards.</h1><p className="page-intro">Goals influence today’s adaptive queue. Saved views organize knowledge. Shared packs update content without resetting your memory history.</p></div></header>
+      <header className="page-header"><div><p className="eyebrow">Workspace</p><h1>Plans & sharing</h1><p className="page-intro">Goals influence the adaptive queue. Saved views organize knowledge. Shared packs update content without resetting review history.</p></div></header>
       <div className="type-tabs plan-tabs" role="tablist" aria-label="Plans sections">
         <button role="tab" aria-selected={tab === 'goals'} className={tab === 'goals' ? 'active' : ''} onClick={() => setTab('goals')}><Flag size={17}/> Goals</button>
         <button role="tab" aria-selected={tab === 'views'} className={tab === 'views' ? 'active' : ''} onClick={() => setTab('views')}><Save size={17}/> Saved views</button>

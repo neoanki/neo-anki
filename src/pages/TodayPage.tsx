@@ -38,9 +38,9 @@ export const TodayPage = () => {
     <div className="page today-page">
       <header className="page-header today-header">
         <div>
-          <p className="eyebrow">{weekday}’s plan</p>
-          <h1>Make memory fit your life.</h1>
-          <p className="page-intro">Your daily target keeps the long-term workload honest. Practice it in one sitting or take a few focused minutes whenever they appear.</p>
+          <p className="eyebrow">{weekday}</p>
+          <h1>Today’s study plan</h1>
+          <p className="page-intro">Choose a session length. Neo Anki has already balanced reviews, new material, and your future workload.</p>
         </div>
         <div className={`plan-status ${plan.status}`}><span />{plan.remainingSeconds === 0 ? 'Daily target complete' : plan.status === 'recovery' ? 'Recovery mode' : plan.status === 'full' ? 'Plan is full' : 'Comfortable plan'}</div>
       </header>

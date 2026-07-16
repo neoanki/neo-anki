@@ -31,7 +31,7 @@ export const Onboarding = () => {
           ))}
         </fieldset>
         <button className="primary-button full-width" onClick={() => completeOnboarding(minutes)}>Build my first plan <ArrowRight size={19} /></button>
-        <p className="onboarding-note">You can change this any day. Your data stays in this browser.</p>
+        <p className="onboarding-note">You can change this any day. Your workspace stays on this computer.</p>
       </main>
     </div>
   )

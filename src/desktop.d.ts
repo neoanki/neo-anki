@@ -11,9 +11,9 @@ interface NeoAnkiDesktopBridge {
   saveData(data: unknown): Promise<void>
   exportBackup(data: unknown): Promise<{ canceled: boolean; path?: string }>
   resetData(): Promise<void>
+  onNavigate(callback: (destination: string) => void): () => void
 }
 
 interface Window {
   neoAnkiDesktop?: NeoAnkiDesktopBridge
 }
-

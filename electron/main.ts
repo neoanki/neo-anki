@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, session, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { copyFile, mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { copyFileSync, existsSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
@@ -20,6 +20,53 @@ app.setName('Neo Anki')
 let mainWindow: BrowserWindow | null = null
 let saveQueue: Promise<void> = Promise.resolve()
 let quitAfterFlush = false
+
+type DesktopDestination = 'today' | 'library' | 'create' | 'plans' | 'insights' | 'settings'
+
+const sendDestination = (destination: DesktopDestination) => mainWindow?.webContents.send('neo-anki:navigate', destination)
+
+const installApplicationMenu = () => {
+  const isMac = process.platform === 'darwin'
+  const template: Electron.MenuItemConstructorOptions[] = [
+    ...(isMac ? [{
+      label: app.name,
+      submenu: [
+        { role: 'about' as const },
+        { type: 'separator' as const },
+        { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => sendDestination('settings') },
+        { type: 'separator' as const },
+        { role: 'services' as const },
+        { type: 'separator' as const },
+        { role: 'hide' as const },
+        { role: 'hideOthers' as const },
+        { role: 'unhide' as const },
+        { type: 'separator' as const },
+        { role: 'quit' as const },
+      ],
+    }] : []),
+    {
+      label: 'File',
+      submenu: [
+        { label: 'New Knowledge Item', accelerator: 'CmdOrCtrl+N', click: () => sendDestination('create') },
+        { type: 'separator' },
+        ...(isMac ? [{ role: 'close' as const }] : [{ role: 'quit' as const }]),
+      ],
+    },
+    { label: 'Edit', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
+    {
+      label: 'Navigate',
+      submenu: [
+        { label: 'Today', accelerator: 'CmdOrCtrl+1', click: () => sendDestination('today') },
+        { label: 'Library', accelerator: 'CmdOrCtrl+2', click: () => sendDestination('library') },
+        { label: 'Plans', accelerator: 'CmdOrCtrl+3', click: () => sendDestination('plans') },
+        { label: 'Insights', accelerator: 'CmdOrCtrl+4', click: () => sendDestination('insights') },
+      ],
+    },
+    { label: 'View', submenu: [{ role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
+    { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }, ...(isMac ? [{ type: 'separator' as const }, { role: 'front' as const }] : [{ role: 'close' as const }])] },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
 
 const storagePaths = () => {
   const root = app.getPath('userData')
@@ -145,6 +192,8 @@ const createWindow = async () => {
     minHeight: 640,
     show: false,
     backgroundColor: '#f4f1ea',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    trafficLightPosition: process.platform === 'darwin' ? { x: 15, y: 14 } : undefined,
     webPreferences: {
       preload: join(app.getAppPath(), 'dist-electron', 'preload.cjs'),
       contextIsolation: true,
@@ -170,6 +219,7 @@ const createWindow = async () => {
 app.whenReady().then(async () => {
   registerDesktopIpc()
   registerAppProtocol()
+  installApplicationMenu()
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   await createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow() })

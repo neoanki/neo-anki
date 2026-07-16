@@ -21,7 +21,7 @@ export const InsightsPage = () => {
 
   return (
     <div className="page insights-page">
-      <header className="page-header"><div><p className="eyebrow">Memory insights</p><h1>Useful signals, not productivity theater.</h1><p className="page-intro">These measurements help you tune content and workload. They are not scores.</p></div></header>
+      <header className="page-header"><div><p className="eyebrow">Memory</p><h1>Insights</h1><p className="page-intro">Signals for tuning content and workload—not scores to maximize.</p></div></header>
 
       <section className="metrics-grid" aria-label="Memory metrics">
         <div className="metric-card"><div className="metric-icon purple"><Brain size={21} /></div><span>Observed recall</span><strong>{insights.recall}%</strong><p>Target: {Math.round(data.settings.retention * 100)}%</p></div>

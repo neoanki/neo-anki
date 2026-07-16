@@ -7,7 +7,7 @@ test('mobile navigation and content fit a phone viewport', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('navigation', { name: 'Primary navigation' }).last()).toBeVisible()
   await page.getByRole('button', { name: 'Library' }).last().click()
-  await expect(page.getByRole('heading', { name: /ideas, .* ways to practice/i })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Library' })).toBeVisible()
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)
   expect(overflow).toBe(false)
 })

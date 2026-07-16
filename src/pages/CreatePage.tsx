@@ -53,7 +53,7 @@ export const CreatePage = () => {
   }
 
   return <div className="page create-page">
-    <header className="page-header"><div><p className="eyebrow">Visual prompt builder</p><h1>Write the idea once. Practice it many ways.</h1><p className="page-intro">Knowledge, citations, media, and practice prompts remain separate—so each can evolve without duplication.</p></div></header>
+    <header className="page-header"><div><p className="eyebrow">Library</p><h1>New knowledge</h1><p className="page-intro">Write one knowledge item, then choose the prompts Neo Anki should derive from it.</p></div></header>
     <div className="create-layout">
       <form className="editor-card" onSubmit={submit}>
         <fieldset className="prompt-type-fieldset"><legend>Practice prompts</legend><div className="type-tabs wrap-tabs">{promptTypes.map((type) => <button type="button" aria-pressed={variants.includes(type.value)} className={variants.includes(type.value) ? 'active' : ''} onClick={() => toggleVariant(type.value)} key={type.value}>{type.label}</button>)}</div></fieldset>
