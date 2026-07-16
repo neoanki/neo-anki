@@ -1,5 +1,7 @@
 node_modules
 dist
+dist-electron
+release
 coverage
 playwright-report
 test-results
@@ -8,3 +10,4 @@ vite.config.js
 vite.config.d.ts
 .DS_Store
 *.local
+.neo-anki-test-data

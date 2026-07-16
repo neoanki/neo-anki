@@ -16,7 +16,7 @@ The core is intentionally small, but not minimal at the cost of data safety. A c
 - Visual authoring for those durable prompt primitives.
 - Search, saved views, learning goals, and backlog rescue.
 - Anki, CSV, Neo backup, pack, and patch import/export formats.
-- Offline app shell, local persistence, deterministic merge, and sync-provider interface.
+- Sandboxed desktop shell, atomic local-file persistence, rolling recovery, deterministic merge, and sync-provider interface.
 - Pack installation, three-way updates, conflict resolution, and preservation of personal scheduling history.
 - Keyboard, touch, screen-reader, and reduced-motion behavior.
 

@@ -1,6 +1,6 @@
 # Neo Anki
 
-A TypeScript-first, local-first spaced-repetition app that plans learning around a daily time budget instead of a fixed new-card quota.
+A TypeScript-first, local-first desktop spaced-repetition app that plans learning around a daily time budget instead of a fixed new-card quota.
 
 ## Phase 1–2 feature set
 
@@ -12,16 +12,28 @@ A TypeScript-first, local-first spaced-repetition app that plans learning around
 - Learning goals feed urgency into the daily planner rather than becoming a separate task list.
 - Current and legacy Anki `.apkg`/`.colpkg` import (SQLite, zstd, protobuf media maps), plus CSV and Neo Anki JSON; JSON/CSV export and complete backups.
 - Patch-based shared packs with three-way merging, explicit conflict resolution, and preserved review history.
-- Local persistence, deterministic cross-tab merge, installable PWA shell, offline reload, keyboard navigation, responsive layouts, and light/dark themes.
+- Electron desktop application with atomic filesystem persistence, a rolling recovery copy, native backup export, keyboard navigation, responsive layouts, and light/dark themes.
 
 The core/extension boundary and postponed features are documented in [docs/core-and-extensions.md](docs/core-and-extensions.md).
 
-## Run
+## Run the desktop app
 
 ```bash
 npm install
-npm run dev
+npm run desktop:dev
 ```
+
+The renderer is sandboxed and has no Node.js access. A narrow preload bridge handles persistence in the operating system's application-data directory. On macOS the primary file is normally `~/Library/Application Support/Neo Anki/neo-anki-data.json`; its previous good version is kept beside it as `neo-anki-data.recovery.json`.
+
+Build an installable macOS DMG and ZIP with:
+
+```bash
+npm run desktop:build
+```
+
+Artifacts are written to `release/`. Local builds are intentionally unsigned until release signing and notarization are configured.
+
+The Vite browser surface remains available through `npm run dev` for component development and automated browser testing. It is not the primary application or durable storage target.
 
 ## Quality gates
 
@@ -29,7 +41,7 @@ npm run dev
 npm run test:all
 ```
 
-This runs ESLint with accessibility rules, TypeScript, unit/integration/component tests with enforced coverage, a production build, and Playwright desktop/mobile/accessibility/offline tests. Install the browser once with `npx playwright install chromium` if needed.
+This runs ESLint with accessibility rules, TypeScript for renderer and Electron processes, unit/integration/component tests with enforced coverage, the production renderer build, browser accessibility/offline tests, and an Electron restart-persistence test. Install Chromium once with `npx playwright install chromium` if needed.
 
 Current domain coverage thresholds are 80% statements, functions, and lines, and 70% branches. The suite also constructs and imports a real SQLite-backed Anki package.
 

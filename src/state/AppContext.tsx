@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { AppData, CreateKnowledgeInput, KnowledgeItem, LearningGoal, MediaAsset, PackManifest, PackPatch, RecoveryStrategy, ReviewRating, Route, SavedView, SessionRequest, StudySession } from '../types'
 import { makeEmptyFSRSCard, scheduleReview, serializeFSRSCard } from '../lib/fsrs'
 import { buildDailyPlan, buildStudySession } from '../lib/planner'
-import { loadData, saveData } from '../lib/storage'
+import { clearStoredData, loadData, saveData } from '../lib/storage'
 import { createTabSyncTransport, mergeAppData } from '../lib/sync'
 import { applyPackPatch, installPack, resolvePackConflict } from '../lib/packs'
 
@@ -12,6 +12,7 @@ interface AppContextValue {
   route: Route
   plan: ReturnType<typeof buildDailyPlan>
   activeSession: StudySession | null
+  persistenceError: string
   navigate: (route: Route) => void
   startSession: (request: SessionRequest) => void
   endSession: () => void
@@ -43,13 +44,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [data, setData] = useState<AppData>(() => loadData())
   const [route, setRoute] = useState<Route>('today')
   const [activeSession, setActiveSession] = useState<StudySession | null>(null)
+  const [persistenceError, setPersistenceError] = useState('')
   const transportRef = useRef<ReturnType<typeof createTabSyncTransport>>(null)
   const receivingRef = useRef(false)
 
   useEffect(() => {
-    saveData(data)
+    let current = true
+    void saveData(data).then(() => { if (current) setPersistenceError('') }).catch((error) => {
+      if (current) setPersistenceError(error instanceof Error ? error.message : 'Neo Anki could not save your latest changes.')
+    })
     if (!receivingRef.current) transportRef.current?.publish(data)
     receivingRef.current = false
+    return () => { current = false }
   }, [data])
 
   useEffect(() => {
@@ -247,8 +253,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const replaceData = (nextData: AppData) => setData(nextData)
   const resetData = () => {
-    localStorage.clear()
-    window.location.reload()
+    void clearStoredData().then(() => window.location.reload())
   }
 
   const value = useMemo<AppContextValue>(() => ({
@@ -256,6 +261,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     route,
     plan,
     activeSession,
+    persistenceError,
     navigate,
     startSession,
     endSession,
@@ -279,7 +285,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     mergeImport,
     replaceData,
     resetData,
-  }), [data, route, plan, activeSession, startSession])
+  }), [data, route, plan, activeSession, persistenceError, startSession])
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
 }

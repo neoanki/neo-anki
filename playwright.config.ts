@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: /desktop\.spec\.ts/,
   fullyParallel: true,
   retries: 1,
   reporter: [['list'], ['html', { open: 'never' }]],

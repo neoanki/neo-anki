@@ -12,12 +12,33 @@ describe('storage and migrations', () => {
     expect(migrated.cards[0].createdAt).toBeTruthy()
     expect(migrated.settings.recoveryStrategy).toBe('risk')
   })
-  it('saves, loads, validates, and safely falls back from corruption', () => {
-    const data = createSeedData(); saveData(data)
+  it('saves, loads, validates, and safely falls back from corruption', async () => {
+    const data = createSeedData(); await saveData(data)
     expect(loadData().items).toHaveLength(data.items.length)
     expect(parseBackupText(JSON.stringify(data)).version).toBe(2)
     expect(() => parseBackupText('{}')).toThrow(/valid Neo Anki/)
     localStorage.setItem('neo-anki:data:v1', '{bad')
     expect(loadData().version).toBe(2)
+  })
+
+  it('uses the narrow desktop bridge instead of browser storage when available', async () => {
+    const data = createSeedData()
+    const saved: unknown[] = []
+    const original = window.neoAnkiDesktop
+    window.neoAnkiDesktop = {
+      isDesktop: true,
+      loadData: () => ({ data, storagePath: '/tmp/neo-anki-data.json', recoveredFromBackup: false }),
+      saveData: async (value) => { saved.push(value) },
+      exportBackup: async () => ({ canceled: false, path: '/tmp/backup.json' }),
+      resetData: async () => undefined,
+    }
+
+    try {
+      expect(loadData().deviceId).toBe(data.deviceId)
+      await saveData(data)
+      expect(saved).toEqual([data])
+    } finally {
+      window.neoAnkiDesktop = original
+    }
   })
 })

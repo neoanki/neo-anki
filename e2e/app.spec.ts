@@ -109,7 +109,7 @@ test('production shell is accessible and reloads offline', async ({ page, contex
   await page.evaluate(() => navigator.serviceWorker.ready)
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
   await expect.poll(() => page.evaluate(async () => {
-    const requests = await (await caches.open('neo-anki-v4')).keys()
+    const requests = await (await caches.open('neo-anki-v5')).keys()
     return requests.some((request) => request.url.endsWith('.js'))
   })).toBe(true)
   await context.setOffline(true)

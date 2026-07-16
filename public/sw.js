@@ -1,10 +1,10 @@
-const CACHE = 'neo-anki-v4'
+const CACHE = 'neo-anki-v5'
 self.addEventListener('install', (event) => event.waitUntil((async () => {
   const cache = await caches.open(CACHE)
   const response = await fetch('/')
   const html = await response.clone().text()
   await cache.put('/', response)
-  const assets = [...html.matchAll(/(?:src|href)="(\/[^"#]+)"/g)].map((match) => match[1])
+  const assets = [...html.matchAll(/(?:src|href)="([^"#]+)"/g)].map((match) => new URL(match[1], self.location.origin).pathname)
   await cache.addAll([...new Set(['/manifest.webmanifest', '/icon.svg', ...assets])])
   await self.skipWaiting()
 })()))

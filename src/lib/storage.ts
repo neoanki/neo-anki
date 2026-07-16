@@ -3,6 +3,15 @@ import { createSeedData } from '../data/seed'
 
 const STORAGE_KEY = 'neo-anki:data:v1'
 
+export interface StorageStatus {
+  mode: 'desktop' | 'browser'
+  path?: string
+  recoveredFromBackup: boolean
+  loadError?: string
+}
+
+let storageStatus: StorageStatus = { mode: window.neoAnkiDesktop ? 'desktop' : 'browser', recoveredFromBackup: false }
+
 type LegacyAppData = Partial<AppData> & {
   version?: number
   items?: Array<Partial<KnowledgeItem> & Pick<KnowledgeItem, 'id' | 'prompt' | 'answer' | 'collection' | 'createdAt' | 'updatedAt'>>
@@ -64,6 +73,22 @@ export const migrateData = (input: LegacyAppData): AppData => {
 }
 
 export const loadData = (): AppData => {
+  if (window.neoAnkiDesktop) {
+    const result = window.neoAnkiDesktop.loadData()
+    storageStatus = {
+      mode: 'desktop',
+      path: result.storagePath,
+      recoveredFromBackup: result.recoveredFromBackup,
+      loadError: result.error,
+    }
+    if (!result.data) return createSeedData()
+    try {
+      return migrateData(result.data as LegacyAppData)
+    } catch {
+      storageStatus.loadError = 'The desktop data file could not be migrated. A fresh workspace was opened without overwriting it.'
+      return createSeedData()
+    }
+  }
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return createSeedData()
@@ -73,9 +98,18 @@ export const loadData = (): AppData => {
   }
 }
 
-export const saveData = (data: AppData) => localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+export const getStorageStatus = () => storageStatus
 
-export const downloadBackup = (data: AppData) => {
+export const saveData = async (data: AppData) => {
+  if (window.neoAnkiDesktop) {
+    await window.neoAnkiDesktop.saveData(data)
+    return
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+}
+
+export const downloadBackup = async (data: AppData) => {
+  if (window.neoAnkiDesktop) return window.neoAnkiDesktop.exportBackup(data)
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
@@ -83,6 +117,12 @@ export const downloadBackup = (data: AppData) => {
   anchor.download = `neo-anki-${new Date().toISOString().slice(0, 10)}.json`
   anchor.click()
   URL.revokeObjectURL(url)
+  return { canceled: false }
+}
+
+export const clearStoredData = async () => {
+  if (window.neoAnkiDesktop) await window.neoAnkiDesktop.resetData()
+  else localStorage.removeItem(STORAGE_KEY)
 }
 
 export const parseBackupText = (text: string): AppData => {
