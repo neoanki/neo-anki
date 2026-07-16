@@ -6,11 +6,6 @@ import { extensionRuntime } from '../extensions/runtime'
 import { useApp } from '../state/AppContext'
 import type { Citation, MediaAsset, OcclusionRect, PromptVariant } from '../types'
 
-const promptTypes: Array<{ value: PromptVariant; label: string }> = [
-  { value: 'forward', label: 'Basic' },
-  ...extensionRuntime.promptTypes().map((prompt) => ({ value: prompt.id, label: prompt.label })),
-]
-
 export const CreatePage = () => {
   const { data, addItem } = useApp()
   const [variants, setVariants] = useState<PromptVariant[]>(['forward'])
@@ -26,6 +21,10 @@ export const CreatePage = () => {
   const findings = useMemo(() => analyzeCardHealth(prompt, answer), [prompt, answer])
   const duplicates = useMemo(() => findDuplicateItems(prompt, data.items), [prompt, data.items])
   const collections = [...new Set(data.items.map((item) => item.collection))]
+  const promptTypes: Array<{ value: PromptVariant; label: string }> = [
+    { value: 'forward', label: 'Basic' },
+    ...extensionRuntime.promptTypes().map((promptType) => ({ value: promptType.id, label: promptType.label })),
+  ]
 
   const toggleVariant = (variant: PromptVariant) => setVariants((current) => current.includes(variant) ? current.filter((value) => value !== variant) : [...current, variant])
   const selectPromptType = (id: string) => setVariants((current) => current.includes(id) ? current : [...current, id])

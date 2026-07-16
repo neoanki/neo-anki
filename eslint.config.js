@@ -6,7 +6,7 @@ import jsxA11y from 'eslint-plugin-jsx-a11y'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['dist', 'dist-electron', 'release', 'coverage', 'playwright-report', 'test-results', 'public/sw.js'] },
+  { ignores: ['**/dist/**', '**/build/**', 'dist-electron', 'release', 'coverage', 'playwright-report', 'test-results', 'public/sw.js', 'vite.config.js', 'vite.config.d.ts'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

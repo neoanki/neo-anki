@@ -1,23 +1,27 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
-import { copyFile, mkdir, rename, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { copyFileSync, existsSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { ExtensionManager } from './extension-manager.js'
 
 const APP_SCHEME = 'neoanki'
+const EXTENSION_SCHEME = 'neoanki-extension'
 const DATA_FILE = 'neo-anki-data.json'
 const RECOVERY_FILE = 'neo-anki-data.recovery.json'
 const TEMP_FILE = 'neo-anki-data.next.json'
 const devServerUrl = process.env.VITE_DEV_SERVER_URL
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
+  { scheme: EXTENSION_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
 ])
 
 if (process.env.NEO_ANKI_USER_DATA_DIR) app.setPath('userData', resolve(process.env.NEO_ANKI_USER_DATA_DIR))
 app.setName('Neo Anki')
 
 let mainWindow: BrowserWindow | null = null
+let extensionManager: ExtensionManager
 let saveQueue: Promise<void> = Promise.resolve()
 let quitAfterFlush = false
 
@@ -169,6 +173,45 @@ const registerDesktopIpc = () => {
     const paths = storagePaths()
     await Promise.all([rm(paths.data, { force: true }), rm(paths.recovery, { force: true }), rm(paths.temporary, { force: true })])
   })
+
+  ipcMain.handle('neo-anki:list-extensions', async (event) => {
+    assertTrustedSender(event)
+    return extensionManager.list()
+  })
+
+  ipcMain.handle('neo-anki:choose-extension', async (event) => {
+    assertTrustedSender(event)
+    const options: Electron.OpenDialogOptions = { title: 'Choose Neo Anki Extension', properties: ['openFile'], filters: [{ name: 'Neo Anki extension', extensions: ['neoanki-extension'] }] }
+    const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
+    if (result.canceled || !result.filePaths[0]) return { canceled: true }
+    return { canceled: false, candidate: await extensionManager.stage(new Uint8Array(await readFile(result.filePaths[0]))) }
+  })
+
+  ipcMain.handle('neo-anki:install-extension', async (event, token: string) => {
+    assertTrustedSender(event)
+    return extensionManager.install(token)
+  })
+
+  ipcMain.handle('neo-anki:discard-extension', (event, token: string) => {
+    assertTrustedSender(event)
+    extensionManager.discard(token)
+  })
+
+  ipcMain.handle('neo-anki:set-extension-enabled', async (event, id: string, enabled: boolean) => {
+    assertTrustedSender(event)
+    await extensionManager.setEnabled(id, enabled)
+  })
+
+  ipcMain.handle('neo-anki:uninstall-extension', async (event, id: string) => {
+    assertTrustedSender(event)
+    await extensionManager.uninstall(id)
+  })
+
+  ipcMain.handle('neo-anki:reload-for-extensions', async (event) => {
+    assertTrustedSender(event)
+    await saveQueue.catch(() => undefined)
+    mainWindow?.webContents.reload()
+  })
 }
 
 const registerAppProtocol = () => {
@@ -180,6 +223,12 @@ const registerAppProtocol = () => {
     const target = resolve(distRoot, `.${pathname}`)
     if (relative(distRoot, target).startsWith('..') || !target.startsWith(`${distRoot}${sep}`)) return new Response('Not found', { status: 404 })
     return net.fetch(pathToFileURL(target).toString())
+  })
+  protocol.handle(EXTENSION_SCHEME, async (request) => {
+    const url = new URL(request.url)
+    const requestedPath = decodeURIComponent(url.pathname.replace(/^\//, ''))
+    const target = await extensionManager.resolveAsset(url.hostname, requestedPath)
+    return target ? net.fetch(pathToFileURL(target).toString()) : new Response('Extension asset not found', { status: 404 })
   })
 }
 
@@ -217,6 +266,12 @@ const createWindow = async () => {
 }
 
 app.whenReady().then(async () => {
+  extensionManager = new ExtensionManager(app.getPath('userData'))
+  const installPath = process.argv.find((value) => value.startsWith('--install-extension='))?.slice('--install-extension='.length)
+  if (installPath) {
+    try { await extensionManager.installFile(resolve(installPath)) }
+    catch (error) { dialog.showErrorBox('Could not install extension', error instanceof Error ? error.message : 'The extension package is invalid.') }
+  }
   registerDesktopIpc()
   registerAppProtocol()
   installApplicationMenu()

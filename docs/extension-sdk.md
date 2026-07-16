@@ -1,14 +1,15 @@
 # Neo Anki extension SDK v1
 
-The TypeScript contract is exported from `src/extensions/sdk.ts`; registration and failure isolation live in `src/extensions/registry.ts`.
+`@neo-anki/extension-sdk` is the only public contract for bundled and independently distributed extensions. Publisher identity never changes registration, permissions, host props, failure isolation, or transaction rules.
 
-## Manifest and registration
+For a complete extension project, see [extension-authoring.md](extension-authoring.md) and [`examples/study-pulse-extension`](../examples/study-pulse-extension).
+
+## Runtime contract
 
 ```ts
-import type { NeoAnkiExtension } from './extensions/sdk'
-import { ExtensionRegistry } from './extensions/registry'
+import { defineExtension } from '@neo-anki/extension-sdk'
 
-export const diagramPrompts: NeoAnkiExtension = {
+export default defineExtension({
   manifest: {
     id: 'com.example.diagram-prompts',
     name: 'Diagram Prompts',
@@ -29,13 +30,10 @@ export const diagramPrompts: NeoAnkiExtension = {
       citations: item.citations,
     }),
   }],
-}
-
-const runtime = new ExtensionRegistry()
-runtime.register(diagramPrompts)
+})
 ```
 
-Changing `publisher` to `Neo Anki contributors` does not alter registration or capabilities.
+The default export is the same `NeoAnkiExtension` object passed to `ExtensionRegistry.register` for bundled extensions.
 
 ## Contribution permissions
 
@@ -48,26 +46,35 @@ Changing `publisher` to `Neo Anki contributors` does not alter registration or c
 | `planning:policies` | Recovery queue scoring policies |
 | `sync:transport` | A synchronization transport |
 | `content:transactions` | Named commands that propose content transactions |
-| `ui:pages` | Navigable application pages |
-| `ui:workspace-panels` | Panels in the workspace extension host |
-| `ui:create-panels` | Authoring panels in Create |
+| `ui:pages` | Navigable React application pages |
+| `ui:workspace-panels` | React panels in the workspace extension host |
+| `ui:create-panels` | React authoring panels in Create |
 | `ui:library-presets` | Named query and collection presets in Library |
 
-Registering a non-empty contribution without its permission throws. IDs are global within a contribution kind, and collisions throw.
+Non-empty contributions without their declared permission are rejected. Contribution IDs are global within their kind and collisions are rejected.
 
-## Data and transaction rules
+## UI host
 
-Page and panel contributions receive `data`, `plan`, and `runCommand` as public props. Data is read-only by contract. Commands receive a cloned snapshot and must call `replaceData` to propose a change. The registry preserves review history, scheduler settings, device identity, and schema version even if a command includes replacements for them.
+The package exports stable `ExtensionPage`, `ExtensionHeader`, `ExtensionMetricGrid`, `ExtensionMetric`, `ExtensionSection`, and `ExtensionNotice` components. The build CLI links `react`, `react/jsx-runtime`, and `react/jsx-dev-runtime` to Neo Anki’s host React instance, so hooks and context use one React runtime.
 
-This boundary is deterministic failure containment for in-process TypeScript extensions; it is not an operating-system security sandbox. Loading untrusted downloaded code is outside SDK v1 and remains disabled.
+Contributed pages and panels receive `ExtensionPageProps`:
 
-## Degradation behavior
+- `data` — read-only current workspace data.
+- `plan` — read-only current time-budget plan.
+- `runCommand(id, payload)` — invoke a registered command.
+- `extensionId` — the host contribution identifier.
 
-- Missing or failing prompt renderer: render the item as a basic question and answer.
-- Failing answer comparator: fall back to manual grading.
-- Failing planning signal: omit that provider’s signals.
-- Invalid or failing queue policy: fall back to kernel ordering.
-- Failing sync transport creation: remain local-only.
-- Failing import or command: report the error and leave the existing data unchanged.
+## Transactions and degradation
 
-Diagnostics are available through `ExtensionRegistry.getDiagnostics()` and are summarized in Settings.
+Commands receive a cloned snapshot and have no effect unless they call `replaceData`. The host preserves review history, scheduler settings, device identity, and schema version even if a command proposes replacements for them.
+
+- Missing or failing prompt renderer → basic question/answer fallback.
+- Failing answer comparator → manual grading.
+- Failing planning signal → omit that provider’s signals.
+- Invalid queue policy → kernel ordering.
+- Failing sync transport → local-only operation.
+- Failing import, command, or module load → diagnostic plus unchanged existing data.
+
+## Compatibility
+
+SDK v1 follows semantic versioning. Additive types and optional fields may ship in `1.x`; breaking API or package-format changes require SDK v2. Neo Anki validates `schemaVersion`, `sdkVersion`, manifest identity, permissions, entry paths, archive size, and contribution collisions before activation.

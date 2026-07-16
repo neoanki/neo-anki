@@ -40,8 +40,15 @@ describe('public extension registry', () => {
 
   it('rejects colliding public contribution IDs across extensions', () => {
     const policy = { id: 'fastest', label: 'Fastest', score: () => 1 }
-    const registry = new ExtensionRegistry([{ manifest: manifest('one', ['planning:policies']), queuePolicies: [policy] }])
-    expect(() => registry.register({ manifest: manifest('two', ['planning:policies']), queuePolicies: [policy] })).toThrow('Duplicate extension contribution policy:fastest')
+    const registry = new ExtensionRegistry([{ manifest: manifest('com.example.one', ['planning:policies']), queuePolicies: [policy] }])
+    expect(() => registry.register({ manifest: manifest('com.example.two', ['planning:policies']), queuePolicies: [policy] })).toThrow('Duplicate extension contribution policy:fastest')
+  })
+
+  it('rejects malformed manifests and duplicate IDs inside one extension', () => {
+    const registry = new ExtensionRegistry()
+    expect(() => registry.register({ manifest: { ...manifest('invalid'), id: 'Invalid Id' } })).toThrow('manifest identity')
+    expect(() => registry.register({ manifest: { ...manifest('com.example.invalid'), permissions: ['ui:pages', 'ui:pages'] } })).toThrow('invalid extension permissions')
+    expect(() => registry.register({ manifest: manifest('com.example.duplicates', ['planning:policies']), queuePolicies: [{ id: 'same', label: 'One', score: () => 1 }, { id: 'same', label: 'Two', score: () => 2 }] })).toThrow('duplicate contribution IDs')
   })
 
   it('keeps cards reviewable when a prompt extension is absent or fails', () => {

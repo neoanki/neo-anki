@@ -1,5 +1,5 @@
-import { BookOpen, Clock3, Flag, Library, Plus, Puzzle, Settings } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { BookOpen, Clock3, Flag, Library, MoreHorizontal, Plus, Puzzle, Settings } from 'lucide-react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useApp } from '../state/AppContext'
 import type { Route } from '../types'
 import { formatDuration } from '../lib/date'
@@ -12,26 +12,20 @@ const coreLinks: { route: Route; label: string; icon: typeof Clock3 }[] = [
   { route: 'library', label: 'Library', icon: Library },
   { route: 'plans', label: 'Plans', icon: Flag },
 ]
-const extensionLinks = extensionRuntime.pages().map((page) => ({ route: page.route, label: page.label, icon: Puzzle }))
-const links = [...coreLinks, ...extensionLinks]
-
-const routeTitles: Partial<Record<Route, string>> = {
-  today: 'Today',
-  library: 'Library',
-  create: 'New knowledge',
-  plans: 'Plans & sharing',
-  ...Object.fromEntries(extensionLinks.map((link) => [link.route, link.label])),
-}
-
 export const AppShell = ({ children }: { children: ReactNode }) => {
   const { route, navigate, plan } = useApp()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const hiddenNav = route === 'review'
+  const extensionLinks = useMemo(() => extensionRuntime.pages().map((page) => ({ route: page.route, label: page.label, icon: Puzzle })), [])
+  const links = useMemo(() => [...coreLinks, ...extensionLinks], [extensionLinks])
+  const bottomLinks = links.length > 5 ? links.slice(0, 4) : links
+  const overflowLinks = links.length > 5 ? links.slice(4) : []
+  const routeTitle = ({ today: 'Today', library: 'Library', create: 'New knowledge', plans: 'Plans & sharing', ...Object.fromEntries(extensionLinks.map((link) => [link.route, link.label])) } as Partial<Record<Route, string>>)[route]
 
   useEffect(() => window.neoAnkiDesktop?.onNavigate((destination) => {
     if (destination === 'settings') setSettingsOpen(true)
     else if (destination === 'create' || links.some((link) => link.route === destination)) navigate(destination)
-  }), [navigate])
+  }), [links, navigate])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -55,7 +49,7 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [navigate, settingsOpen])
+  }, [extensionLinks, navigate, settingsOpen])
 
   useEffect(() => {
     if (!settingsOpen) document.getElementById('main-content')?.focus()
@@ -89,7 +83,7 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
 
       {!hiddenNav && (
         <header className="desktop-toolbar">
-          <strong>{routeTitles[route]}</strong>
+          <strong>{routeTitle}</strong>
           <div className="desktop-toolbar-actions">
             <button className="toolbar-button" onClick={() => navigate('create')} aria-current={route === 'create' ? 'page' : undefined}><Plus size={16} /> New item <kbd>⌘N</kbd></button>
             <button className="toolbar-icon-button" onClick={() => setSettingsOpen(true)} aria-label="Open settings"><Settings size={17} /></button>
@@ -101,11 +95,12 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
 
       {!hiddenNav && (
         <nav className="bottom-nav" aria-label="Primary navigation">
-          {links.map(({ route: target, label, icon: Icon }) => (
+          {bottomLinks.map(({ route: target, label, icon: Icon }) => (
             <button key={target} className={route === target ? 'bottom-nav-item active' : 'bottom-nav-item'} onClick={() => navigate(target)} aria-current={route === target ? 'page' : undefined}>
               <Icon size={21} /><span>{label}</span>
             </button>
           ))}
+          {overflowLinks.length > 0 && <details className="bottom-more"><summary className={overflowLinks.some((link) => link.route === route) ? 'bottom-nav-item active' : 'bottom-nav-item'}><MoreHorizontal size={21}/><span>More</span></summary><div className="bottom-overflow-menu">{overflowLinks.map(({ route: target, label, icon: Icon }) => <button key={target} onClick={() => navigate(target)} aria-current={route === target ? 'page' : undefined}><Icon size={18}/><span>{label}</span></button>)}</div></details>}
         </nav>
       )}
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}

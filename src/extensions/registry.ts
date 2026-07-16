@@ -14,6 +14,9 @@ const contributionPermissions: Array<[keyof NeoAnkiExtension, ExtensionPermissio
   ['creationPanels', 'ui:create-panels'],
   ['libraryPresets', 'ui:library-presets'],
 ]
+const knownPermissions = new Set(contributionPermissions.map(([, permission]) => permission))
+const extensionIdPattern = /^[a-z0-9]+(?:[.-][a-z0-9]+)+$/
+const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 
 const fallbackRender = (item: KnowledgeItem): PortableRenderedCard => ({
   prompt: item.prompt,
@@ -34,7 +37,9 @@ export class ExtensionRegistry {
 
   register(extension: NeoAnkiExtension) {
     const { manifest } = extension
+    if (!manifest || !extensionIdPattern.test(manifest.id) || !manifest.name?.trim() || !manifest.publisher?.trim() || !semverPattern.test(manifest.version)) throw new Error('Extension manifest identity is invalid.')
     if (manifest.sdkVersion !== 1) throw new Error(`${manifest.name} requires an unsupported extension SDK.`)
+    if (new Set(manifest.permissions).size !== manifest.permissions.length || manifest.permissions.some((permission) => !knownPermissions.has(permission))) throw new Error(`${manifest.name} declares invalid extension permissions.`)
     if (this.extensions.has(manifest.id)) throw new Error(`Extension ${manifest.id} is already registered.`)
     for (const [field, permission] of contributionPermissions) {
       const contributions = extension[field] as unknown[] | undefined
@@ -53,6 +58,7 @@ export class ExtensionRegistry {
       ...(extension.creationPanels || []).map((value) => `creation-panel:${value.id}`),
       ...(extension.libraryPresets || []).map((value) => `library-presets:${value.id}`),
     ]
+    if (contributionIds.some((id) => !id.split(':').slice(1).join(':').trim()) || new Set(contributionIds).size !== contributionIds.length) throw new Error(`${manifest.id} contains empty or duplicate contribution IDs.`)
     for (const existing of this.extensions.values()) {
       const existingIds = new Set([
         ...(existing.promptTypes || []).map((value) => `prompt:${value.id}`),
@@ -73,8 +79,9 @@ export class ExtensionRegistry {
     this.extensions.set(manifest.id, extension)
   }
 
-  list() { return [...this.extensions.values()].map(({ manifest }) => manifest) }
+  list() { return [...this.extensions.values()].map(({ manifest }) => ({ ...manifest, permissions: [...manifest.permissions] })) }
   getDiagnostics() { return [...this.diagnostics] }
+  reportDiagnostic(extensionId: string, contribution: string, error: unknown) { this.record(extensionId, contribution, error) }
 
   promptTypes(): PromptTypeContribution[] { return [...this.extensions.values()].flatMap((extension) => extension.promptTypes || []) }
   promptType(id: string) { return this.promptTypes().find((prompt) => prompt.id === id) }

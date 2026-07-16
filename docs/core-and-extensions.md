@@ -35,7 +35,7 @@ Their source lives under `src/extensions/`. Previous `src/lib/*` and `src/pages/
 
 Every extension supplies the same `NeoAnkiExtension` object and goes through `ExtensionRegistry.register`. Registration decisions use manifest version, declared permissions, and contribution IDs—not publisher identity. Bundled extensions do not import the private application context; contributed pages and panels receive public, read-only host props and write through the same command API.
 
-The MVP statically registers extensions at application startup. It intentionally does not execute arbitrary downloaded JavaScript. A future signed/local package loader must end by passing the same extension object to the same registry; it must not introduce a second privileged API for bundled code.
+Bundled extensions are registered at application startup. User-approved local `.neoanki-extension` packages are validated, installed atomically, served from a dedicated desktop protocol, loaded as browser modules, and passed to the same registry. “Bundled” and “local package” are distribution labels only.
 
 See [extension-sdk.md](extension-sdk.md) for the contract and an independently published example.
 
@@ -53,7 +53,7 @@ See [extension-sdk.md](extension-sdk.md) for the contract and an independently p
 
 ## Still postponed
 
-- Runtime package installation, signatures, trust UI, enable/disable, and dependency resolution.
+- Package signatures, verified publisher identity, marketplace discovery, automatic updates, and dependency resolution.
 - AI extraction, generation, rewriting, and grading.
 - OCR, PDF pipelines, web clipping, and external knowledge connectors.
 - Code execution, handwriting, drawing, maps, pronunciation scoring, and specialized practice widgets.

@@ -1,16 +1,15 @@
-import { AlertTriangle, Database, Download, Moon, Puzzle, RotateCcw, Sun, Upload, X } from 'lucide-react'
+import { Database, Download, Moon, RotateCcw, Sun, Upload, X } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useApp } from '../state/AppContext'
 import { downloadBackup, getStorageStatus, parseBackup } from '../lib/storage'
 import { extensionRuntime } from '../extensions/runtime'
+import { ExtensionManagerPanel } from './ExtensionManagerPanel'
 
 export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
   const { data, persistenceError, setRetention, toggleTheme, replaceData, resetData, mergeImport } = useApp()
   const fileRef = useRef<HTMLInputElement>(null)
   const [message, setMessage] = useState('')
   const storage = getStorageStatus()
-  const extensions = extensionRuntime.list()
-  const extensionDiagnostics = extensionRuntime.getDiagnostics()
 
   const importFile = async (file?: File) => {
     if (!file) return
@@ -90,19 +89,7 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
           {message && <p className="inline-message" role="status">{message}</p>}
         </div>
 
-        <div className="setting-block">
-          <div className="extensions-heading"><span><Puzzle size={18} /><strong>Installed extensions</strong></span><small>{extensions.length} active</small></div>
-          <p>Every extension uses the same public SDK and permission checks, regardless of publisher.</p>
-          <div className="extension-list">
-            {extensions.map((extension) => (
-              <details className="extension-row" key={extension.id}>
-                <summary><span><strong>{extension.name}</strong><small>{extension.publisher}</small></span><code>v{extension.version}</code></summary>
-                <div className="extension-permissions" aria-label={`${extension.name} permissions`}>{extension.permissions.map((permission) => <code key={permission}>{permission}</code>)}</div>
-              </details>
-            ))}
-          </div>
-          {extensionDiagnostics.length > 0 && <p className="extension-warning" role="status"><AlertTriangle size={15} /> {extensionDiagnostics.length} extension {extensionDiagnostics.length === 1 ? 'error was' : 'errors were'} isolated. Your study data remains available.</p>}
-        </div>
+        <ExtensionManagerPanel />
 
         <div className="danger-zone">
           <div>

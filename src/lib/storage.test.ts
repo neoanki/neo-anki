@@ -31,6 +31,13 @@ describe('storage and migrations', () => {
       saveData: async (value) => { saved.push(value) },
       exportBackup: async () => ({ canceled: false, path: '/tmp/backup.json' }),
       resetData: async () => undefined,
+      listExtensions: async () => [],
+      chooseExtensionPackage: async () => ({ canceled: true }),
+      installExtension: async () => { throw new Error('not used') },
+      discardExtension: async () => undefined,
+      setExtensionEnabled: async () => undefined,
+      uninstallExtension: async () => undefined,
+      reloadForExtensions: async () => undefined,
       onNavigate: () => () => undefined,
     }
 

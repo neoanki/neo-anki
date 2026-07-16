@@ -1,0 +1,12 @@
+{
+  "format": "neo-anki-extension",
+  "schemaVersion": 1,
+  "id": "org.neoanki.examples.study-pulse",
+  "name": "Study Pulse",
+  "version": "1.0.0",
+  "sdkVersion": 1,
+  "publisher": "Neo Anki SDK examples",
+  "description": "A third-party example that adds a workload page and a shortest-first recovery policy.",
+  "permissions": ["ui:pages", "planning:policies"],
+  "entry": "dist/index.js"
+}

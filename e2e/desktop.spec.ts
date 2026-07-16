@@ -52,6 +52,32 @@ test('desktop app persists the workspace to disk across restarts', async () => {
   }
 })
 
+test('installs, loads, and disables a third-party extension package', async () => {
+  const userData = await mkdtemp(join(tmpdir(), 'neo-anki-extension-'))
+  const extensionPackage = join(process.cwd(), 'examples/study-pulse-extension/build/org.neoanki.examples.study-pulse-1.0.0.neoanki-extension')
+  try {
+    const desktop = await electron.launch({ args: ['.', `--install-extension=${extensionPackage}`], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData } })
+    const window = await desktop.firstWindow()
+    await window.getByRole('button', { name: /30 minutes/i }).click()
+    await window.getByRole('button', { name: /build my first plan/i }).click()
+    await expect(window.getByRole('button', { name: /study pulse/i }).first()).toBeVisible()
+    await window.getByRole('button', { name: /study pulse/i }).first().click()
+    await expect(window.getByRole('heading', { name: 'Study Pulse' })).toBeVisible()
+
+    await window.getByRole('button', { name: 'Settings', exact: true }).click()
+    await expect(window.getByText(/local package · neo anki sdk examples/i)).toBeVisible()
+    await window.getByText('Study Pulse', { exact: true }).last().click()
+    await window.getByRole('button', { name: 'Disable' }).click()
+    await expect(window.getByText(/will be disabled after reload/i)).toBeVisible()
+    await window.getByRole('button', { name: 'Reload now' }).click()
+    await expect(window.getByRole('heading', { name: 'Today' })).toBeVisible()
+    await expect(window.getByRole('button', { name: /study pulse/i })).toHaveCount(0)
+    await desktop.close()
+  } finally {
+    await rm(userData, { recursive: true, force: true })
+  }
+})
+
 test('packaged macOS application launches without a development server', async () => {
   const executablePath = process.env.NEO_ANKI_PACKAGED_APP
   test.skip(!executablePath, 'Set NEO_ANKI_PACKAGED_APP to verify a packaged artifact.')
