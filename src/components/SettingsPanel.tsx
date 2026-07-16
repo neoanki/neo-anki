@@ -19,7 +19,7 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
       else {
         const result = await extensionRuntime.importFile(file)
         mergeImport(result)
-        setMessage(`Imported ${result.items.length} items. ${result.warnings.join(' ')}`)
+        setMessage(`Imported ${result.items.length} ${result.items.length === 1 ? 'item' : 'items'}. ${result.warnings.join(' ')}`)
         return
       }
       setMessage('Backup imported successfully.')

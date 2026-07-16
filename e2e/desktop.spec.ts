@@ -1,8 +1,24 @@
 import { expect, test } from '@playwright/test'
 import { _electron as electron } from 'playwright'
+import { zipSync } from 'fflate'
+import initSqlJs from 'sql.js'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+
+const createAnkiPackage = async () => {
+  const SQL = await initSqlJs({ locateFile: () => join(process.cwd(), 'node_modules/sql.js/dist/sql-wasm.wasm') })
+  const database = new SQL.Database()
+  database.run('CREATE TABLE col (decks text, models text)')
+  database.run('CREATE TABLE notes (id integer, guid text, mid integer, tags text, flds text)')
+  database.run('CREATE TABLE cards (id integer, nid integer, did integer, ord integer, type integer, queue integer, due integer, ivl integer, factor integer, reps integer)')
+  database.run('INSERT INTO col VALUES (?, ?)', [JSON.stringify({ 10: { name: 'Imported::Desktop' } }), JSON.stringify({ 20: { tmpls: [{ ord: 0, name: 'Card 1', qfmt: '{{Front}}' }] } })])
+  database.run('INSERT INTO notes VALUES (?, ?, ?, ?, ?)', [1, 'desktop-import', 20, ' csp ', 'WASM import works\u001fYes'])
+  database.run('INSERT INTO cards VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [2, 1, 10, 0, 0, 0, 0, 0, 2500, 0])
+  const archive = zipSync({ 'collection.anki2': database.export() })
+  database.close()
+  return Buffer.from(archive)
+}
 
 test('desktop app persists the workspace to disk across restarts', async () => {
   const userData = await mkdtemp(join(tmpdir(), 'neo-anki-desktop-'))
@@ -47,6 +63,22 @@ test('packaged macOS application launches without a development server', async (
     await expect(window.getByRole('heading', { name: /how much time can learning reliably have/i })).toBeVisible()
     await packagedApp.close()
   } finally {
+    await rm(userData, { recursive: true, force: true })
+  }
+})
+
+test('desktop security policy permits the WebAssembly Anki importer', async () => {
+  const userData = await mkdtemp(join(tmpdir(), 'neo-anki-wasm-'))
+  const app = await electron.launch({ args: ['.'], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData } })
+  try {
+    const window = await app.firstWindow()
+    await window.getByRole('button', { name: /30 minutes/i }).click()
+    await window.getByRole('button', { name: /build my first plan/i }).click()
+    await window.getByRole('button', { name: /open settings/i }).click()
+    await window.locator('input[type=file][accept=".json,.csv,.apkg,.colpkg"]').setInputFiles({ name: 'csp.apkg', mimeType: 'application/octet-stream', buffer: await createAnkiPackage() })
+    await expect(window.locator('.inline-message')).toContainText('Imported 1 item')
+  } finally {
+    await app.close()
     await rm(userData, { recursive: true, force: true })
   }
 })
