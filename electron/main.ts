@@ -149,8 +149,11 @@ const armRendererStartupWatchdog = () => {
     }
     void diagnosticsLog.record({ source: 'extension-host', level: 'error', code: 'extension-startup-timeout', message: 'The renderer did not become ready; Neo Anki restarted without locally installed extensions.' })
     const windowToRecover = mainWindow
-    windowToRecover.destroy()
-    void createWindow('?safe-mode=1&recovered=extension-startup')
+    void createWindow('?safe-mode=1&recovered=extension-startup').then(() => {
+      if (!windowToRecover.isDestroyed()) windowToRecover.destroy()
+    }).catch((error) => {
+      void diagnosticsLog.record({ source: 'main', level: 'error', code: 'safe-mode-window', message: error instanceof Error ? error.message : 'Could not open the safe-mode recovery window.' })
+    })
   }, rendererStartupTimeoutMs)
   rendererStartupTimer.unref()
 }
@@ -321,7 +324,7 @@ const registerAppProtocol = () => {
 }
 
 const createWindow = async (query = '') => {
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     title: 'Neo Anki',
     width: 1280,
     height: 820,
@@ -338,21 +341,22 @@ const createWindow = async (query = '') => {
       sandbox: true,
     },
   })
+  mainWindow = window
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  window.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://') || url.startsWith('mailto:')) void shell.openExternal(url)
     return { action: 'deny' }
   })
-  mainWindow.webContents.on('will-navigate', (event, url) => {
+  window.webContents.on('will-navigate', (event, url) => {
     if (!isTrustedUrl(url)) event.preventDefault()
   })
-  mainWindow.once('ready-to-show', () => mainWindow?.show())
-  mainWindow.on('closed', () => { mainWindow = null })
-  mainWindow.webContents.on('did-start-loading', () => { rendererReady = false; armRendererStartupWatchdog() })
-  mainWindow.webContents.on('did-finish-load', armRendererStartupWatchdog)
+  window.once('ready-to-show', () => window.show())
+  window.on('closed', () => { if (mainWindow === window) mainWindow = null })
+  window.webContents.on('did-start-loading', () => { rendererReady = false; armRendererStartupWatchdog() })
+  window.webContents.on('did-finish-load', armRendererStartupWatchdog)
 
-  if (devServerUrl) await mainWindow.loadURL(`${devServerUrl}${query}`)
-  else await mainWindow.loadURL(`${APP_SCHEME}://app/index.html${query}`)
+  if (devServerUrl) await window.loadURL(`${devServerUrl}${query}`)
+  else await window.loadURL(`${APP_SCHEME}://app/index.html${query}`)
 }
 
 if (hasSingleInstanceLock) app.whenReady().then(async () => {
