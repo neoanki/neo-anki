@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('neoAnkiDesktop', {
   exportBackup: () => ipcRenderer.invoke('neo-anki:export-backup'),
   restoreBackup: () => ipcRenderer.invoke('neo-anki:restore-backup'),
   resetData: () => ipcRenderer.invoke('neo-anki:reset-data'),
+  createImportCheckpoint: () => ipcRenderer.invoke('neo-anki:create-import-checkpoint'),
   reportDiagnostic: (diagnostic: unknown) => ipcRenderer.invoke('neo-anki:report-diagnostic', diagnostic),
   exportDiagnostics: () => ipcRenderer.invoke('neo-anki:export-diagnostics'),
   getUpdateState: () => ipcRenderer.invoke('neo-anki:get-update-state'),

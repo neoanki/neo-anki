@@ -95,6 +95,22 @@ test('trash keeps knowledge recoverable after deletion', async ({ page }) => {
   await expect(page.locator('.library-list article').filter({ hasText: item.prompt })).toBeVisible()
 })
 
+test('large libraries render in bounded accessible pages', async ({ page }) => {
+  const data = onboarded()
+  const itemTemplate = data.items[0]
+  const cardTemplate = data.cards[0]
+  data.items = Array.from({ length: 205 }, (_, index) => ({ ...itemTemplate, id: `large-item-${index}`, prompt: `Large library item ${index}` }))
+  data.cards = data.items.map((item, index) => ({ ...cardTemplate, id: `large-card-${index}`, itemId: item.id }))
+  await startWith(page, data)
+  await page.getByRole('button', { name: 'Library' }).first().click()
+  await expect(page.locator('.library-list article')).toHaveCount(100)
+  await expect(page.getByText('Showing 100 of 205 matching items.')).toBeVisible()
+  await page.getByRole('button', { name: 'Show 100 more' }).click()
+  await expect(page.locator('.library-list article')).toHaveCount(200)
+  await page.getByRole('button', { name: 'Show 5 more' }).click()
+  await expect(page.locator('.library-list article')).toHaveCount(205)
+})
+
 test('switches unrelated categories at an explicit block boundary', async ({ page }) => {
   const data = onboarded()
   data.cards = data.cards.slice(0, 6)

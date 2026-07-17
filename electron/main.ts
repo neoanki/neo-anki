@@ -177,6 +177,12 @@ const registerDesktopIpc = () => {
     workspaceStore.clear()
   })
 
+  ipcMain.handle('neo-anki:create-import-checkpoint', async (event) => {
+    assertTrustedSender(event)
+    await saveQueue.catch(() => undefined)
+    return workspaceStore.createAutomaticBackup('before-import')
+  })
+
   ipcMain.handle('neo-anki:report-diagnostic', async (event, diagnostic: { source?: string; level?: string; code?: string; message?: string; stack?: string }) => {
     assertTrustedSender(event)
     await diagnosticsLog.record({

@@ -32,6 +32,7 @@ describe('storage and migrations', () => {
       exportBackup: async () => ({ canceled: false, path: '/tmp/backup.json' }),
       restoreBackup: async () => ({ canceled: true }),
       resetData: async () => undefined,
+      createImportCheckpoint: async () => '',
       reportDiagnostic: async () => undefined,
       exportDiagnostics: async () => ({ canceled: true }),
       getUpdateState: async () => ({ phase: 'development', currentVersion: '0.1.0' }),

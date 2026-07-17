@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { _electron as electron } from 'playwright'
 import { zipSync } from 'fflate'
 import initSqlJs from 'sql.js'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -106,6 +106,7 @@ test('desktop security policy permits the WebAssembly Anki importer', async () =
     await window.getByRole('button', { name: /open settings/i }).click()
     await window.locator('input[type=file][accept=".json,.csv,.apkg,.colpkg"]').setInputFiles({ name: 'csp.apkg', mimeType: 'application/octet-stream', buffer: await createAnkiPackage() })
     await expect(window.locator('.inline-message')).toContainText('Imported 1 item')
+    await expect.poll(async () => (await readdir(join(userData, 'backups'))).some((name) => name.includes('before-import'))).toBe(true)
   } finally {
     await app.close()
     await rm(userData, { recursive: true, force: true })

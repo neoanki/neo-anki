@@ -29,6 +29,7 @@ describe('extension manager', () => {
       exportBackup: async () => ({ canceled: true }),
       restoreBackup: async () => ({ canceled: true }),
       resetData: async () => undefined,
+      createImportCheckpoint: async () => '',
       reportDiagnostic: async () => undefined,
       exportDiagnostics: async () => ({ canceled: true }),
       getUpdateState: async () => ({ phase: 'development', currentVersion: '0.1.0' }),

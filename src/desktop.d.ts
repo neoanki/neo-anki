@@ -38,6 +38,7 @@ declare global {
     exportBackup(): Promise<{ canceled: boolean; path?: string }>
     restoreBackup(): Promise<{ canceled: boolean }>
     resetData(): Promise<void>
+    createImportCheckpoint(): Promise<string>
     reportDiagnostic(diagnostic: { source: 'renderer' | 'extension-host'; level: 'info' | 'warning' | 'error'; code: string; message: string; stack?: string }): Promise<void>
     exportDiagnostics(): Promise<{ canceled: boolean; path?: string }>
     getUpdateState(): Promise<NeoAnkiUpdateState>
