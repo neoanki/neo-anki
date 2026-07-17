@@ -19,7 +19,7 @@ A TypeScript-first, local-first desktop spaced-repetition app that plans learnin
 
 The implemented boundary is documented in [docs/core-and-extensions.md](docs/core-and-extensions.md); extension authors can start with [docs/extension-authoring.md](docs/extension-authoring.md) and [docs/extension-sdk.md](docs/extension-sdk.md).
 
-Maintainers should follow [docs/releasing.md](docs/releasing.md) for signed artifacts, notarization, update metadata, staged rollout, and rollback.
+Maintainers should follow [docs/releasing.md](docs/releasing.md) for community artifact checksums, SBOMs, provenance attestations, manual updates, platform warnings, and rollback.
 
 ## Run the desktop app
 
@@ -36,7 +36,7 @@ Build an installable macOS DMG and ZIP with:
 npm run desktop:build
 ```
 
-Artifacts are written to `release/`. Local contributor builds may be unsigned; tagged CI releases fail closed unless macOS signing/notarization and Windows signing credentials are configured.
+Artifacts are written to `release/`. Tagged CI releases are intentionally unsigned community builds: macOS requires Open Anyway and Windows may show SmartScreen. CI verifies that trust state, launches every packaged platform build, and publishes only checksummed, SBOM-documented, GitHub-attested distributable files.
 
 The Vite browser surface remains available through `npm run dev` for component development and automated browser testing. It is not the primary application or durable storage target.
 

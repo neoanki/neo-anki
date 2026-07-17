@@ -1,23 +1,17 @@
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { UpdatePanel } from './UpdatePanel'
 
 afterEach(() => { window.neoAnkiDesktop = undefined })
 
 describe('UpdatePanel', () => {
-  it('requires explicit confirmation before downloading an available update', async () => {
-    const downloadUpdate = vi.fn(async () => ({ phase: 'downloading', currentVersion: '0.1.0', version: '0.2.0', percent: 0 } as NeoAnkiUpdateState))
+  it('explains manual community releases and links to attested downloads', async () => {
     window.neoAnkiDesktop = {
-      getUpdateState: async () => ({ phase: 'available', currentVersion: '0.1.0', version: '0.2.0' }),
-      downloadUpdate,
-      onUpdateState: () => () => undefined,
+      getReleaseInfo: async () => ({ currentVersion: '0.1.0', channel: 'community', automaticUpdates: false, releasesUrl: 'https://github.com/neoanki/neo-anki/releases' }),
     } as unknown as NeoAnkiDesktopBridge
     render(<UpdatePanel />)
-    const button = await screen.findByRole('button', { name: /download 0.2.0/i })
-    expect(downloadUpdate).not.toHaveBeenCalled()
-    await userEvent.click(button)
-    expect(downloadUpdate).toHaveBeenCalledOnce()
-    expect(await screen.findByRole('progressbar', { name: /update download/i })).toBeVisible()
+    expect(await screen.findByText(/community builds update manually/i)).toBeVisible()
+    expect(screen.getByText(/not backed by apple or microsoft code-signing certificates/i)).toBeVisible()
+    expect(screen.getByRole('link', { name: /view verified releases/i })).toHaveAttribute('href', 'https://github.com/neoanki/neo-anki/releases')
   })
 })

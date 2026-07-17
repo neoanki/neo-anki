@@ -68,6 +68,7 @@ test('installs, loads, and disables a third-party extension package', async () =
     await expect(window.getByRole('heading', { name: 'Study Pulse' })).toBeVisible()
 
     await window.getByRole('button', { name: 'Settings', exact: true }).click()
+    await expect(window.getByText(/community builds update manually/i)).toBeVisible()
     await expect(window.getByText(/local package · neo anki sdk examples/i)).toBeVisible()
     await window.getByText('Study Pulse', { exact: true }).last().click()
     await window.getByRole('button', { name: 'Disable' }).click()
@@ -104,7 +105,7 @@ test('automatically recovers from an extension that blocks renderer startup', as
   }
 })
 
-test('packaged macOS application launches without a development server', async () => {
+test('packaged application launches without a development server', async () => {
   const executablePath = process.env.NEO_ANKI_PACKAGED_APP
   test.skip(!executablePath, 'Set NEO_ANKI_PACKAGED_APP to verify a packaged artifact.')
   const userData = await mkdtemp(join(tmpdir(), 'neo-anki-packaged-'))

@@ -11,10 +11,7 @@ contextBridge.exposeInMainWorld('neoAnkiDesktop', {
   createImportCheckpoint: () => ipcRenderer.invoke('neo-anki:create-import-checkpoint'),
   reportDiagnostic: (diagnostic: unknown) => ipcRenderer.invoke('neo-anki:report-diagnostic', diagnostic),
   exportDiagnostics: () => ipcRenderer.invoke('neo-anki:export-diagnostics'),
-  getUpdateState: () => ipcRenderer.invoke('neo-anki:get-update-state'),
-  checkForUpdates: () => ipcRenderer.invoke('neo-anki:check-for-updates'),
-  downloadUpdate: () => ipcRenderer.invoke('neo-anki:download-update'),
-  installUpdate: () => ipcRenderer.invoke('neo-anki:install-update'),
+  getReleaseInfo: () => ipcRenderer.invoke('neo-anki:get-release-info'),
   listExtensions: () => ipcRenderer.invoke('neo-anki:list-extensions'),
   chooseExtensionPackage: () => ipcRenderer.invoke('neo-anki:choose-extension'),
   installExtension: (token: string) => ipcRenderer.invoke('neo-anki:install-extension', token),
@@ -26,10 +23,5 @@ contextBridge.exposeInMainWorld('neoAnkiDesktop', {
     const listener = (_event: Electron.IpcRendererEvent, destination: string) => callback(destination)
     ipcRenderer.on('neo-anki:navigate', listener)
     return () => ipcRenderer.removeListener('neo-anki:navigate', listener)
-  },
-  onUpdateState: (callback: (state: unknown) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state)
-    ipcRenderer.on('neo-anki:update-state', listener)
-    return () => ipcRenderer.removeListener('neo-anki:update-state', listener)
   },
 })

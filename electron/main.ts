@@ -1,5 +1,4 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
-import type { AppUpdater, ProgressInfo, UpdateInfo } from 'electron-updater'
 import { readFile } from 'node:fs/promises'
 import { join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -30,39 +29,8 @@ let diagnosticsLog: DiagnosticsLog
 let saveQueue: Promise<void> = Promise.resolve()
 let quitAfterFlush = false
 
-type UpdatePhase = 'development' | 'idle' | 'checking' | 'available' | 'current' | 'downloading' | 'ready' | 'error'
-interface DesktopUpdateState { phase: UpdatePhase; currentVersion: string; version?: string; percent?: number; error?: string }
-let updateState: DesktopUpdateState = { phase: 'development', currentVersion: app.getVersion() }
-let applicationUpdater: AppUpdater | null = null
 let rendererReady = false
 let rendererStartupTimer: NodeJS.Timeout | null = null
-const publishUpdateState = (next: DesktopUpdateState) => {
-  updateState = next
-  mainWindow?.webContents.send('neo-anki:update-state', updateState)
-}
-
-const configureUpdates = async () => {
-  if (!app.isPackaged) return publishUpdateState({ phase: 'development', currentVersion: app.getVersion() })
-  const { autoUpdater } = await import('electron-updater')
-  applicationUpdater = autoUpdater
-  applicationUpdater.autoDownload = false
-  applicationUpdater.autoInstallOnAppQuit = true
-  applicationUpdater.allowDowngrade = false
-  applicationUpdater.on('checking-for-update', () => publishUpdateState({ phase: 'checking', currentVersion: app.getVersion() }))
-  applicationUpdater.on('update-available', (info: UpdateInfo) => publishUpdateState({ phase: 'available', currentVersion: app.getVersion(), version: info.version }))
-  applicationUpdater.on('update-not-available', () => publishUpdateState({ phase: 'current', currentVersion: app.getVersion() }))
-  applicationUpdater.on('download-progress', (progress: ProgressInfo) => publishUpdateState({ phase: 'downloading', currentVersion: app.getVersion(), version: updateState.version, percent: Math.max(0, Math.min(100, progress.percent)) }))
-  applicationUpdater.on('update-downloaded', (info: UpdateInfo) => {
-    void workspaceStore.createAutomaticBackup('before-update').catch((error) => diagnosticsLog.record({ source: 'main', level: 'warning', code: 'update-backup', message: error instanceof Error ? error.message : 'Could not create the pre-update backup.' }))
-    publishUpdateState({ phase: 'ready', currentVersion: app.getVersion(), version: info.version, percent: 100 })
-  })
-  applicationUpdater.on('error', (error: Error) => {
-    publishUpdateState({ phase: 'error', currentVersion: app.getVersion(), version: updateState.version, error: error.message })
-    void diagnosticsLog.record({ source: 'main', level: 'error', code: 'auto-update', message: error.message, stack: error.stack })
-  })
-  publishUpdateState({ phase: 'idle', currentVersion: app.getVersion() })
-  setTimeout(() => { void applicationUpdater?.checkForUpdates() }, 15_000).unref()
-}
 
 const hasSingleInstanceLock = process.env.NEO_ANKI_TEST_ALLOW_MULTIPLE_INSTANCES === '1' || app.requestSingleInstanceLock()
 if (!hasSingleInstanceLock) app.quit()
@@ -236,27 +204,9 @@ const registerDesktopIpc = () => {
     return { canceled: false, path: result.filePath }
   })
 
-  ipcMain.handle('neo-anki:get-update-state', (event) => { assertTrustedSender(event); return updateState })
-  ipcMain.handle('neo-anki:check-for-updates', async (event) => {
+  ipcMain.handle('neo-anki:get-release-info', (event) => {
     assertTrustedSender(event)
-    if (!app.isPackaged) return updateState
-    if (!applicationUpdater) await configureUpdates()
-    await applicationUpdater?.checkForUpdates()
-    return updateState
-  })
-  ipcMain.handle('neo-anki:download-update', async (event) => {
-    assertTrustedSender(event)
-    if (updateState.phase !== 'available') throw new Error('No verified update is ready to download.')
-    if (!applicationUpdater) throw new Error('The update service is not ready.')
-    await applicationUpdater.downloadUpdate()
-    return updateState
-  })
-  ipcMain.handle('neo-anki:install-update', async (event) => {
-    assertTrustedSender(event)
-    if (updateState.phase !== 'ready') throw new Error('The update has not finished downloading.')
-    await saveQueue.catch(() => undefined)
-    if (!applicationUpdater) throw new Error('The update service is not ready.')
-    applicationUpdater.quitAndInstall(false, true)
+    return { currentVersion: app.getVersion(), channel: app.isPackaged ? 'community' : 'development', automaticUpdates: false, releasesUrl: 'https://github.com/neoanki/neo-anki/releases' }
   })
 
   ipcMain.handle('neo-anki:list-extensions', async (event) => {
@@ -375,10 +325,6 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   installApplicationMenu()
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   await createWindow()
-  void configureUpdates().catch((error) => {
-    publishUpdateState({ phase: 'error', currentVersion: app.getVersion(), error: error instanceof Error ? error.message : 'The update service could not start.' })
-    void diagnosticsLog.record({ source: 'main', level: 'error', code: 'update-initialize', message: error instanceof Error ? error.message : 'The update service could not start.' })
-  })
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow() })
 }).catch((error) => {
   dialog.showErrorBox('Neo Anki could not start', error instanceof Error ? error.message : 'The local workspace could not be opened.')
