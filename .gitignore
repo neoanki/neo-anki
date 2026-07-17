@@ -2,6 +2,7 @@ node_modules
 dist
 dist-electron
 release
+build/THIRD_PARTY_NOTICES.txt
 coverage
 playwright-report
 test-results
