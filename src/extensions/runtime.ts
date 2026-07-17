@@ -7,6 +7,7 @@ import { tabSyncExtension } from './tab-sync'
 import { workspaceExtension } from './workspace'
 import { sharedPacksExtension } from './shared-packs'
 import { insightsExtension } from './insights'
+import { cardTimerExtension } from './card-timer'
 import type { NeoAnkiExtension } from './sdk'
 
 const bundledExtensions: NeoAnkiExtension[] = [
@@ -18,6 +19,7 @@ const bundledExtensions: NeoAnkiExtension[] = [
   workspaceExtension,
   sharedPacksExtension,
   insightsExtension,
+  cardTimerExtension,
 ]
 
 export const extensionRuntime = new ExtensionRegistry(bundledExtensions)

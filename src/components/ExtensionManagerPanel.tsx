@@ -14,6 +14,8 @@ const permissionLabels: Record<ExtensionPermission, string> = {
   'ui:workspace-panels': 'Add workspace panels',
   'ui:create-panels': 'Add authoring controls',
   'ui:library-presets': 'Add Library filter presets',
+  'ui:settings-panels': 'Add controls to Settings',
+  'review:tools': 'Observe reviews and submit ratings',
   'content:transactions': 'Propose content changes',
 }
 
@@ -100,7 +102,7 @@ export const ExtensionManagerPanel = () => {
   }
 
   return <div className="setting-block extension-manager">
-    <div className="extensions-heading"><span><Puzzle size={18} /><strong>Extensions</strong></span><small>{bundled.length + installed.filter((record) => record.enabled).length} active</small></div>
+    <div className="extensions-heading"><span><Puzzle size={18} /><strong>Extensions</strong></span><small>{bundled.length + installed.filter((record) => record.enabled).length} loaded</small></div>
     <p>Bundled and locally installed extensions use the same SDK, registry, permissions, and failure isolation.</p>
 
     {safeMode && <div className="extension-reload" role="status"><span><ShieldCheck size={17}/><span><strong>Safe mode is active</strong><small>Locally installed extensions were skipped for this launch.</small></span></span><button className="secondary-button compact" onClick={() => { window.location.search = '' }}>Restart normally</button></div>}
@@ -130,7 +132,7 @@ export const ExtensionManagerPanel = () => {
       <details className="bundled-extension-group">
         <summary><span>Bundled extensions</span><small>{bundled.length}</small></summary>
         <div className="bundled-extension-list">
-          {bundled.map((manifest) => <details className="extension-row" key={manifest.id}><summary><span><strong>{manifest.name}</strong><small>Bundled · {manifest.publisher}</small></span><span className="extension-state"><i>Active</i><code>v{manifest.version}</code></span></summary><p className="extension-description">{manifest.description}</p><ManifestSummary manifest={manifest}/></details>)}
+          {bundled.map((manifest) => <details className="extension-row" key={manifest.id}><summary><span><strong>{manifest.name}</strong><small>Bundled · {manifest.publisher}</small></span><span className="extension-state"><i>Loaded</i><code>v{manifest.version}</code></span></summary><p className="extension-description">{manifest.description}</p><ManifestSummary manifest={manifest}/></details>)}
         </div>
       </details>
     </div>

@@ -57,6 +57,8 @@ IDs use lowercase reverse-domain notation. Versions use semantic versioning. The
 
 Use `defineExtension` for inference and compatibility checking. React UI contributions may use normal hooks and the SDK’s stable UI primitives. Do not import Neo Anki source files or private application context.
 
+Review-session tools declare `review:tools` and receive the current read-only card/item plus a guarded `submitRating` callback. Settings controls declare `ui:settings-panels`. These are ordinary public contributions: bundled and independently installed extensions receive identical props and host protections.
+
 Run:
 
 ```bash

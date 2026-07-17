@@ -41,4 +41,8 @@ describe('third-party extension package format', () => {
     expect(() => validateExtensionPackageManifest({ ...manifest, permissions: ['ui:pages', 'ui:pages'] })).toThrow('duplicates')
     expect(() => validateExtensionPackageManifest({ ...manifest, version: 'tomorrow' })).toThrow('semantic versioning')
   })
+
+  it('accepts public review-tool and settings-panel permissions', () => {
+    expect(validateExtensionPackageManifest({ ...manifest, permissions: ['ui:settings-panels', 'review:tools'] }).permissions).toEqual(['ui:settings-panels', 'review:tools'])
+  })
 })

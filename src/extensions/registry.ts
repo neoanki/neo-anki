@@ -1,5 +1,5 @@
 import type { AppData, CreateKnowledgeInput, ImportSummary, KnowledgeItem, PracticeCard, Route } from '../types'
-import type { CardSeed, CreationPanelContribution, ExtensionDiagnostic, ExtensionPageContribution, ExtensionPermission, FileExporterContribution, LibraryPreset, NeoAnkiExtension, PlanningSignal, PortableRenderedCard, PromptTypeContribution, QueuePolicyCandidate, SyncTransport, WorkspacePanelContribution } from './sdk'
+import type { CardSeed, CreationPanelContribution, ExtensionDiagnostic, ExtensionPageContribution, ExtensionPermission, ExtensionSettingsPanelContribution, FileExporterContribution, LibraryPreset, NeoAnkiExtension, PlanningSignal, PortableRenderedCard, PromptTypeContribution, QueuePolicyCandidate, ReviewToolContribution, SyncTransport, WorkspacePanelContribution } from './sdk'
 
 const contributionPermissions: Array<[keyof NeoAnkiExtension, ExtensionPermission]> = [
   ['promptTypes', 'prompts:contribute'],
@@ -13,6 +13,8 @@ const contributionPermissions: Array<[keyof NeoAnkiExtension, ExtensionPermissio
   ['workspacePanels', 'ui:workspace-panels'],
   ['creationPanels', 'ui:create-panels'],
   ['libraryPresets', 'ui:library-presets'],
+  ['settingsPanels', 'ui:settings-panels'],
+  ['reviewTools', 'review:tools'],
 ]
 const knownPermissions = new Set(contributionPermissions.map(([, permission]) => permission))
 const extensionIdPattern = /^[a-z0-9]+(?:[.-][a-z0-9]+)+$/
@@ -57,6 +59,8 @@ export class ExtensionRegistry {
       ...(extension.workspacePanels || []).map((value) => `workspace-panel:${value.id}`),
       ...(extension.creationPanels || []).map((value) => `creation-panel:${value.id}`),
       ...(extension.libraryPresets || []).map((value) => `library-presets:${value.id}`),
+      ...(extension.settingsPanels || []).map((value) => `settings-panel:${value.id}`),
+      ...(extension.reviewTools || []).map((value) => `review-tool:${value.id}`),
     ]
     if (contributionIds.some((id) => !id.split(':').slice(1).join(':').trim()) || new Set(contributionIds).size !== contributionIds.length) throw new Error(`${manifest.id} contains empty or duplicate contribution IDs.`)
     for (const existing of this.extensions.values()) {
@@ -72,6 +76,8 @@ export class ExtensionRegistry {
         ...(existing.workspacePanels || []).map((value) => `workspace-panel:${value.id}`),
         ...(existing.creationPanels || []).map((value) => `creation-panel:${value.id}`),
         ...(existing.libraryPresets || []).map((value) => `library-presets:${value.id}`),
+        ...(existing.settingsPanels || []).map((value) => `settings-panel:${value.id}`),
+        ...(existing.reviewTools || []).map((value) => `review-tool:${value.id}`),
       ])
       const duplicate = contributionIds.find((id) => existingIds.has(id))
       if (duplicate) throw new Error(`Duplicate extension contribution ${duplicate}.`)
@@ -170,6 +176,12 @@ export class ExtensionRegistry {
   page(route: Route) { return this.pages().find((page) => page.route === route) }
   workspacePanels(): WorkspacePanelContribution[] { return [...this.extensions.values()].flatMap((extension) => extension.workspacePanels || []) }
   creationPanels(): CreationPanelContribution[] { return [...this.extensions.values()].flatMap((extension) => extension.creationPanels || []) }
+  settingsPanels(): Array<ExtensionSettingsPanelContribution & { extensionId: string }> {
+    return [...this.extensions.values()].flatMap((extension) => (extension.settingsPanels || []).map((contribution) => ({ ...contribution, extensionId: extension.manifest.id })))
+  }
+  reviewTools(): Array<ReviewToolContribution & { extensionId: string }> {
+    return [...this.extensions.values()].flatMap((extension) => (extension.reviewTools || []).map((contribution) => ({ ...contribution, extensionId: extension.manifest.id })))
+  }
   libraryPresets(data: Readonly<AppData>): LibraryPreset[] {
     return [...this.extensions.values()].flatMap((extension) => (extension.libraryPresets || []).flatMap((provider) => {
       try { return provider.presets(data) }

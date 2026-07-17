@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, Check, Clock3, Edit3, Layers3, RotateCcw, Undo2 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { getAssetForCard } from '../lib/content'
 import { formatDue, formatDuration } from '../lib/date'
 import { previewReview } from '../lib/fsrs'
@@ -7,6 +7,7 @@ import { rectStyle } from '../extensions/image-occlusion'
 import { extensionRuntime } from '../extensions/runtime'
 import { useApp } from '../state/AppContext'
 import type { ReviewRating } from '../types'
+import { ExtensionHostBoundary } from '../components/ExtensionHostBoundary'
 
 export const ReviewPage = () => {
   const { activeSession, data, endSession, navigate, reviewCard, undoLastReview } = useApp()
@@ -17,6 +18,8 @@ export const ReviewPage = () => {
   const [startedAt, setStartedAt] = useState(() => performance.now())
   const [typedAnswer, setTypedAnswer] = useState('')
   const [atTransition, setAtTransition] = useState(false)
+  const gradingRef = useRef(false)
+  const currentCardIdRef = useRef<string | undefined>(undefined)
   const entry = activeSession?.queue[index]
   const card = data.cards.find((candidate) => candidate.id === entry?.card.id)
   const item = data.items.find((candidate) => candidate.id === card?.itemId)
@@ -28,8 +31,9 @@ export const ReviewPage = () => {
     setStartedAt(performance.now())
   }
 
-  const grade = (rating: ReviewRating) => {
-    if (!revealed || !card || !activeSession) return
+  const grade = (rating: ReviewRating, allowUnrevealed = false, expectedCardId = card?.id) => {
+    if ((!revealed && !allowUnrevealed) || !card || !activeSession || gradingRef.current || expectedCardId !== card.id || currentCardIdRef.current !== card.id) return
+    gradingRef.current = true
     const duration = Math.max(2, Math.round((performance.now() - startedAt) / 1000))
     const nextEntry = activeSession.queue[index + 1]
     reviewCard(card.id, rating, duration)
@@ -51,7 +55,13 @@ export const ReviewPage = () => {
     setAtTransition(false)
     setRevealed(true)
     setStartedAt(performance.now())
+    gradingRef.current = false
   }
+
+  useEffect(() => {
+    currentCardIdRef.current = card?.id
+    gradingRef.current = false
+  }, [card?.id])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -120,13 +130,23 @@ export const ReviewPage = () => {
   const asset = getAssetForCard(item, data.assets)
   const typedResult = revealed && content.typed ? extensionRuntime.compareAnswer(card.variant, typedAnswer, content.answer) : null
   const progress = ((index + (revealed ? 0.5 : 0)) / activeSession.queue.length) * 100
+  const reviewTools = extensionRuntime.reviewTools()
 
   return (
     <div className="review-page">
       <header className="review-header">
         <div className="review-nav-actions"><button className="text-button" onClick={endSession}><ArrowLeft size={18} /> End session</button>{index > 0 && <button className="text-button" onClick={undo} title="Undo last answer (⌘Z)"><Undo2 size={17}/> Undo</button>}</div>
         <div className="session-progress" role="progressbar" aria-label="Review session progress" aria-valuemin={0} aria-valuemax={activeSession.queue.length} aria-valuenow={index + 1}><span style={{ width: `${progress}%` }} /></div>
-        <div className="review-count"><span>{entry.contextKey}</span>{index + 1} / {activeSession.queue.length}</div>
+        <div className="review-status">
+          <div className="review-tool-host">
+            {reviewTools.map(({ id, extensionId, component: Tool }) => (
+              <ExtensionHostBoundary key={`${extensionId}:${id}`} onError={(error) => extensionRuntime.reportDiagnostic(extensionId, id, error)}>
+                <Tool extensionId={extensionId} card={structuredClone(card)} item={structuredClone(item)} revealed={revealed} submitRating={(rating) => grade(rating, true, card.id)} />
+              </ExtensionHostBoundary>
+            ))}
+          </div>
+          <div className="review-count"><span>{entry.contextKey}</span>{index + 1} / {activeSession.queue.length}</div>
+        </div>
       </header>
 
       <article className={revealed ? 'review-card revealed' : 'review-card'} aria-live="polite">

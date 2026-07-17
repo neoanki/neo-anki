@@ -5,6 +5,7 @@ import { downloadBackup, getStorageStatus, parseBackup } from '../lib/storage'
 import { extensionRuntime } from '../extensions/runtime'
 import { ExtensionManagerPanel } from './ExtensionManagerPanel'
 import { UpdatePanel } from './UpdatePanel'
+import { ExtensionHostBoundary } from './ExtensionHostBoundary'
 
 const MAX_IMPORT_BYTES = 2 * 1024 * 1024 * 1024
 const LARGE_IMPORT_BYTES = 500 * 1024 * 1024
@@ -17,6 +18,7 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
   const [message, setMessage] = useState('')
   const [busyAction, setBusyAction] = useState<'backup' | 'restore' | 'diagnostics' | 'import' | ''>('')
   const storage = getStorageStatus()
+  const extensionSettingsPanels = extensionRuntime.settingsPanels()
 
   const importFile = async (file?: File) => {
     if (!file) return
@@ -143,6 +145,16 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
           </div>
           {message && <p className="inline-message" role="status">{message}</p>}
         </div>
+
+        {extensionSettingsPanels.map(({ id, extensionId, component: Panel }) => (
+          <ExtensionHostBoundary
+            key={`${extensionId}:${id}`}
+            onError={(error) => extensionRuntime.reportDiagnostic(extensionId, id, error)}
+            fallback={<p className="extension-error" role="status">This extension’s settings are unavailable. The rest of Settings is unaffected.</p>}
+          >
+            <Panel extensionId={extensionId} />
+          </ExtensionHostBoundary>
+        ))}
 
         <UpdatePanel />
         <ExtensionManagerPanel />
