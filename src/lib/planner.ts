@@ -51,14 +51,15 @@ export const buildDailyPlan = (
   const remainingSeconds = Math.max(0, budgetSeconds - spentSeconds)
   const avgSeconds = averageReviewSeconds(reviews)
   const active = cards.filter((card) => !card.suspended)
+  const itemMap = new Map(items.map((item) => [item.id, item]))
   const due = active
     .filter((card) => card.fsrs.state !== State.New && new Date(card.fsrs.due) <= endOfDay(now))
-    .sort((a, b) => priority(b, now, settings.recoveryStrategy, items.find((item) => item.id === b.itemId), hooks) - priority(a, now, settings.recoveryStrategy, items.find((item) => item.id === a.itemId), hooks))
+    .sort((a, b) => priority(b, now, settings.recoveryStrategy, itemMap.get(b.itemId), hooks) - priority(a, now, settings.recoveryStrategy, itemMap.get(a.itemId), hooks))
   const fresh = active
     .filter((card) => card.fsrs.state === State.New)
     .sort((a, b) => {
-      const itemA = items.find((item) => item.id === a.itemId)
-      const itemB = items.find((item) => item.id === b.itemId)
+      const itemA = itemMap.get(a.itemId)
+      const itemB = itemMap.get(b.itemId)
       const urgencyA = itemA ? (hooks.signalsFor?.(itemA, now) || []).reduce((value, signal) => Math.max(value, signal.score), 0) : 0
       const urgencyB = itemB ? (hooks.signalsFor?.(itemB, now) || []).reduce((value, signal) => Math.max(value, signal.score), 0) : 0
       return urgencyB - urgencyA || new Date(a.fsrs.due).getTime() - new Date(b.fsrs.due).getTime()
@@ -98,7 +99,7 @@ export const buildDailyPlan = (
   const newSeconds = plannedNew.length * NEW_INTRODUCTION_SECONDS
   used += newSeconds
   const toPlanned = (card: PracticeCard, reason: 'due' | 'new', estimatedSeconds: number) => {
-    const item = items.find((candidate) => candidate.id === card.itemId)
+    const item = itemMap.get(card.itemId)
     return { card, reason, estimatedSeconds, signalIds: item ? (hooks.signalsFor?.(item, now) || []).map((signal) => signal.id) : [] }
   }
   const queue = [
