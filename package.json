@@ -8,7 +8,7 @@
     "packages/*",
     "examples/*-extension"
   ],
-  "version": "0.1.4",
+  "version": "0.1.5",
   "type": "module",
   "main": "dist-electron/main.mjs",
   "scripts": {

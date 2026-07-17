@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { net, safeStorage } from 'electron'
 import type { ExtensionNetworkRequest, ExtensionNetworkResponse } from '../packages/extension-sdk/src/index.js'
 import type { ExtensionManager } from './extension-manager.js'
+import { secureSecretStorageAvailable } from './secret-backend.js'
 
 const MAX_REQUEST_BYTES = 4 * 1024 * 1024
 const MAX_RESPONSE_BYTES = 25 * 1024 * 1024
@@ -62,7 +63,10 @@ export class ExtensionServices {
   }
 
   private assertSecretSupport() {
-    if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure OS credential storage is unavailable on this device.')
+    const linuxBackend = process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : undefined
+    if (!secureSecretStorageAvailable(process.platform, safeStorage.isEncryptionAvailable(), linuxBackend)) {
+      throw new Error('Secure OS credential storage is unavailable on this device. Linux requires Secret Service or KWallet; basic_text is not accepted.')
+    }
   }
 
   private assertKey(key: string) {
