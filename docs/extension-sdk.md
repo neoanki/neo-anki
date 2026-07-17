@@ -53,7 +53,7 @@ The default export is the same `NeoAnkiExtension` object passed to `ExtensionReg
 | `ui:settings-panels` | React controls hosted in Settings |
 | `review:tools` | React review-session tools that can observe the current card and submit a core rating |
 | `network:fetch` | Host-mediated HTTPS requests limited to manifest-declared domains |
-| `storage:secrets` | Credentials encrypted through the operating system secret-storage service |
+| `storage:secrets` | Credentials encrypted through the operating system secret-storage service; Linux requires Secret Service or KWallet and rejects Electron's insecure `basic_text` fallback |
 
 Non-empty contributions without their declared permission are rejected. Contribution IDs are global within their kind and collisions are rejected. These declarations constrain SDK registration; SDK v1 extensions are explicitly installed full-trust code, so permissions are not a hostile-code sandbox.
 
