@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('neoAnkiDesktop', {
   exportBackup: () => ipcRenderer.invoke('neo-anki:export-backup'),
   restoreBackup: () => ipcRenderer.invoke('neo-anki:restore-backup'),
   resetData: () => ipcRenderer.invoke('neo-anki:reset-data'),
+  reportDiagnostic: (diagnostic: unknown) => ipcRenderer.invoke('neo-anki:report-diagnostic', diagnostic),
+  exportDiagnostics: () => ipcRenderer.invoke('neo-anki:export-diagnostics'),
   listExtensions: () => ipcRenderer.invoke('neo-anki:list-extensions'),
   chooseExtensionPackage: () => ipcRenderer.invoke('neo-anki:choose-extension'),
   installExtension: (token: string) => ipcRenderer.invoke('neo-anki:install-extension', token),

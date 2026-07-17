@@ -1,4 +1,4 @@
-import { ArchiveRestore, Database, Download, Moon, RotateCcw, Sun, Upload, X } from 'lucide-react'
+import { ArchiveRestore, Bug, Database, Download, Moon, RotateCcw, Sun, Upload, X } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useApp } from '../state/AppContext'
 import { downloadBackup, getStorageStatus, parseBackup } from '../lib/storage'
@@ -9,7 +9,7 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
   const { data, persistenceError, setRetention, toggleTheme, replaceData, resetData, mergeImport } = useApp()
   const fileRef = useRef<HTMLInputElement>(null)
   const [message, setMessage] = useState('')
-  const [busyAction, setBusyAction] = useState<'backup' | 'restore' | ''>('')
+  const [busyAction, setBusyAction] = useState<'backup' | 'restore' | 'diagnostics' | ''>('')
   const storage = getStorageStatus()
 
   const importFile = async (file?: File) => {
@@ -56,6 +56,16 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
     } finally { setBusyAction('') }
   }
 
+  const exportDiagnostics = async () => {
+    if (!window.neoAnkiDesktop) return
+    setBusyAction('diagnostics'); setMessage('')
+    try {
+      const result = await window.neoAnkiDesktop.exportDiagnostics()
+      if (!result.canceled) setMessage(result.path ? `Diagnostics saved to ${result.path}` : 'Diagnostics exported successfully.')
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not export diagnostics.') }
+    finally { setBusyAction('') }
+  }
+
   return (
     <div className="scrim" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
@@ -99,6 +109,7 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
             {window.neoAnkiDesktop && <button className="secondary-button" disabled={Boolean(busyAction)} onClick={restoreBackup}><ArchiveRestore size={18} /> {busyAction === 'restore' ? 'Restoring…' : 'Restore backup'}</button>}
             {extensionRuntime.exporters().map((exporter) => <button className="secondary-button" key={exporter.id} onClick={() => exportWith(exporter.id)}><Download size={18} /> {exporter.label}</button>)}
             <button className="secondary-button" onClick={() => fileRef.current?.click()}><Upload size={18} /> Import</button>
+            {window.neoAnkiDesktop && <button className="secondary-button" disabled={Boolean(busyAction)} onClick={() => void exportDiagnostics()}><Bug size={18}/> {busyAction === 'diagnostics' ? 'Exporting…' : 'Export diagnostics'}</button>}
             <input ref={fileRef} className="visually-hidden" type="file" accept=".json,.csv,.apkg,.colpkg" onChange={(event) => importFile(event.target.files?.[0])} />
           </div>
           {message && <p className="inline-message" role="status">{message}</p>}
@@ -109,9 +120,9 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
         <div className="danger-zone">
           <div>
             <strong>Reset workspace</strong>
-            <p>Remove the active data file and restore the sample collection.</p>
+            <p>Back up the current workspace automatically, then restore the sample collection.</p>
           </div>
-          <button className="text-button danger" onClick={() => window.confirm('Reset the complete Neo Anki workspace? A manual backup is recommended first.') && resetData()}><RotateCcw size={17} /> Reset</button>
+          <button className="text-button danger" onClick={() => window.confirm('Reset the complete Neo Anki workspace? A recovery backup will be created first.') && resetData()}><RotateCcw size={17} /> Reset</button>
         </div>
       </section>
     </div>

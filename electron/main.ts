@@ -4,6 +4,7 @@ import { join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ExtensionManager } from './extension-manager.js'
 import { WorkspaceStore } from './workspace-store.js'
+import { DiagnosticsLog } from './diagnostics-log.js'
 import type { WorkspaceChangeSet } from '../src/lib/workspace-changes.js'
 
 const APP_SCHEME = 'neoanki'
@@ -23,6 +24,7 @@ app.setName('Neo Anki')
 let mainWindow: BrowserWindow | null = null
 let extensionManager: ExtensionManager
 let workspaceStore: WorkspaceStore
+let diagnosticsLog: DiagnosticsLog
 let saveQueue: Promise<void> = Promise.resolve()
 let quitAfterFlush = false
 
@@ -142,6 +144,26 @@ const registerDesktopIpc = () => {
     workspaceStore.clear()
   })
 
+  ipcMain.handle('neo-anki:report-diagnostic', async (event, diagnostic: { source?: string; level?: string; code?: string; message?: string; stack?: string }) => {
+    assertTrustedSender(event)
+    await diagnosticsLog.record({
+      source: diagnostic.source === 'extension-host' ? 'extension-host' : 'renderer',
+      level: diagnostic.level === 'warning' || diagnostic.level === 'info' ? diagnostic.level : 'error',
+      code: diagnostic.code || 'renderer-error',
+      message: diagnostic.message || 'Unknown renderer error',
+      stack: diagnostic.stack,
+    })
+  })
+
+  ipcMain.handle('neo-anki:export-diagnostics', async (event) => {
+    assertTrustedSender(event)
+    const options = { title: 'Export Neo Anki Diagnostics', defaultPath: `neo-anki-diagnostics-${new Date().toISOString().slice(0, 10)}.jsonl`, filters: [{ name: 'JSON Lines', extensions: ['jsonl'] }] }
+    const result = mainWindow ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options)
+    if (result.canceled || !result.filePath) return { canceled: true }
+    await diagnosticsLog.export(result.filePath)
+    return { canceled: false, path: result.filePath }
+  })
+
   ipcMain.handle('neo-anki:list-extensions', async (event) => {
     assertTrustedSender(event)
     return extensionManager.list()
@@ -240,6 +262,9 @@ const createWindow = async () => {
 }
 
 if (hasSingleInstanceLock) app.whenReady().then(async () => {
+  diagnosticsLog = new DiagnosticsLog(join(app.getPath('userData'), 'diagnostics'), app.getVersion())
+  process.on('uncaughtException', (error) => { void diagnosticsLog.record({ source: 'main', level: 'error', code: 'uncaught-exception', message: error.message, stack: error.stack }) })
+  process.on('unhandledRejection', (reason) => { const error = reason instanceof Error ? reason : new Error(String(reason)); void diagnosticsLog.record({ source: 'main', level: 'error', code: 'unhandled-rejection', message: error.message, stack: error.stack }) })
   workspaceStore = new WorkspaceStore(app.getPath('userData'))
   extensionManager = new ExtensionManager(app.getPath('userData'))
   const installPath = process.argv.find((value) => value.startsWith('--install-extension='))?.slice('--install-extension='.length)

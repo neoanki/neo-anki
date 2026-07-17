@@ -34,10 +34,10 @@ const sameManifest = (extension: NeoAnkiExtension, installed: NeoAnkiInstalledEx
 }
 
 export const initializeExternalExtensions = async () => {
-  if (!window.neoAnkiDesktop) return
+  if (!window.neoAnkiDesktop || new URLSearchParams(window.location.search).get('safe-mode') === '1') return
   let installed: NeoAnkiInstalledExtension[] = []
   try { installed = await window.neoAnkiDesktop.listExtensions() }
-  catch (error) { extensionRuntime.reportDiagnostic('extension-host', 'list', error); return }
+  catch (error) { extensionRuntime.reportDiagnostic('extension-host', 'list', error); void window.neoAnkiDesktop.reportDiagnostic({ source: 'extension-host', level: 'error', code: 'extension-list', message: error instanceof Error ? error.message : 'Could not list extensions.' }); return }
   for (const record of installed.filter((candidate) => candidate.enabled)) {
     try {
       const module = await import(/* @vite-ignore */ record.entryUrl) as { default?: unknown }
@@ -46,6 +46,7 @@ export const initializeExternalExtensions = async () => {
       extensionRuntime.register(extension)
     } catch (error) {
       extensionRuntime.reportDiagnostic(record.manifest.id, 'load', error)
+      void window.neoAnkiDesktop.reportDiagnostic({ source: 'extension-host', level: 'error', code: 'extension-load', message: `${record.manifest.id}: ${error instanceof Error ? error.message : 'Extension load failed.'}`, stack: error instanceof Error ? error.stack : undefined })
     }
   }
 }
