@@ -33,7 +33,7 @@ describe('extension manager', () => {
       createImportCheckpoint: async () => '',
       reportDiagnostic: async () => undefined,
       exportDiagnostics: async () => ({ canceled: true }),
-      getReleaseInfo: async () => ({ currentVersion: '0.1.0', channel: 'development', automaticUpdates: false, releasesUrl: 'https://github.com/neoanki/neo-anki/releases' }),
+      getReleaseInfo: async () => ({ currentVersion: '0.1.0', automaticUpdates: false, releasesUrl: 'https://github.com/neoanki/neo-anki/releases' }),
       listExtensions: async () => [],
       chooseExtensionPackage: async () => ({ canceled: false, candidate: { token: 'review-token', manifest, digest: 'a'.repeat(64), compressedBytes: 2048, unpackedBytes: 4096, isDowngrade: false, addedPermissions: ['ui:pages'] } }),
       installExtension,

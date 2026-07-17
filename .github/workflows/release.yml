@@ -1,4 +1,4 @@
-name: Community releases
+name: Releases
 
 on:
   push:
@@ -29,7 +29,9 @@ jobs:
       - name: Verify tag matches package version
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
-        run: test "${GITHUB_REF_NAME}" = "v$(node -p "require('./package.json').version")"
+        run: |
+          test "${GITHUB_REF_NAME}" = "v$(node -p "require('./package.json').version")"
+          test -f "docs/releases/${GITHUB_REF_NAME}.md"
 
   build:
     needs: verify
@@ -58,7 +60,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build && npm run extension:example && npm run desktop:prepare
-      - name: Build no-cost community artifacts
+      - name: Build release artifacts
         run: npx electron-builder ${{ matrix.args }} --publish never
       - name: Verify expected macOS trust state and launch
         if: runner.os == 'macOS'
@@ -67,11 +69,11 @@ jobs:
           app_path="$(find release -maxdepth 3 -type d -name '*.app' -print -quit)"
           test -n "$app_path"
           if codesign -dv --verbose=4 "$app_path" 2>&1 | grep -q 'Authority=Developer ID'; then
-            echo 'Community macOS builds must not claim an unavailable Developer ID identity.'
+            echo 'The macOS release must not claim an unavailable Developer ID identity.'
             exit 1
           fi
           if spctl --assess --type exec "$app_path"; then
-            echo 'Community macOS builds are expected to require the documented Open Anyway flow.'
+            echo 'The unsigned macOS release is expected to require the documented Open Anyway flow.'
             exit 1
           fi
           executable="$app_path/Contents/MacOS/Neo Anki"
@@ -84,7 +86,7 @@ jobs:
           $installer = Get-ChildItem release -Filter *.exe | Select-Object -First 1
           if (-not $installer) { throw 'No Windows installer was produced.' }
           $signature = Get-AuthenticodeSignature $installer.FullName
-          if ($signature.Status -ne 'NotSigned') { throw "Expected an unsigned community installer, got: $($signature.Status)" }
+          if ($signature.Status -ne 'NotSigned') { throw "Expected an unsigned installer, got: $($signature.Status)" }
           $executable = Get-ChildItem release/win-unpacked -Filter *.exe | Select-Object -First 1
           if (-not $executable) { throw 'No packaged Windows executable was produced.' }
           $env:NEO_ANKI_PACKAGED_APP = $executable.FullName
@@ -124,6 +126,7 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           pattern: neo-anki-*
@@ -131,8 +134,9 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v3
         with:
+          name: Neo Anki ${{ github.ref_name }}
           draft: true
-          generate_release_notes: true
+          body_path: docs/releases/${{ github.ref_name }}.md
           files: artifacts/*
       - name: Verify uploaded draft assets
         env:

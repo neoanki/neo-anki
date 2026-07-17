@@ -68,7 +68,7 @@ test('installs, loads, and disables a third-party extension package', async () =
     await expect(window.getByRole('heading', { name: 'Study Pulse' })).toBeVisible()
 
     await window.getByRole('button', { name: 'Settings', exact: true }).click()
-    await expect(window.getByText(/community builds update manually/i)).toBeVisible()
+    await expect(window.getByText(/updates are installed manually/i)).toBeVisible()
     await expect(window.getByText(/local package · neo anki sdk examples/i)).toBeVisible()
     await window.getByText('Study Pulse', { exact: true }).last().click()
     await window.getByRole('button', { name: 'Disable' }).click()
