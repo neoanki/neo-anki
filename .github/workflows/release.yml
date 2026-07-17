@@ -1,0 +1,104 @@
+name: Release candidates
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint && npm run typecheck && npm run test:coverage && npm run build
+      - name: Verify tag matches package version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: test "${GITHUB_REF_NAME}" = "v$(node -p "require('./package.json').version")"
+
+  build:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            os: macos-15
+            args: --mac --arm64
+          - name: macos-x64
+            os: macos-15-intel
+            args: --mac --x64
+          - name: windows-x64
+            os: windows-2025
+            args: --win --x64
+          - name: linux-x64
+            os: ubuntu-24.04
+            args: --linux --x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      CSC_LINK: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+      CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      WIN_CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+      WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build && npm run extension:example && npm run desktop:prepare
+      - name: Build signed release artifacts
+        run: npx electron-builder ${{ matrix.args }} --publish never
+      - name: Create checksums
+        shell: bash
+        run: |
+          cd release
+          find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS.txt
+      - name: Create CycloneDX SBOM
+        shell: bash
+        run: npm sbom --sbom-format cyclonedx > "release/neo-anki-${{ matrix.name }}.cdx.json"
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'release/*'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neo-anki-${{ matrix.name }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: neo-anki-*
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: artifacts/*
