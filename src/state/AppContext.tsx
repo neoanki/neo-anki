@@ -43,10 +43,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [route, setRoute] = useState<Route>('today')
   const [activeSession, setActiveSession] = useState<StudySession | null>(null)
   const [persistenceError, setPersistenceError] = useState('')
+  const dataRef = useRef(data)
+  const extensionCommandQueue = useRef<Promise<void>>(Promise.resolve())
   const transportRef = useRef<SyncTransport | null>(null)
   const receivingRef = useRef(false)
 
   useEffect(() => {
+    dataRef.current = data
     let current = true
     void saveData(data).then(() => { if (current) setPersistenceError('') }).catch((error) => {
       if (current) setPersistenceError(error instanceof Error ? error.message : 'Neo Anki could not save your latest changes.')
@@ -258,10 +261,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     })
   }
 
-  const runExtensionCommand = useCallback(async (id: string, payload: unknown) => {
-    const next = await extensionRuntime.runCommand(id, data, payload)
-    setData(next)
-  }, [data])
+  const runExtensionCommand = useCallback((id: string, payload: unknown) => {
+    const task = extensionCommandQueue.current.catch(() => undefined).then(async () => {
+      const next = await extensionRuntime.runCommand(id, dataRef.current, payload)
+      dataRef.current = next
+      setData(next)
+    })
+    extensionCommandQueue.current = task
+    return task
+  }, [])
   const mergeImport = (imported: Pick<AppData, 'items' | 'cards' | 'assets'>) => setData((current) => {
     const itemIds = new Set(current.items.map((item) => item.id))
     const cardIds = new Set(current.cards.map((card) => card.id))

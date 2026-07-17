@@ -10,6 +10,9 @@ import { useEffect, useRef } from 'react'
 const seed = createSeedData()
 const card = seed.cards[0]
 const item = seed.items.find((candidate) => candidate.id === card.itemId)!
+const host = { platform: 'web' as const, network: { fetch: vi.fn() }, secrets: { has: vi.fn(), get: vi.fn(), set: vi.fn(), delete: vi.fn() } }
+const settingsProps = { extensionId: 'org.neoanki.card-timer', data: seed, host, runCommand: vi.fn() }
+const reviewProps = { extensionId: 'org.neoanki.card-timer', card, item, assets: seed.assets, host }
 
 afterEach(() => vi.useRealTimers())
 
@@ -17,14 +20,14 @@ describe('Card Timer extension', () => {
   it('is disabled by default', () => {
     vi.useFakeTimers()
     const submitRating = vi.fn()
-    render(<CardTimerReviewTool extensionId="org.neoanki.card-timer" card={card} item={item} revealed={false} submitRating={submitRating} />)
+    render(<CardTimerReviewTool {...reviewProps} revealed={false} submitRating={submitRating} />)
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
     act(() => vi.advanceTimersByTime(60_000))
     expect(submitRating).not.toHaveBeenCalled()
   })
 
   it('lets the user enable the extension and clamps the per-card limit', async () => {
-    render(<CardTimerSettingsPanel extensionId="org.neoanki.card-timer" />)
+    render(<CardTimerSettingsPanel {...settingsProps} />)
     const toggle = screen.getByRole('checkbox', { name: /disabled/i })
     expect(toggle).not.toBeChecked()
     expect(screen.queryByLabelText('Seconds per card')).not.toBeInTheDocument()
@@ -41,7 +44,7 @@ describe('Card Timer extension', () => {
     localStorage.setItem(CARD_TIMER_STORAGE_KEY, JSON.stringify({ enabled: true, seconds: 5 }))
     vi.useFakeTimers()
     const submitRating = vi.fn()
-    render(<CardTimerReviewTool extensionId="org.neoanki.card-timer" card={card} item={item} revealed={false} submitRating={submitRating} />)
+    render(<CardTimerReviewTool {...reviewProps} revealed={false} submitRating={submitRating} />)
     expect(screen.getByRole('timer')).toHaveTextContent('5s')
     act(() => vi.advanceTimersByTime(5_000))
     expect(submitRating).toHaveBeenCalledTimes(1)

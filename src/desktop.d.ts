@@ -1,4 +1,4 @@
-import type { ExtensionPackageManifest, ExtensionPermission } from './extensions/sdk'
+import type { ExtensionNetworkRequest, ExtensionNetworkResponse, ExtensionPackageManifest, ExtensionPermission } from './extensions/sdk'
 import type { WorkspaceChangeSet } from './lib/workspace-changes'
 
 declare global {
@@ -50,6 +50,12 @@ declare global {
     setExtensionEnabled(id: string, enabled: boolean): Promise<void>
     uninstallExtension(id: string): Promise<void>
     reloadForExtensions(): Promise<void>
+    claimExtensionCapability(id: string): Promise<string>
+    extensionNetworkFetch(token: string, request: ExtensionNetworkRequest): Promise<ExtensionNetworkResponse>
+    extensionSecretHas(token: string, key: string): Promise<boolean>
+    extensionSecretGet(token: string, key: string): Promise<string | null>
+    extensionSecretSet(token: string, key: string, value: string): Promise<void>
+    extensionSecretDelete(token: string, key: string): Promise<void>
     onNavigate(callback: (destination: string) => void): () => void
   }
 

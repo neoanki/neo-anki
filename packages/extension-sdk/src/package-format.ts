@@ -19,12 +19,15 @@ export const extensionPermissions: ExtensionPermission[] = [
   'ui:library-presets',
   'ui:settings-panels',
   'review:tools',
+  'network:fetch',
+  'storage:secrets',
   'content:transactions',
 ]
 
 const permissionSet = new Set<string>(extensionPermissions)
 const extensionIdPattern = /^[a-z0-9]+(?:[.-][a-z0-9]+)+$/
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
+const networkDomainPattern = /^(?:\*\.)?(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i
 
 export interface ParsedExtensionPackage {
   manifest: ExtensionPackageManifest
@@ -68,6 +71,11 @@ export const validateExtensionPackageManifest = (value: unknown): ExtensionPacka
       throw new Error('Extension homepage must be a valid HTTP or HTTPS URL.')
     }
   }
+  const networkDomains = candidate.networkDomains
+  if (networkDomains !== undefined) {
+    if (!Array.isArray(networkDomains) || networkDomains.length > 32 || networkDomains.some((domain) => typeof domain !== 'string' || !networkDomainPattern.test(domain))) throw new Error('Extension network domains are invalid.')
+    if (!candidate.permissions.includes('network:fetch') && networkDomains.length) throw new Error('Extension network domains require network:fetch.')
+  }
   return {
     format: 'neo-anki-extension',
     schemaVersion: 1,
@@ -80,6 +88,7 @@ export const validateExtensionPackageManifest = (value: unknown): ExtensionPacka
     entry,
     description: candidate.description ? requireText(candidate.description, 'description', 300) : undefined,
     homepage: homepage || undefined,
+    networkDomains: networkDomains ? [...new Set(networkDomains.map((domain) => domain.toLowerCase()))] : undefined,
   }
 }
 

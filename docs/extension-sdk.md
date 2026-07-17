@@ -52,6 +52,8 @@ The default export is the same `NeoAnkiExtension` object passed to `ExtensionReg
 | `ui:library-presets` | Named query and collection presets in Library |
 | `ui:settings-panels` | React controls hosted in Settings |
 | `review:tools` | React review-session tools that can observe the current card and submit a core rating |
+| `network:fetch` | Host-mediated HTTPS requests limited to manifest-declared domains |
+| `storage:secrets` | Credentials encrypted through the operating system secret-storage service |
 
 Non-empty contributions without their declared permission are rejected. Contribution IDs are global within their kind and collisions are rejected. These declarations constrain SDK registration; SDK v1 extensions are explicitly installed full-trust code, so permissions are not a hostile-code sandbox.
 
@@ -65,8 +67,24 @@ Contributed pages and panels receive `ExtensionPageProps`:
 - `plan` — read-only current time-budget plan.
 - `runCommand(id, payload)` — invoke a registered command.
 - `extensionId` — the host contribution identifier.
+- `host` — publisher-neutral, permission-checked network and secret services.
 
-Settings panels receive their `extensionId`. Review tools receive read-only `card` and `item` snapshots, the current `revealed` state, and `submitRating(1 | 2 | 3)`. The host rejects stale or duplicate submissions, then records an accepted rating through the same atomic review transaction used by the standard grading controls. Review and Settings components are isolated behind host error boundaries.
+Settings panels receive `extensionId`, a read-only workspace snapshot, `host`, and `runCommand`. Review tools receive read-only `card`, `item`, and media snapshots, the current `revealed` state, `host`, and `submitRating(1 | 2 | 3)`. The host rejects stale or duplicate submissions, then records an accepted rating through the same atomic review transaction used by the standard grading controls. Review and Settings components are isolated behind host error boundaries.
+
+### Network and secrets
+
+An extension that requests the network declares exact hosts or leading-wildcard subdomains in both its package and runtime manifest:
+
+```json
+{
+  "permissions": ["network:fetch", "storage:secrets"],
+  "networkDomains": ["api.example.com", "*.speech.example.com"]
+}
+```
+
+`host.network.fetch` accepts HTTPS URLs, common HTTP methods, string/base64 bodies, bounded timeouts, and headers. The desktop host checks the permission and allowlist on every request, follows only revalidated redirects, removes ambient cookies, and enforces 4 MB request and 25 MB response limits. It returns status, headers, and a base64 body.
+
+`host.secrets` exposes `has`, `get`, `set`, and `delete` within the calling extension’s namespace. Values are encrypted by Electron `safeStorage`; Neo Anki refuses to store a new secret when secure storage is unavailable.
 
 ## Transactions and degradation
 

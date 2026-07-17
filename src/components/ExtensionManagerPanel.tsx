@@ -16,6 +16,8 @@ const permissionLabels: Record<ExtensionPermission, string> = {
   'ui:library-presets': 'Add Library filter presets',
   'ui:settings-panels': 'Add controls to Settings',
   'review:tools': 'Observe reviews and submit ratings',
+  'network:fetch': 'Connect to declared HTTPS services',
+  'storage:secrets': 'Store credentials in the OS credential vault',
   'content:transactions': 'Propose content changes',
 }
 
@@ -24,6 +26,7 @@ const formatBytes = (bytes: number) => bytes < 1024 * 1024 ? `${Math.ceil(bytes 
 const ManifestSummary = ({ manifest, addedPermissions = [] }: { manifest: ExtensionManifest; addedPermissions?: ExtensionPermission[] }) => (
   <div className="extension-permissions" aria-label={`${manifest.name} permissions`}>
     {manifest.permissions.length ? manifest.permissions.map((permission) => <span className={addedPermissions.includes(permission) ? 'permission-chip new' : 'permission-chip'} key={permission}>{permissionLabels[permission]}{addedPermissions.includes(permission) && <small>New</small>}</span>) : <span className="permission-chip">No contributed capabilities</span>}
+    {manifest.networkDomains?.map((domain) => <span className="permission-chip" key={`network:${domain}`}>HTTPS · {domain}</span>)}
   </div>
 )
 

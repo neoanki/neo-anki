@@ -41,6 +41,12 @@ describe('extension manager', () => {
       setExtensionEnabled: async () => undefined,
       uninstallExtension: async () => undefined,
       reloadForExtensions: async () => undefined,
+      claimExtensionCapability: async () => 'token',
+      extensionNetworkFetch: async () => ({ status: 200, statusText: 'OK', headers: {}, bodyBase64: '' }),
+      extensionSecretHas: async () => false,
+      extensionSecretGet: async () => null,
+      extensionSecretSet: async () => undefined,
+      extensionSecretDelete: async () => undefined,
       onNavigate: () => () => undefined,
     }
 
@@ -55,5 +61,21 @@ describe('extension manager', () => {
     expect(installExtension).toHaveBeenCalledWith('review-token')
     expect(await screen.findByText(/reload to activate it/i)).toBeVisible()
     expect(screen.getByRole('button', { name: 'Reload now' })).toBeVisible()
+  })
+
+  it('shows every declared network destination during install review', async () => {
+    const networkManifest: ExtensionPackageManifest = { ...manifest, permissions: ['network:fetch'], networkDomains: ['api.example.com'], name: 'Network Fixture' }
+    window.neoAnkiDesktop = {
+      isDesktop: true, rendererReady: () => undefined, loadData: () => ({ data: null, storagePath: '', recoveredFromBackup: false }), saveData: async () => undefined,
+      exportBackup: async () => ({ canceled: true }), restoreBackup: async () => ({ canceled: true }), resetData: async () => undefined, createImportCheckpoint: async () => '', reportDiagnostic: async () => undefined,
+      exportDiagnostics: async () => ({ canceled: true }), getReleaseInfo: async () => ({ currentVersion: '0.1.0', automaticUpdates: false, releasesUrl: '' }), listExtensions: async () => [],
+      chooseExtensionPackage: async () => ({ canceled: false, candidate: { token: 'network', manifest: networkManifest, digest: 'b'.repeat(64), compressedBytes: 100, unpackedBytes: 200, isDowngrade: false, addedPermissions: ['network:fetch'] } }),
+      installExtension: async () => { throw new Error('not used') }, discardExtension: async () => undefined, setExtensionEnabled: async () => undefined, uninstallExtension: async () => undefined, reloadForExtensions: async () => undefined,
+      claimExtensionCapability: async () => 'token', extensionNetworkFetch: async () => ({ status: 200, statusText: 'OK', headers: {}, bodyBase64: '' }), extensionSecretHas: async () => false,
+      extensionSecretGet: async () => null, extensionSecretSet: async () => undefined, extensionSecretDelete: async () => undefined, onNavigate: () => () => undefined,
+    }
+    render(<ExtensionManagerPanel />)
+    await userEvent.click(screen.getByRole('button', { name: /install from file/i }))
+    expect(await screen.findByText('HTTPS · api.example.com')).toBeVisible()
   })
 })

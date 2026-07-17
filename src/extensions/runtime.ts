@@ -9,6 +9,7 @@ import { sharedPacksExtension } from './shared-packs'
 import { insightsExtension } from './insights'
 import { cardTimerExtension } from './card-timer'
 import type { NeoAnkiExtension } from './sdk'
+import { prepareExtensionHost } from './host'
 
 const bundledExtensions: NeoAnkiExtension[] = [
   promptTypesExtension,
@@ -33,6 +34,7 @@ const sameManifest = (extension: NeoAnkiExtension, installed: NeoAnkiInstalledEx
     && left.sdkVersion === right.sdkVersion
     && left.publisher === right.publisher
     && JSON.stringify([...left.permissions].sort()) === JSON.stringify([...right.permissions].sort())
+    && JSON.stringify([...(left.networkDomains || [])].sort()) === JSON.stringify([...(right.networkDomains || [])].sort())
 }
 
 export const initializeExternalExtensions = async () => {
@@ -40,7 +42,9 @@ export const initializeExternalExtensions = async () => {
   let installed: NeoAnkiInstalledExtension[] = []
   try { installed = await window.neoAnkiDesktop.listExtensions() }
   catch (error) { extensionRuntime.reportDiagnostic('extension-host', 'list', error); void window.neoAnkiDesktop.reportDiagnostic({ source: 'extension-host', level: 'error', code: 'extension-list', message: error instanceof Error ? error.message : 'Could not list extensions.' }); return }
-  for (const record of installed.filter((candidate) => candidate.enabled)) {
+  const enabled = installed.filter((candidate) => candidate.enabled)
+  await Promise.all(enabled.map((record) => prepareExtensionHost(record.manifest.id).catch((error) => extensionRuntime.reportDiagnostic(record.manifest.id, 'capability-host', error))))
+  for (const record of enabled) {
     try {
       const module = await import(/* @vite-ignore */ record.entryUrl) as { default?: unknown }
       const extension = module.default as NeoAnkiExtension | undefined

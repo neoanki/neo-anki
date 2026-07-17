@@ -8,6 +8,7 @@ import { extensionRuntime } from '../extensions/runtime'
 import { useApp } from '../state/AppContext'
 import type { ReviewRating } from '../types'
 import { ExtensionHostBoundary } from '../components/ExtensionHostBoundary'
+import { createExtensionHost } from '../extensions/host'
 
 export const ReviewPage = () => {
   const { activeSession, data, endSession, navigate, reviewCard, undoLastReview } = useApp()
@@ -141,7 +142,7 @@ export const ReviewPage = () => {
           <div className="review-tool-host">
             {reviewTools.map(({ id, extensionId, component: Tool }) => (
               <ExtensionHostBoundary key={`${extensionId}:${id}`} onError={(error) => extensionRuntime.reportDiagnostic(extensionId, id, error)}>
-                <Tool extensionId={extensionId} card={structuredClone(card)} item={structuredClone(item)} revealed={revealed} submitRating={(rating) => grade(rating, true, card.id)} />
+                <Tool extensionId={extensionId} card={structuredClone(card)} item={structuredClone(item)} assets={structuredClone(data.assets)} revealed={revealed} host={createExtensionHost(extensionId)} submitRating={(rating) => grade(rating, true, card.id)} />
               </ExtensionHostBoundary>
             ))}
           </div>
