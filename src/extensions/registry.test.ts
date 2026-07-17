@@ -118,4 +118,10 @@ describe('public extension registry', () => {
     expect(registry.settingsPanels()).toEqual([expect.objectContaining({ id: 'timer-settings', extensionId: 'independent.review-tools' })])
     expect(registry.reviewTools()).toEqual([expect.objectContaining({ id: 'timer-review', extensionId: 'independent.review-tools' })])
   })
+
+  it('applies the same network declaration rules to every publisher', () => {
+    const registry = new ExtensionRegistry()
+    expect(() => registry.register({ manifest: { ...manifest('independent.network'), networkDomains: ['api.example.com'] } })).toThrow('without network:fetch')
+    expect(() => registry.register({ manifest: { ...manifest('independent.network', ['network:fetch', 'storage:secrets']), networkDomains: ['api.example.com'] } })).not.toThrow()
+  })
 })

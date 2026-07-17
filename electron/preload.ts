@@ -19,6 +19,12 @@ contextBridge.exposeInMainWorld('neoAnkiDesktop', {
   setExtensionEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke('neo-anki:set-extension-enabled', id, enabled),
   uninstallExtension: (id: string) => ipcRenderer.invoke('neo-anki:uninstall-extension', id),
   reloadForExtensions: () => ipcRenderer.invoke('neo-anki:reload-for-extensions'),
+  claimExtensionCapability: (id: string) => ipcRenderer.invoke('neo-anki:claim-extension-capability', id),
+  extensionNetworkFetch: (token: string, request: unknown) => ipcRenderer.invoke('neo-anki:extension-network-fetch', token, request),
+  extensionSecretHas: (token: string, key: string) => ipcRenderer.invoke('neo-anki:extension-secret-has', token, key),
+  extensionSecretGet: (token: string, key: string) => ipcRenderer.invoke('neo-anki:extension-secret-get', token, key),
+  extensionSecretSet: (token: string, key: string, value: string) => ipcRenderer.invoke('neo-anki:extension-secret-set', token, key, value),
+  extensionSecretDelete: (token: string, key: string) => ipcRenderer.invoke('neo-anki:extension-secret-delete', token, key),
   onNavigate: (callback: (destination: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, destination: string) => callback(destination)
     ipcRenderer.on('neo-anki:navigate', listener)

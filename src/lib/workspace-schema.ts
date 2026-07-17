@@ -42,6 +42,7 @@ export const knowledgeItemSchema = z.object({
   mediaIds: z.array(id),
   occlusions: z.array(occlusionSchema),
   provenance: provenanceSchema.optional(),
+  extensionData: z.record(z.string(), z.unknown()).optional(),
   createdAt: timestamp,
   updatedAt: timestamp,
 }).passthrough()
@@ -224,6 +225,7 @@ export const migrateWorkspaceData = (input: LegacyWorkspaceData): AppData => {
     mediaIds: item.mediaIds || [],
     occlusions: item.occlusions || [],
     provenance: item.provenance,
+    extensionData: item.extensionData,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
   }))

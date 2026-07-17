@@ -44,6 +44,12 @@ describe('storage and migrations', () => {
       setExtensionEnabled: async () => undefined,
       uninstallExtension: async () => undefined,
       reloadForExtensions: async () => undefined,
+      claimExtensionCapability: async () => 'token',
+      extensionNetworkFetch: async () => ({ status: 200, statusText: 'OK', headers: {}, bodyBase64: '' }),
+      extensionSecretHas: async () => false,
+      extensionSecretGet: async () => null,
+      extensionSecretSet: async () => undefined,
+      extensionSecretDelete: async () => undefined,
       onNavigate: () => () => undefined,
     }
 

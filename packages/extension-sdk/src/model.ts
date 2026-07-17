@@ -56,6 +56,8 @@ export interface KnowledgeItem {
   mediaIds: string[]
   occlusions: OcclusionRect[]
   provenance?: ItemProvenance
+  /** Namespaced, extension-owned metadata. Extensions must only write their own manifest id. */
+  extensionData?: Record<string, unknown>
   createdAt: string
   updatedAt: string
 }

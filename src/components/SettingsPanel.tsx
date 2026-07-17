@@ -6,13 +6,14 @@ import { extensionRuntime } from '../extensions/runtime'
 import { ExtensionManagerPanel } from './ExtensionManagerPanel'
 import { UpdatePanel } from './UpdatePanel'
 import { ExtensionHostBoundary } from './ExtensionHostBoundary'
+import { createExtensionHost } from '../extensions/host'
 
 const MAX_IMPORT_BYTES = 2 * 1024 * 1024 * 1024
 const LARGE_IMPORT_BYTES = 500 * 1024 * 1024
 const formatImportSize = (bytes: number) => bytes >= 1024 * 1024 * 1024 ? `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB` : `${Math.ceil(bytes / 1024 / 1024)} MB`
 
 export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
-  const { data, persistenceError, setRetention, toggleTheme, replaceData, resetData, mergeImport } = useApp()
+  const { data, persistenceError, setRetention, toggleTheme, replaceData, resetData, mergeImport, runExtensionCommand } = useApp()
   const fileRef = useRef<HTMLInputElement>(null)
   const importToken = useRef(0)
   const [message, setMessage] = useState('')
@@ -152,7 +153,7 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
             onError={(error) => extensionRuntime.reportDiagnostic(extensionId, id, error)}
             fallback={<p className="extension-error" role="status">This extension’s settings are unavailable. The rest of Settings is unaffected.</p>}
           >
-            <Panel extensionId={extensionId} />
+            <Panel extensionId={extensionId} data={structuredClone(data)} host={createExtensionHost(extensionId)} runCommand={runExtensionCommand} />
           </ExtensionHostBoundary>
         ))}
 

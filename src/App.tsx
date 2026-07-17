@@ -7,6 +7,7 @@ import { TodayPage } from './pages/TodayPage'
 import { PlansPage } from './pages/PlansPage'
 import { useApp } from './state/AppContext'
 import { extensionRuntime } from './extensions/runtime'
+import { createExtensionHost } from './extensions/host'
 
 export const App = () => {
   const { data, route, plan, runExtensionCommand } = useApp()
@@ -19,7 +20,7 @@ export const App = () => {
       {route === 'library' && <LibraryPage />}
       {route === 'create' && <CreatePage />}
       {route === 'plans' && <PlansPage />}
-      {ExtensionPage && extensionPage && <ExtensionPage extensionId={extensionPage.route} data={data} plan={plan} runCommand={runExtensionCommand} />}
+      {ExtensionPage && extensionPage && <ExtensionPage extensionId={extensionPage.extensionId} data={data} plan={plan} host={createExtensionHost(extensionPage.extensionId)} runCommand={runExtensionCommand} />}
       {route === 'review' && <ReviewPage />}
     </AppShell>
   )

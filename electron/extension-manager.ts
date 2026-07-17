@@ -161,6 +161,19 @@ export class ExtensionManager {
     await this.saveState(state)
   }
 
+  async requireEnabled(id: string) {
+    const state = await this.loadState()
+    const entry = state.extensions[id]
+    if (!entry?.enabled) throw new Error(`Extension ${id} is not installed or enabled.`)
+    return entry.manifest
+  }
+
+  async requirePermission(id: string, permission: ExtensionPermission) {
+    const manifest = await this.requireEnabled(id)
+    if (!manifest.permissions.includes(permission)) throw new Error(`Extension ${id} does not have ${permission}.`)
+    return manifest
+  }
+
   async uninstall(id: string) {
     const state = await this.loadState()
     if (!state.extensions[id]) return

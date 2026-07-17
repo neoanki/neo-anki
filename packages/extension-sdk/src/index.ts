@@ -16,6 +16,8 @@ export type ExtensionPermission =
   | 'ui:library-presets'
   | 'ui:settings-panels'
   | 'review:tools'
+  | 'network:fetch'
+  | 'storage:secrets'
   | 'content:transactions'
 
 export interface ExtensionManifest {
@@ -27,6 +29,8 @@ export interface ExtensionManifest {
   permissions: ExtensionPermission[]
   description?: string
   homepage?: string
+  /** HTTPS hosts this extension may contact. Wildcards are limited to a leading `*.`. */
+  networkDomains?: string[]
 }
 
 export interface ExtensionPackageManifest extends ExtensionManifest {
@@ -123,6 +127,7 @@ export interface ExtensionPageProps {
   extensionId: string
   data: Readonly<AppData>
   plan: Readonly<DailyPlan>
+  host: ExtensionHost
   runCommand(id: string, payload: unknown): Promise<void>
 }
 
@@ -165,6 +170,9 @@ export interface LibraryPresetContribution {
 
 export interface ExtensionSettingsPanelProps {
   extensionId: string
+  data: Readonly<AppData>
+  host: ExtensionHost
+  runCommand(id: string, payload: unknown): Promise<void>
 }
 
 export interface ExtensionSettingsPanelContribution {
@@ -176,8 +184,39 @@ export interface ReviewToolProps {
   extensionId: string
   card: Readonly<PracticeCard>
   item: Readonly<KnowledgeItem>
+  assets: readonly Readonly<MediaAsset>[]
   revealed: boolean
+  host: ExtensionHost
   submitRating(rating: ReviewRating): void
+}
+
+export interface ExtensionNetworkRequest {
+  url: string
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+  headers?: Record<string, string>
+  body?: string
+  bodyBase64?: string
+  timeoutMs?: number
+}
+
+export interface ExtensionNetworkResponse {
+  status: number
+  statusText: string
+  headers: Record<string, string>
+  bodyBase64: string
+}
+
+export interface ExtensionHost {
+  platform: 'desktop' | 'web'
+  network: {
+    fetch(request: ExtensionNetworkRequest): Promise<ExtensionNetworkResponse>
+  }
+  secrets: {
+    has(key: string): Promise<boolean>
+    get(key: string): Promise<string | null>
+    set(key: string, value: string): Promise<void>
+    delete(key: string): Promise<void>
+  }
 }
 
 export interface ReviewToolContribution {

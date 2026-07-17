@@ -51,13 +51,15 @@ Add scripts and the source entry to `package.json`:
 }
 ```
 
-IDs use lowercase reverse-domain notation. Versions use semantic versioning. The package manifest is shown before installation; the runtime extension must match its ID, version, SDK version, publisher, and permissions.
+IDs use lowercase reverse-domain notation. Versions use semantic versioning. The package manifest is shown before installation; the runtime extension must match its ID, version, SDK version, publisher, permissions, and network domains.
+
+For remote APIs, request `network:fetch`, list only the necessary HTTPS hosts in `networkDomains`, and use `props.host.network.fetch`. For credentials, request `storage:secrets` and use `props.host.secrets`; do not place keys in local storage, workspace data, source code, URLs, or diagnostics.
 
 ## 3. Implement the default export
 
 Use `defineExtension` for inference and compatibility checking. React UI contributions may use normal hooks and the SDK’s stable UI primitives. Do not import Neo Anki source files or private application context.
 
-Review-session tools declare `review:tools` and receive the current read-only card/item plus a guarded `submitRating` callback. Settings controls declare `ui:settings-panels`. These are ordinary public contributions: bundled and independently installed extensions receive identical props and host protections.
+Review-session tools declare `review:tools` and receive the current read-only card/item/media snapshot plus a guarded `submitRating` callback. Settings controls declare `ui:settings-panels` and receive the workspace snapshot plus `runCommand`. Both receive the same permission-bound host API. These are ordinary public contributions: bundled and independently installed extensions receive identical props and host protections.
 
 Run:
 

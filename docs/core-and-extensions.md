@@ -13,6 +13,7 @@ The kernel owns only capabilities whose failure could make the baseline capture 
 - Transactional local persistence, verified media, rotating recovery backups, native restore/export, and deterministic data merge.
 - The Today, Library, Create, and Review surfaces plus extension hosts and Settings.
 - The public extension registry: SDK-version validation, permission checks, collision detection, bounded transactions, diagnostics, and failure fallbacks.
+- The publisher-neutral capability host: declared-domain HTTPS, OS-encrypted extension secrets, request limits, and redirect revalidation.
 
 The kernel deliberately does not know a closed list of prompt IDs, page routes, importer sources, or recovery-policy IDs. Those identifiers are strings registered through the public SDK.
 
@@ -48,7 +49,7 @@ See [extension-sdk.md](extension-sdk.md) for the contract and an independently p
 - Duplicate contribution IDs are rejected before startup completes.
 - Planning-signal strength is clamped to a bounded range; non-finite policy scores are ignored.
 - Commands receive a cloned snapshot and have no effect unless they submit a replacement transaction.
-- Settings and Review contributions are isolated behind host error boundaries; review ratings reject duplicate or stale submissions.
+- Settings and Review contributions are isolated behind host error boundaries; both receive read-only snapshots and the same host API, while review ratings reject duplicate or stale submissions.
 - Command transactions cannot rewrite the append-only review log, device identity, scheduler settings, or schema version.
 - Pack operations preserve scheduling state; conflicting content edits remain explicit.
 - Session duration, focus, and presentation order never mutate due dates or review history.

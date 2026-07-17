@@ -45,4 +45,11 @@ describe('third-party extension package format', () => {
   it('accepts public review-tool and settings-panel permissions', () => {
     expect(validateExtensionPackageManifest({ ...manifest, permissions: ['ui:settings-panels', 'review:tools'] }).permissions).toEqual(['ui:settings-panels', 'review:tools'])
   })
+
+  it('validates declared network domains and their permission', () => {
+    const valid = validateExtensionPackageManifest({ ...manifest, permissions: ['network:fetch', 'storage:secrets'], networkDomains: ['api.example.com', '*.speech.example.com'] })
+    expect(valid.networkDomains).toEqual(['api.example.com', '*.speech.example.com'])
+    expect(() => validateExtensionPackageManifest({ ...manifest, networkDomains: ['api.example.com'] })).toThrow('require network:fetch')
+    expect(() => validateExtensionPackageManifest({ ...manifest, permissions: ['network:fetch'], networkDomains: ['https://example.com/path'] })).toThrow('domains are invalid')
+  })
 })

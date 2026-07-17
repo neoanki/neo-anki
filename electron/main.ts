@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ExtensionManager } from './extension-manager.js'
+import { ExtensionServices } from './extension-services.js'
 import { WorkspaceStore } from './workspace-store.js'
 import { DiagnosticsLog } from './diagnostics-log.js'
 import type { WorkspaceChangeSet } from '../src/lib/workspace-changes.js'
@@ -24,6 +25,7 @@ app.setName('Neo Anki')
 
 let mainWindow: BrowserWindow | null = null
 let extensionManager: ExtensionManager
+let extensionServices: ExtensionServices
 let workspaceStore: WorkspaceStore
 let diagnosticsLog: DiagnosticsLog
 let saveQueue: Promise<void> = Promise.resolve()
@@ -247,6 +249,30 @@ const registerDesktopIpc = () => {
     await saveQueue.catch(() => undefined)
     mainWindow?.webContents.reload()
   })
+  ipcMain.handle('neo-anki:extension-network-fetch', async (event, token: string, request) => {
+    assertTrustedSender(event)
+    return extensionServices.fetch(token, request)
+  })
+  ipcMain.handle('neo-anki:claim-extension-capability', async (event, id: string) => {
+    assertTrustedSender(event)
+    return extensionServices.claim(id)
+  })
+  ipcMain.handle('neo-anki:extension-secret-has', async (event, token: string, key: string) => {
+    assertTrustedSender(event)
+    return extensionServices.hasSecret(token, key)
+  })
+  ipcMain.handle('neo-anki:extension-secret-get', async (event, token: string, key: string) => {
+    assertTrustedSender(event)
+    return extensionServices.getSecret(token, key)
+  })
+  ipcMain.handle('neo-anki:extension-secret-set', async (event, token: string, key: string, value: string) => {
+    assertTrustedSender(event)
+    await extensionServices.setSecret(token, key, value)
+  })
+  ipcMain.handle('neo-anki:extension-secret-delete', async (event, token: string, key: string) => {
+    assertTrustedSender(event)
+    await extensionServices.deleteSecret(token, key)
+  })
 }
 
 const registerAppProtocol = () => {
@@ -315,6 +341,7 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   process.on('unhandledRejection', (reason) => { const error = reason instanceof Error ? reason : new Error(String(reason)); void diagnosticsLog.record({ source: 'main', level: 'error', code: 'unhandled-rejection', message: error.message, stack: error.stack }) })
   workspaceStore = new WorkspaceStore(app.getPath('userData'))
   extensionManager = new ExtensionManager(app.getPath('userData'))
+  extensionServices = new ExtensionServices(app.getPath('userData'), extensionManager)
   const installPath = process.argv.find((value) => value.startsWith('--install-extension='))?.slice('--install-extension='.length)
   if (installPath) {
     try { await extensionManager.installFile(resolve(installPath)) }
