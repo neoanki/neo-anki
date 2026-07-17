@@ -24,7 +24,9 @@ const sourceFiles = (await readdir(sourceDirectory, { withFileTypes: true }))
 for (const extension of target.extensions) {
   if (!sourceFiles.some((file) => file.endsWith(extension))) throw new Error(`No ${extension} artifact was produced for ${targetName}.`)
 }
-for (const file of sourceFiles) await copyFile(join(sourceDirectory, file), join(destinationDirectory, file))
+const stagedFiles = sourceFiles.map((file) => ({ source: file, destination: file.replace(/\s+/g, '-') }))
+if (new Set(stagedFiles.map(({ destination }) => destination)).size !== stagedFiles.length) throw new Error(`Normalized artifact names collide for ${targetName}.`)
+for (const file of stagedFiles) await copyFile(join(sourceDirectory, file.source), join(destinationDirectory, file.destination))
 await copyFile(resolve(target.instructions), join(destinationDirectory, `INSTALL-${targetName}.md`))
 
-process.stdout.write(`Staged ${sourceFiles.join(', ')} for ${targetName}.\n`)
+process.stdout.write(`Staged ${stagedFiles.map(({ destination }) => destination).join(', ')} for ${targetName}.\n`)
