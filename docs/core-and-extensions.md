@@ -10,7 +10,7 @@ The kernel owns only capabilities whose failure could make the baseline capture 
 - FSRS scheduling and the atomic review transaction.
 - The daily time envelope, forecast, deterministic session composer, and the baseline at-risk queue order.
 - Basic question → answer creation and rendering, including the fallback renderer for unknown prompt types.
-- Local persistence, rolling recovery, native JSON backups, and deterministic data merge.
+- Transactional local persistence, verified media, rotating recovery backups, native restore/export, and deterministic data merge.
 - The Today, Library, Create, and Review surfaces plus extension hosts and Settings.
 - The public extension registry: SDK-version validation, permission checks, collision detection, bounded transactions, diagnostics, and failure fallbacks.
 

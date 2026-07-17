@@ -1,20 +1,20 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
-import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { copyFileSync, existsSync, readFileSync } from 'node:fs'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ExtensionManager } from './extension-manager.js'
+import { WorkspaceStore } from './workspace-store.js'
+import type { WorkspaceChangeSet } from '../src/lib/workspace-changes.js'
 
 const APP_SCHEME = 'neoanki'
 const EXTENSION_SCHEME = 'neoanki-extension'
-const DATA_FILE = 'neo-anki-data.json'
-const RECOVERY_FILE = 'neo-anki-data.recovery.json'
-const TEMP_FILE = 'neo-anki-data.next.json'
+const MEDIA_SCHEME = 'neoanki-media'
 const devServerUrl = process.env.VITE_DEV_SERVER_URL
 
 protocol.registerSchemesAsPrivileged([
   { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
   { scheme: EXTENSION_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
+  { scheme: MEDIA_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
 ])
 
 if (process.env.NEO_ANKI_USER_DATA_DIR) app.setPath('userData', resolve(process.env.NEO_ANKI_USER_DATA_DIR))
@@ -22,8 +22,18 @@ app.setName('Neo Anki')
 
 let mainWindow: BrowserWindow | null = null
 let extensionManager: ExtensionManager
+let workspaceStore: WorkspaceStore
 let saveQueue: Promise<void> = Promise.resolve()
 let quitAfterFlush = false
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) app.quit()
+app.on('second-instance', () => {
+  if (!mainWindow) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+})
 
 type DesktopDestination = 'today' | 'library' | 'create' | 'plans' | 'insights' | 'settings'
 
@@ -72,64 +82,11 @@ const installApplicationMenu = () => {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
-const storagePaths = () => {
-  const root = app.getPath('userData')
-  return {
-    root,
-    data: join(root, DATA_FILE),
-    recovery: join(root, RECOVERY_FILE),
-    temporary: join(root, TEMP_FILE),
-  }
-}
-
-const isPersistableData = (value: unknown): value is Record<string, unknown> => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-  const candidate = value as Record<string, unknown>
-  return typeof candidate.version === 'number' && Array.isArray(candidate.items) && Array.isArray(candidate.cards) && Array.isArray(candidate.reviews)
-}
-
-const readJsonFile = (path: string) => {
-  const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown
-  if (!isPersistableData(parsed)) throw new Error('Stored data does not match the Neo Anki schema.')
-  return parsed
-}
-
-const loadPersistedData = () => {
-  const paths = storagePaths()
-  try {
-    if (!existsSync(paths.data)) return { data: null, storagePath: paths.data, recoveredFromBackup: false }
-    return { data: readJsonFile(paths.data), storagePath: paths.data, recoveredFromBackup: false }
-  } catch {
-    try {
-      const corruptPath = join(paths.root, `neo-anki-data.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}.json`)
-      if (existsSync(paths.data)) copyFileSync(paths.data, corruptPath)
-      if (!existsSync(paths.recovery)) return { data: null, storagePath: paths.data, recoveredFromBackup: false }
-      return { data: readJsonFile(paths.recovery), storagePath: paths.data, recoveredFromBackup: true }
-    } catch {
-      return { data: null, storagePath: paths.data, recoveredFromBackup: false }
-    }
-  }
-}
-
-const atomicWrite = async (data: unknown, destination = storagePaths().data) => {
-  if (!isPersistableData(data)) throw new Error('Refusing to save invalid Neo Anki data.')
-  const paths = storagePaths()
-  const temporary = destination === paths.data ? paths.temporary : `${destination}.next`
-  await mkdir(dirname(destination), { recursive: true })
-  await writeFile(temporary, `${JSON.stringify(data, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
-  if (destination === paths.data && existsSync(paths.data)) {
-    try {
-      readJsonFile(paths.data)
-      await copyFile(paths.data, paths.recovery)
-    } catch {
-      // Preserve the known-good recovery file when the primary file is corrupt.
-    }
-  }
-  await rename(temporary, destination)
-}
-
-const queueSave = (data: unknown) => {
-  saveQueue = saveQueue.catch(() => undefined).then(() => atomicWrite(data))
+const queueSave = (changes: WorkspaceChangeSet) => {
+  saveQueue = saveQueue.catch(() => undefined).then(async () => {
+    workspaceStore.applyChanges(changes)
+    await workspaceStore.maybeCreateDailyBackup()
+  })
   return saveQueue
 }
 
@@ -142,36 +99,47 @@ const registerDesktopIpc = () => {
   ipcMain.on('neo-anki:load-data', (event) => {
     try {
       assertTrustedSender(event)
-      event.returnValue = loadPersistedData()
+      const status = workspaceStore.status()
+      event.returnValue = { data: workspaceStore.load(), storagePath: status.path, recoveredFromBackup: status.recoveredFromBackup, migratedLegacyData: status.migratedLegacyData, error: status.recoveryError }
     } catch (error) {
       event.returnValue = { data: null, storagePath: '', recoveredFromBackup: false, error: error instanceof Error ? error.message : 'Could not load data.' }
     }
   })
 
-  ipcMain.handle('neo-anki:save-data', async (event, data: unknown) => {
+  ipcMain.handle('neo-anki:save-data', async (event, changes: WorkspaceChangeSet) => {
     assertTrustedSender(event)
-    await queueSave(data)
+    await queueSave(changes)
   })
 
-  ipcMain.handle('neo-anki:export-backup', async (event, data: unknown) => {
+  ipcMain.handle('neo-anki:export-backup', async (event) => {
     assertTrustedSender(event)
-    if (!isPersistableData(data)) throw new Error('Cannot export invalid Neo Anki data.')
     const options = {
       title: 'Export Neo Anki Backup',
-      defaultPath: `neo-anki-${new Date().toISOString().slice(0, 10)}.json`,
-      filters: [{ name: 'Neo Anki backup', extensions: ['json'] }],
+      defaultPath: `neo-anki-${new Date().toISOString().slice(0, 10)}.neoanki-backup`,
+      filters: [{ name: 'Neo Anki backup', extensions: ['neoanki-backup'] }],
     }
     const result = mainWindow ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options)
     if (result.canceled || !result.filePath) return { canceled: true }
-    await atomicWrite(data, result.filePath)
+    await saveQueue.catch(() => undefined)
+    await workspaceStore.exportBackup(result.filePath)
     return { canceled: false, path: result.filePath }
+  })
+
+  ipcMain.handle('neo-anki:restore-backup', async (event) => {
+    assertTrustedSender(event)
+    const options: Electron.OpenDialogOptions = { title: 'Restore Neo Anki Backup', properties: ['openFile'], filters: [{ name: 'Neo Anki backup', extensions: ['neoanki-backup'] }] }
+    const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
+    if (result.canceled || !result.filePaths[0]) return { canceled: true }
+    await saveQueue.catch(() => undefined)
+    await workspaceStore.restoreBackup(result.filePaths[0])
+    return { canceled: false }
   })
 
   ipcMain.handle('neo-anki:reset-data', async (event) => {
     assertTrustedSender(event)
     await saveQueue.catch(() => undefined)
-    const paths = storagePaths()
-    await Promise.all([rm(paths.data, { force: true }), rm(paths.recovery, { force: true }), rm(paths.temporary, { force: true })])
+    await workspaceStore.createAutomaticBackup('before-reset')
+    workspaceStore.clear()
   })
 
   ipcMain.handle('neo-anki:list-extensions', async (event) => {
@@ -230,6 +198,12 @@ const registerAppProtocol = () => {
     const target = await extensionManager.resolveAsset(url.hostname, requestedPath)
     return target ? net.fetch(pathToFileURL(target).toString()) : new Response('Extension asset not found', { status: 404 })
   })
+  protocol.handle(MEDIA_SCHEME, (request) => {
+    const url = new URL(request.url)
+    if (url.hostname !== 'asset') return new Response('Media not found', { status: 404 })
+    const asset = workspaceStore.readAsset(decodeURIComponent(url.pathname.replace(/^\//, '')))
+    return asset ? new Response(asset.bytes, { headers: { 'Content-Type': asset.mimeType, ETag: `"${asset.hash}"`, 'Cache-Control': 'private, max-age=31536000, immutable' } }) : new Response('Media not found', { status: 404 })
+  })
 }
 
 const createWindow = async () => {
@@ -265,7 +239,8 @@ const createWindow = async () => {
   else await mainWindow.loadURL(`${APP_SCHEME}://app/index.html`)
 }
 
-app.whenReady().then(async () => {
+if (hasSingleInstanceLock) app.whenReady().then(async () => {
+  workspaceStore = new WorkspaceStore(app.getPath('userData'))
   extensionManager = new ExtensionManager(app.getPath('userData'))
   const installPath = process.argv.find((value) => value.startsWith('--install-extension='))?.slice('--install-extension='.length)
   if (installPath) {
@@ -278,6 +253,9 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   await createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow() })
+}).catch((error) => {
+  dialog.showErrorBox('Neo Anki could not start', error instanceof Error ? error.message : 'The local workspace could not be opened.')
+  app.quit()
 })
 
 app.on('before-quit', (event) => {
@@ -285,6 +263,7 @@ app.on('before-quit', (event) => {
   event.preventDefault()
   void saveQueue.catch(() => undefined).finally(() => {
     quitAfterFlush = true
+    workspaceStore?.close()
     app.quit()
   })
 })

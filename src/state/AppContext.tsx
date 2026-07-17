@@ -25,8 +25,11 @@ interface AppContextValue {
   addItem: (input: CreateKnowledgeInput) => string
   updateItem: (id: string, changes: Partial<Pick<KnowledgeItem, 'prompt' | 'answer' | 'context' | 'collection' | 'tags' | 'source' | 'citations' | 'mediaIds' | 'occlusions'>>) => void
   deleteItem: (id: string) => void
+  restoreItem: (id: string) => void
+  purgeItem: (id: string) => void
   toggleSuspend: (cardId: string) => void
   reviewCard: (cardId: string, rating: ReviewRating, durationSeconds: number) => void
+  undoLastReview: () => void
   runExtensionCommand: (id: string, payload: unknown) => Promise<void>
   mergeImport: (imported: Pick<AppData, 'items' | 'cards' | 'assets'>) => void
   replaceData: (data: AppData) => void
@@ -99,21 +102,22 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }
 
   const setDailyMinutes = (dailyMinutes: number) => {
-    setData((current) => ({ ...current, settings: { ...current.settings, dailyMinutes } }))
+    setData((current) => ({ ...current, settings: { ...current.settings, dailyMinutes }, updatedAt: new Date().toISOString() }))
   }
 
   const setRetention = (retention: number) => {
-    setData((current) => ({ ...current, settings: { ...current.settings, retention } }))
+    setData((current) => ({ ...current, settings: { ...current.settings, retention }, updatedAt: new Date().toISOString() }))
   }
 
   const setRecoveryStrategy = (recoveryStrategy: RecoveryStrategy) => {
-    setData((current) => ({ ...current, settings: { ...current.settings, recoveryStrategy } }))
+    setData((current) => ({ ...current, settings: { ...current.settings, recoveryStrategy }, updatedAt: new Date().toISOString() }))
   }
 
   const toggleTheme = () => {
     setData((current) => ({
       ...current,
       settings: { ...current.settings, theme: current.settings.theme === 'light' ? 'dark' : 'light' },
+      updatedAt: new Date().toISOString(),
     }))
   }
 
@@ -121,6 +125,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setData((current) => ({
       ...current,
       settings: { ...current.settings, dailyMinutes: minutes, onboardingComplete: true },
+      updatedAt: new Date().toISOString(),
     }))
   }
 
@@ -159,6 +164,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         })),
         ...current.cards,
       ],
+      updatedAt: now,
     }))
     return itemId
   }
@@ -167,25 +173,42 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setData((current) => ({
       ...current,
       items: current.items.map((item) => item.id === id ? { ...item, ...changes, updatedAt: new Date().toISOString() } : item),
+      updatedAt: new Date().toISOString(),
     }))
   }
 
   const deleteItem = (id: string) => {
     setData((current) => {
-      const removedCardIds = new Set(current.cards.filter((card) => card.itemId === id).map((card) => card.id))
+      const item = current.items.find((candidate) => candidate.id === id)
+      if (!item) return current
+      const cards = current.cards.filter((card) => card.itemId === id)
+      const deletedAt = new Date().toISOString()
       return {
         ...current,
         items: current.items.filter((item) => item.id !== id),
         cards: current.cards.filter((card) => card.itemId !== id),
-        reviews: current.reviews.filter((review) => !removedCardIds.has(review.cardId)),
+        trash: [{ id, item, cards, deletedAt }, ...current.trash.filter((entry) => entry.id !== id)],
+        updatedAt: deletedAt,
       }
     })
   }
+
+  const restoreItem = (id: string) => {
+    setData((current) => {
+      const entry = current.trash.find((candidate) => candidate.id === id)
+      if (!entry || current.items.some((item) => item.id === entry.item.id)) return current
+      const updatedAt = new Date().toISOString()
+      return { ...current, items: [entry.item, ...current.items], cards: [...entry.cards, ...current.cards], trash: current.trash.filter((candidate) => candidate.id !== id), updatedAt }
+    })
+  }
+
+  const purgeItem = (id: string) => setData((current) => ({ ...current, trash: current.trash.filter((entry) => entry.id !== id), updatedAt: new Date().toISOString() }))
 
   const toggleSuspend = (cardId: string) => {
     setData((current) => ({
       ...current,
       cards: current.cards.map((card) => card.id === cardId ? { ...card, suspended: !card.suspended, updatedAt: new Date().toISOString() } : card),
+      updatedAt: new Date().toISOString(),
     }))
   }
 
@@ -204,6 +227,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         durationSeconds,
         previousDue: card.fsrs.due,
         nextDue: nextCard.due,
+        previousCard: structuredClone(card.fsrs),
+        previousEstimatedSeconds: card.estimatedSeconds,
       }
       return {
         ...current,
@@ -214,6 +239,21 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           updatedAt: reviewedAt.toISOString(),
         } : candidate),
         reviews: [...current.reviews, event],
+        updatedAt: reviewedAt.toISOString(),
+      }
+    })
+  }
+
+  const undoLastReview = () => {
+    setData((current) => {
+      const event = current.reviews.at(-1)
+      if (!event?.previousCard) return current
+      const updatedAt = new Date().toISOString()
+      return {
+        ...current,
+        cards: current.cards.map((card) => card.id === event.cardId ? { ...card, fsrs: event.previousCard!, estimatedSeconds: event.previousEstimatedSeconds ?? card.estimatedSeconds, updatedAt } : card),
+        reviews: current.reviews.slice(0, -1),
+        updatedAt,
       }
     })
   }
@@ -257,8 +297,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     addItem,
     updateItem,
     deleteItem,
+    restoreItem,
+    purgeItem,
     toggleSuspend,
     reviewCard,
+    undoLastReview,
     runExtensionCommand,
     mergeImport,
     replaceData,

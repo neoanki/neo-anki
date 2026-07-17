@@ -11,14 +11,14 @@ const memoryStorage: Storage = {
   removeItem: (key) => { values.delete(key) },
   setItem: (key, value) => { values.set(key, String(value)) },
 }
-Object.defineProperty(globalThis, 'localStorage', { value: memoryStorage, configurable: true })
-Object.defineProperty(window, 'localStorage', { value: memoryStorage, configurable: true })
-
-afterEach(() => {
-  cleanup()
-  localStorage.clear()
-})
-
-Object.defineProperty(window, 'scrollTo', { value: () => undefined, writable: true })
-document.documentElement.lang = 'en'
-document.title = 'Neo Anki'
+if (typeof window !== 'undefined') {
+  Object.defineProperty(globalThis, 'localStorage', { value: memoryStorage, configurable: true })
+  Object.defineProperty(window, 'localStorage', { value: memoryStorage, configurable: true })
+  afterEach(() => {
+    cleanup()
+    localStorage.clear()
+  })
+  Object.defineProperty(window, 'scrollTo', { value: () => undefined, writable: true })
+  document.documentElement.lang = 'en'
+  document.title = 'Neo Anki'
+}

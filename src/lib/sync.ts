@@ -12,7 +12,7 @@ const byIdNewest = <T extends { id: string; updatedAt?: string }>(left: T[], rig
 export const mergeAppData = (local: AppData, remote: AppData): AppData => {
   const localIsNewer = local.updatedAt >= remote.updatedAt
   return {
-    version: 2,
+    version: 3,
     deviceId: local.deviceId,
     items: byIdNewest(local.items, remote.items),
     cards: byIdNewest(local.cards, remote.cards),
@@ -22,6 +22,7 @@ export const mergeAppData = (local: AppData, remote: AppData): AppData => {
     views: byIdNewest(local.views, remote.views),
     packs: byIdNewest(local.packs, remote.packs),
     packConflicts: byIdNewest(local.packConflicts.map((conflict) => ({ ...conflict, updatedAt: conflict.createdAt })), remote.packConflicts.map((conflict) => ({ ...conflict, updatedAt: conflict.createdAt }))).map(({ updatedAt: _updatedAt, ...conflict }) => conflict),
+    trash: byIdNewest(local.trash.map((entry) => ({ ...entry, updatedAt: entry.deletedAt })), remote.trash.map((entry) => ({ ...entry, updatedAt: entry.deletedAt }))).map(({ updatedAt: _updatedAt, ...entry }) => entry),
     settings: localIsNewer ? local.settings : remote.settings,
     updatedAt: local.updatedAt >= remote.updatedAt ? local.updatedAt : remote.updatedAt,
   }

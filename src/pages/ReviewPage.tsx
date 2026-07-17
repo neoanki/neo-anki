@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Check, Clock3, Edit3, Layers3, RotateCcw } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Clock3, Edit3, Layers3, RotateCcw, Undo2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { getAssetForCard } from '../lib/content'
 import { formatDue, formatDuration } from '../lib/date'
@@ -9,7 +9,7 @@ import { useApp } from '../state/AppContext'
 import type { ReviewRating } from '../types'
 
 export const ReviewPage = () => {
-  const { activeSession, data, endSession, navigate, reviewCard } = useApp()
+  const { activeSession, data, endSession, navigate, reviewCard, undoLastReview } = useApp()
   const [index, setIndex] = useState(0)
   const [revealed, setRevealed] = useState(false)
   const [results, setResults] = useState<ReviewRating[]>([])
@@ -42,10 +42,22 @@ export const ReviewPage = () => {
     if (!nextEntry || nextEntry.blockId === entry?.blockId) setStartedAt(performance.now())
   }
 
+  const undo = () => {
+    if (index <= 0) return
+    undoLastReview()
+    setIndex((current) => Math.max(0, current - 1))
+    setResults((current) => current.slice(0, -1))
+    setDurations((current) => current.slice(0, -1))
+    setAtTransition(false)
+    setRevealed(true)
+    setStartedAt(performance.now())
+  }
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return
       if (event.key === 'Escape') endSession()
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' && index > 0) { event.preventDefault(); undo(); return }
       if (atTransition && (event.code === 'Space' || event.key === 'Enter')) {
         event.preventDefault()
         continueToBlock()
@@ -82,7 +94,7 @@ export const ReviewPage = () => {
           <div><strong>{recalled}</strong><span>recalled</span></div>
           <div><strong>{results.length - recalled}</strong><span>to reinforce</span></div>
         </div>
-        <button className="primary-button" onClick={endSession}>Return to Today</button>
+        <div className="button-row"><button className="secondary-button" onClick={undo}><Undo2 size={17}/> Undo last answer</button><button className="primary-button" onClick={endSession}>Return to Today</button></div>
       </div>
     )
   }
@@ -93,7 +105,7 @@ export const ReviewPage = () => {
   if (atTransition) {
     return (
       <div className="context-transition">
-        <button className="text-button transition-end" onClick={endSession}><ArrowLeft size={18} /> End session</button>
+        <div className="review-nav-actions transition-end"><button className="text-button" onClick={endSession}><ArrowLeft size={18} /> End session</button><button className="text-button" onClick={undo}><Undo2 size={17}/> Undo</button></div>
         <div className="transition-mark"><Layers3 size={28} /></div>
         <p className="eyebrow">Context switch · block {entry.blockIndex + 1} of {activeSession.blocks.length}</p>
         <h1>{previousBlock.contextKey} complete.</h1>
@@ -112,7 +124,7 @@ export const ReviewPage = () => {
   return (
     <div className="review-page">
       <header className="review-header">
-        <button className="text-button" onClick={endSession}><ArrowLeft size={18} /> End session</button>
+        <div className="review-nav-actions"><button className="text-button" onClick={endSession}><ArrowLeft size={18} /> End session</button>{index > 0 && <button className="text-button" onClick={undo} title="Undo last answer (⌘Z)"><Undo2 size={17}/> Undo</button>}</div>
         <div className="session-progress" role="progressbar" aria-label="Review session progress" aria-valuemin={0} aria-valuemax={activeSession.queue.length} aria-valuenow={index + 1}><span style={{ width: `${progress}%` }} /></div>
         <div className="review-count"><span>{entry.contextKey}</span>{index + 1} / {activeSession.queue.length}</div>
       </header>

@@ -4,7 +4,10 @@
   "description": "A calm, time-aware, local-first spaced repetition desktop app.",
   "author": "Neo Anki contributors",
   "private": true,
-  "workspaces": ["packages/*", "examples/*-extension"],
+  "workspaces": [
+    "packages/*",
+    "examples/*-extension"
+  ],
   "version": "0.1.0",
   "type": "module",
   "main": "dist-electron/main.mjs",
@@ -20,7 +23,7 @@
     "desktop:pack": "npm run build && npm run desktop:prepare && electron-builder --dir",
     "desktop:build": "npm run build && npm run desktop:prepare && electron-builder",
     "test:desktop": "npm run build && npm run extension:example && npm run desktop:prepare && playwright test --config=playwright.desktop.config.ts",
-    "typecheck": "tsc -b && tsc --noEmit -p tsconfig.electron.json && npm run check -w @neo-anki/extension-sdk",
+    "typecheck": "tsc -b && tsc --noEmit -p tsconfig.electron.json && tsc --noEmit -p tsconfig.electron-test.json && npm run check -w @neo-anki/extension-sdk",
     "lint": "eslint .",
     "test": "vitest run",
     "test:unit": "vitest run",
@@ -37,7 +40,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "sql.js": "^1.14.1",
-    "ts-fsrs": "^5.2.0"
+    "ts-fsrs": "^5.2.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
@@ -71,15 +75,32 @@
     "appId": "app.neoanki.desktop",
     "productName": "Neo Anki",
     "asar": true,
-    "directories": { "output": "release", "buildResources": "build" },
-    "files": ["dist/**/*", "dist-electron/**/*", "package.json"],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
     "mac": {
       "category": "public.app-category.education",
       "icon": "build/icon.icns",
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "identity": null
     },
-    "win": { "target": "nsis", "icon": "build/icon.png" },
-    "linux": { "category": "Education", "target": "AppImage", "icon": "build/icon.png" }
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "linux": {
+      "category": "Education",
+      "target": "AppImage",
+      "icon": "build/icon.png"
+    }
   }
 }

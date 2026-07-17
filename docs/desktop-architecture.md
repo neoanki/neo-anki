@@ -11,11 +11,13 @@ Neo Anki's MVP is an Electron desktop application. Vite remains a renderer devel
 
 ## Persistence
 
-The main process stores `neo-anki-data.json` under Electron's OS-specific `userData` directory. Every save is serialized and written to a temporary file before an atomic rename. Before replacing an existing workspace, the previous valid file becomes `neo-anki-data.recovery.json`.
+The main process stores `neo-anki.sqlite` under Electron's OS-specific `userData` directory. SQLite runs in WAL mode with full synchronous durability, foreign keys, a busy timeout, schema-version metadata, and normalized tables for knowledge, cards, review events, assets, planning state, conflicts, and Trash. Renderer saves are converted to incremental change sets and applied in one transaction.
 
-If the primary file cannot be parsed, Neo Anki preserves a timestamped copy of the corrupt file and attempts to open the recovery copy. The Settings panel reports recovery and persistence failures instead of silently presenting them as successful saves.
+Media bytes are stored separately from renderer records inside the database. Every asset is addressed through the private `neoanki-media://` protocol and verified against its declared byte length and SHA-256 digest when loaded.
 
-This file-backed store is appropriate for the first desktop MVP. Moving media blobs to a content-addressed directory and normalized durable records to SQLite can happen behind the same renderer bridge without changing the UI or extension API.
+Neo Anki takes rotating daily online backups and a backup before destructive replacement. Restore validates SQLite integrity, schema compatibility, required tables, and the complete semantic workspace before changing the current database. If opening the primary database fails, the damaged file is preserved and the latest verified automatic backup is recovered. Existing `neo-anki-data.json` workspaces are migrated once and preserved verbatim in the backup directory. The Settings panel reports migration, recovery, and persistence failures instead of silently presenting them as successful saves.
+
+Only one process may own the workspace at a time. A second launch focuses the existing window instead of opening the database concurrently.
 
 ## Packaged content
 
@@ -25,4 +27,4 @@ Enabled local extensions load from the separate `neoanki-extension://` protocol.
 
 Extension archives and lifecycle state live under `userData/extensions/`. Package contents are size/path/manifest validated before being written. A new fingerprinted directory is made durable before the active state pointer changes; state updates keep a recovery copy during replacement.
 
-The Electron renderer remains sandboxed without Node integration, and CSP blocks arbitrary remote scripts and connections. Local extension JavaScript is nonetheless trusted in-process renderer code, not a hostile-code sandbox; the install review states this explicitly.
+The Electron renderer remains sandboxed without Node integration, and CSP blocks arbitrary remote scripts and connections. The remaining extension-code isolation work is tracked as a release blocker: package JavaScript must execute behind the same capability broker for every publisher rather than inside the application renderer.

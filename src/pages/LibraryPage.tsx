@@ -1,4 +1,4 @@
-import { Archive, Edit3, Filter, MoreHorizontal, Plus, Search, Trash2, X } from 'lucide-react'
+import { Archive, ArchiveRestore, Edit3, Filter, MoreHorizontal, Plus, Search, Trash2, Undo2, X } from 'lucide-react'
 import { State } from 'ts-fsrs'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatDue } from '../lib/date'
@@ -31,10 +31,11 @@ const EditDialog = ({ item, onClose }: { item: KnowledgeItem; onClose: () => voi
 }
 
 export const LibraryPage = () => {
-  const { data, navigate, deleteItem, toggleSuspend } = useApp()
+  const { data, navigate, deleteItem, restoreItem, purgeItem, toggleSuspend } = useApp()
   const [query, setQuery] = useState('')
   const [collection, setCollection] = useState('All collections')
   const [editing, setEditing] = useState<KnowledgeItem | null>(null)
+  const [recentlyTrashed, setRecentlyTrashed] = useState<{ id: string; name: string } | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const collections = ['All collections', ...new Set(data.items.map((item) => item.collection))]
   const libraryPresets = extensionRuntime.libraryPresets(data)
@@ -73,12 +74,14 @@ export const LibraryPage = () => {
               <div className="knowledge-cell"><span className="collection-label">{item.collection}</span><strong>{item.prompt}</strong><p>{item.answer}</p><div className="tag-row">{item.tags.map((tag) => <span key={tag}>{tag}</span>)}{health.some((finding) => finding.severity !== 'info') && <span className="health-warning" title={health.map((finding) => finding.message).join(' ')}>needs attention</span>}{item.citations.length > 0 && <span>{item.citations.length} source{item.citations.length === 1 ? '' : 's'}</span>}</div></div>
               <div className="variant-cell">{cards.map((card) => <button key={card.id} className={card.suspended ? 'variant-pill suspended' : 'variant-pill'} onClick={() => toggleSuspend(card.id)} title={card.suspended ? 'Resume prompt' : 'Suspend prompt'}>{card.variant}{card.suspended && ' · paused'}</button>)}</div>
               <div className="status-cell"><strong>{active.length ? (active.some((card) => card.fsrs.state === State.New) ? 'New' : nextDue ? formatDue(nextDue.toISOString()) : 'Active') : 'Paused'}</strong><span>{cards.reduce((sum, card) => sum + card.fsrs.reps, 0)} reviews</span></div>
-              <div className="row-actions"><button className="icon-button" onClick={() => setEditing(item)} aria-label={`Edit ${item.prompt}`}><Edit3 size={18} /></button><button className="icon-button danger-hover" onClick={() => window.confirm('Delete this knowledge item and all of its review history?') && deleteItem(item.id)} aria-label={`Delete ${item.prompt}`}><Trash2 size={18} /></button></div>
+              <div className="row-actions"><button className="icon-button" onClick={() => setEditing(item)} aria-label={`Edit ${item.prompt}`}><Edit3 size={18} /></button><button className="icon-button danger-hover" onClick={() => { if (window.confirm('Move this knowledge item to Trash? Its cards and review history will be preserved.')) { deleteItem(item.id); setRecentlyTrashed({ id: item.id, name: item.prompt }) } }} aria-label={`Move ${item.prompt} to Trash`}><Trash2 size={18} /></button></div>
             </article>
           )
         })}
         {!filtered.length && <div className="empty-state"><Archive size={30} /><h2>No knowledge found</h2><p>Try another filter or add a new item.</p><button className="secondary-button" onClick={() => { setQuery(''); setCollection('All collections') }}><MoreHorizontal size={18} /> Clear filters</button></div>}
       </section>
+      {recentlyTrashed && data.trash.some((entry) => entry.id === recentlyTrashed.id) && <div className="undo-banner" role="status"><span><Trash2 size={17}/><span><strong>Moved to Trash</strong><small>{recentlyTrashed.name}</small></span></span><button className="secondary-button compact" onClick={() => { restoreItem(recentlyTrashed.id); setRecentlyTrashed(null) }}><Undo2 size={16}/> Undo</button></div>}
+      {data.trash.length > 0 && <details className="trash-panel"><summary><span><Archive size={18}/> Trash</span><small>{data.trash.length} {data.trash.length === 1 ? 'item' : 'items'}</small></summary><p>Deleted knowledge stays recoverable. Review events remain in your history even after permanent removal.</p><div className="trash-list">{data.trash.map((entry) => <div key={entry.id}><span><strong>{entry.item.prompt}</strong><small>Deleted {new Date(entry.deletedAt).toLocaleString()}</small></span><span><button className="secondary-button compact" onClick={() => restoreItem(entry.id)}><ArchiveRestore size={16}/> Restore</button><button className="text-button danger" onClick={() => window.confirm('Permanently remove this content from Trash? Its historical review events will remain, but the knowledge item cannot be restored.') && purgeItem(entry.id)}><Trash2 size={16}/> Remove permanently</button></span></div>)}</div></details>}
       {editing && <EditDialog item={editing} onClose={() => setEditing(null)} />}
     </div>
   )

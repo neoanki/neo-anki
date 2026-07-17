@@ -27,6 +27,7 @@ describe('extension manager', () => {
       loadData: () => ({ data: null, storagePath: '', recoveredFromBackup: false }),
       saveData: async () => undefined,
       exportBackup: async () => ({ canceled: true }),
+      restoreBackup: async () => ({ canceled: true }),
       resetData: async () => undefined,
       listExtensions: async () => [],
       chooseExtensionPackage: async () => ({ canceled: false, candidate: { token: 'review-token', manifest, digest: 'a'.repeat(64), compressedBytes: 2048, unpackedBytes: 4096, isDowngrade: false, addedPermissions: ['ui:pages'] } }),

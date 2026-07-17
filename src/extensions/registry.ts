@@ -162,7 +162,7 @@ export class ExtensionRegistry {
     try {
       await command.run({ data: snapshot, replaceData: (replacement) => { next = replacement } }, payload)
       if (!Array.isArray(next.items) || !Array.isArray(next.cards) || !Array.isArray(next.assets)) throw new Error('Extension returned an invalid data transaction.')
-      return { ...next, version: data.version, deviceId: data.deviceId, reviews: data.reviews, settings: data.settings }
+      return { ...next, version: data.version, deviceId: data.deviceId, reviews: data.reviews, settings: data.settings, trash: data.trash }
     } catch (error) { this.record(owner.manifest.id, id, error); throw error }
   }
 

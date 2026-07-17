@@ -96,7 +96,7 @@ export const createSeedData = (): AppData => {
   ]
 
   return {
-    version: 2,
+    version: 3,
     deviceId: uid(),
     items,
     cards,
@@ -106,6 +106,7 @@ export const createSeedData = (): AppData => {
     views,
     packs: [],
     packConflicts: [],
+    trash: [],
     settings: {
       dailyMinutes: 30,
       retention: 0.9,

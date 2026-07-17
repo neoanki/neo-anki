@@ -60,6 +60,13 @@ export interface KnowledgeItem {
   updatedAt: string
 }
 
+export interface TrashEntry {
+  id: string
+  item: KnowledgeItem
+  cards: PracticeCard[]
+  deletedAt: string
+}
+
 export interface StoredFSRSCard extends Omit<FSRSCard, 'due' | 'last_review'> {
   due: string
   last_review?: string
@@ -85,6 +92,8 @@ export interface ReviewEvent {
   durationSeconds: number
   previousDue: string
   nextDue: string
+  previousCard?: StoredFSRSCard
+  previousEstimatedSeconds?: number
 }
 
 export interface SavedViewFilter {
@@ -192,7 +201,7 @@ export interface UserSettings {
 }
 
 export interface AppData {
-  version: 2
+  version: 3
   deviceId: string
   items: KnowledgeItem[]
   cards: PracticeCard[]
@@ -202,6 +211,7 @@ export interface AppData {
   views: SavedView[]
   packs: PackSubscription[]
   packConflicts: PackConflict[]
+  trash: TrashEntry[]
   settings: UserSettings
   updatedAt: string
 }

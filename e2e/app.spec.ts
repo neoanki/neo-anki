@@ -65,6 +65,36 @@ test('typed review compares the answer before grading', async ({ page }) => {
   await expect(page.getByRole('heading', { name: /enough for this session/i })).toBeVisible()
 })
 
+test('undo restores the previous review exactly enough to grade again', async ({ page }) => {
+  const data = onboarded()
+  data.items = data.items.slice(0, 2)
+  const itemIds = new Set(data.items.map((item) => item.id))
+  data.cards = data.cards.filter((card) => itemIds.has(card.itemId)).slice(0, 2)
+  data.reviews = []
+  await startWith(page, data)
+  await page.locator('button.study-button').click()
+  const firstPrompt = await page.locator('.prompt-content h1').textContent()
+  await page.getByRole('button', { name: /reveal answer/i }).click()
+  await page.locator('button.grade-button.recalled').click()
+  await page.getByRole('button', { name: /^undo$/i }).click()
+  await expect(page.locator('.prompt-content h1')).toHaveText(firstPrompt || '')
+  await expect(page.locator('.answer-content')).toBeVisible()
+  await expect(page.locator('button.grade-button.recalled')).toBeVisible()
+})
+
+test('trash keeps knowledge recoverable after deletion', async ({ page }) => {
+  const data = onboarded()
+  const item = data.items[0]
+  await startWith(page, data)
+  await page.getByRole('button', { name: 'Library' }).first().click()
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: `Move ${item.prompt} to Trash` }).click()
+  await expect(page.getByRole('status')).toContainText('Moved to Trash')
+  await expect(page.locator('.library-list article').filter({ hasText: item.prompt })).toHaveCount(0)
+  await page.getByRole('button', { name: /^undo$/i }).click()
+  await expect(page.locator('.library-list article').filter({ hasText: item.prompt })).toBeVisible()
+})
+
 test('switches unrelated categories at an explicit block boundary', async ({ page }) => {
   const data = onboarded()
   data.cards = data.cards.slice(0, 6)

@@ -2,9 +2,10 @@ import { expect, test } from '@playwright/test'
 import { _electron as electron } from 'playwright'
 import { zipSync } from 'fflate'
 import initSqlJs from 'sql.js'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 
 const createAnkiPackage = async () => {
   const SQL = await initSqlJs({ locateFile: () => join(process.cwd(), 'node_modules/sql.js/dist/sql-wasm.wasm') })
@@ -38,9 +39,11 @@ test('desktop app persists the workspace to disk across restarts', async () => {
     await expect(firstWindow.getByRole('heading', { name: 'Today' })).toBeVisible()
     await firstRun.close()
 
-    const stored = JSON.parse(await readFile(join(userData, 'neo-anki-data.json'), 'utf8')) as { settings: { dailyMinutes: number; onboardingComplete: boolean } }
-    expect(stored.settings.dailyMinutes).toBe(45)
-    expect(stored.settings.onboardingComplete).toBe(true)
+    const database = new DatabaseSync(join(userData, 'neo-anki.sqlite'), { readOnly: true })
+    const stored = JSON.parse((database.prepare('SELECT settings_json FROM workspace_meta WHERE id = 1').get() as { settings_json: string }).settings_json) as { dailyMinutes: number; onboardingComplete: boolean }
+    database.close()
+    expect(stored.dailyMinutes).toBe(45)
+    expect(stored.onboardingComplete).toBe(true)
 
     const secondRun = await launch()
     const secondWindow = await secondRun.firstWindow()

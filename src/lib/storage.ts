@@ -1,5 +1,7 @@
-import type { AppData, KnowledgeItem, PracticeCard } from '../types'
+import type { AppData } from '../types'
 import { createSeedData } from '../data/seed'
+import { migrateWorkspaceData, parseWorkspaceData, type LegacyWorkspaceData } from './workspace-schema'
+import { createWorkspaceChangeSet, hasWorkspaceChanges } from './workspace-changes'
 
 const STORAGE_KEY = 'neo-anki:data:v1'
 
@@ -7,70 +9,14 @@ export interface StorageStatus {
   mode: 'desktop' | 'browser'
   path?: string
   recoveredFromBackup: boolean
+  migratedLegacyData?: boolean
   loadError?: string
 }
 
 let storageStatus: StorageStatus = { mode: window.neoAnkiDesktop ? 'desktop' : 'browser', recoveredFromBackup: false }
+let lastPersisted: AppData | null = null
 
-type LegacyAppData = Partial<AppData> & {
-  version?: number
-  items?: Array<Partial<KnowledgeItem> & Pick<KnowledgeItem, 'id' | 'prompt' | 'answer' | 'collection' | 'createdAt' | 'updatedAt'>>
-  cards?: Array<Partial<PracticeCard> & Pick<PracticeCard, 'id' | 'itemId' | 'variant' | 'suspended' | 'fsrs' | 'estimatedSeconds'>>
-}
-
-const timestamp = () => new Date().toISOString()
-
-export const migrateData = (input: LegacyAppData): AppData => {
-  const now = timestamp()
-  const fallback = createSeedData()
-  const items = (input.items || []).map((item) => ({
-    id: item.id,
-    prompt: item.prompt,
-    answer: item.answer,
-    context: item.context || '',
-    collection: item.collection,
-    tags: item.tags || [],
-    source: item.source,
-    citations: item.citations || (item.source ? [{ id: crypto.randomUUID(), title: item.source, url: item.source }] : []),
-    mediaIds: item.mediaIds || [],
-    occlusions: item.occlusions || [],
-    provenance: item.provenance,
-    createdAt: item.createdAt,
-    updatedAt: item.updatedAt,
-  }))
-  const cards = (input.cards || []).map((card) => ({
-    id: card.id,
-    itemId: card.itemId,
-    variant: card.variant,
-    occlusionId: card.occlusionId,
-    suspended: card.suspended,
-    fsrs: card.fsrs,
-    estimatedSeconds: card.estimatedSeconds,
-    createdAt: card.createdAt || now,
-    updatedAt: card.updatedAt || card.fsrs.last_review || now,
-  }))
-
-  return {
-    version: 2,
-    deviceId: input.deviceId || crypto.randomUUID(),
-    items,
-    cards,
-    reviews: input.reviews || [],
-    assets: input.assets || [],
-    goals: input.goals || [],
-    views: input.views || [],
-    packs: input.packs || [],
-    packConflicts: input.packConflicts || [],
-    settings: {
-      dailyMinutes: input.settings?.dailyMinutes ?? fallback.settings.dailyMinutes,
-      retention: input.settings?.retention ?? fallback.settings.retention,
-      theme: input.settings?.theme ?? fallback.settings.theme,
-      onboardingComplete: input.settings?.onboardingComplete ?? false,
-      recoveryStrategy: input.settings?.recoveryStrategy ?? 'risk',
-    },
-    updatedAt: input.updatedAt || now,
-  }
-}
+export const migrateData = migrateWorkspaceData
 
 export const loadData = (): AppData => {
   if (window.neoAnkiDesktop) {
@@ -79,11 +25,14 @@ export const loadData = (): AppData => {
       mode: 'desktop',
       path: result.storagePath,
       recoveredFromBackup: result.recoveredFromBackup,
+      migratedLegacyData: result.migratedLegacyData,
       loadError: result.error,
     }
     if (!result.data) return createSeedData()
     try {
-      return migrateData(result.data as LegacyAppData)
+      const data = migrateData(result.data as LegacyWorkspaceData)
+      lastPersisted = data
+      return data
     } catch {
       storageStatus.loadError = 'The desktop data file could not be migrated. A fresh workspace was opened without overwriting it.'
       return createSeedData()
@@ -92,7 +41,7 @@ export const loadData = (): AppData => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return createSeedData()
-    return migrateData(JSON.parse(raw) as LegacyAppData)
+    return migrateData(JSON.parse(raw) as LegacyWorkspaceData)
   } catch {
     return createSeedData()
   }
@@ -102,14 +51,18 @@ export const getStorageStatus = () => storageStatus
 
 export const saveData = async (data: AppData) => {
   if (window.neoAnkiDesktop) {
-    await window.neoAnkiDesktop.saveData(data)
+    parseWorkspaceData(data)
+    const changes = createWorkspaceChangeSet(lastPersisted, data)
+    if (!hasWorkspaceChanges(changes)) return
+    await window.neoAnkiDesktop.saveData(changes)
+    lastPersisted = data
     return
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
 }
 
 export const downloadBackup = async (data: AppData) => {
-  if (window.neoAnkiDesktop) return window.neoAnkiDesktop.exportBackup(data)
+  if (window.neoAnkiDesktop) return window.neoAnkiDesktop.exportBackup()
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
@@ -126,7 +79,7 @@ export const clearStoredData = async () => {
 }
 
 export const parseBackupText = (text: string): AppData => {
-  const parsed = JSON.parse(text) as LegacyAppData
+  const parsed = JSON.parse(text) as LegacyWorkspaceData
   if (!Array.isArray(parsed.items) || !Array.isArray(parsed.cards)) throw new Error('This is not a valid Neo Anki backup.')
   return migrateData(parsed)
 }

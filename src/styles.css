@@ -543,7 +543,7 @@ p { line-height: 1.45; }
 .stack-card { padding: 11px 13px; border-radius: 8px; }
 
 .review-page { min-height: 100%; padding: 34px 30px 24px; }
-.review-header { width: min(1050px, 100%); grid-template-columns: 135px 1fr 135px; }
+.review-header { width: min(1050px, 100%); grid-template-columns: 190px 1fr 135px; }
 .review-card { width: min(760px, 100%); min-height: min(420px, 58vh); margin: 20px auto; padding: 52px 60px; border-radius: 12px; box-shadow: var(--shadow-soft); }
 .prompt-content h1 { font-size: clamp(1.8rem, 3.2vw, 2.75rem); }
 .review-actions { width: min(760px, 100%); }
@@ -659,4 +659,32 @@ p { line-height: 1.45; }
   .session-list-pane .block-preview-row > span[role='cell'] { display: none; }
   .session-list-pane .block-preview-row > span[role='cell']:last-of-type { display: block; grid-column: 3; }
   .planning-details-body { grid-template-columns: 1fr; gap: 16px; }
+}
+
+/* Recoverable actions -------------------------------------------------------- */
+
+.undo-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 14px; padding: 11px 13px; border: 1px solid color-mix(in srgb, var(--blue) 30%, var(--border)); border-radius: 9px; background: var(--blue-soft); }
+.undo-banner > span, .undo-banner > span > span { display: flex; align-items: center; gap: 8px; }
+.undo-banner > span > span { align-items: flex-start; flex-direction: column; gap: 1px; }
+.undo-banner small { color: var(--text-soft); }
+.trash-panel { margin-top: 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-strong); }
+.trash-panel > summary { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; cursor: pointer; }
+.trash-panel > summary > span { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; }
+.trash-panel > summary small, .trash-panel > p { color: var(--text-soft); }
+.trash-panel > p { margin: 0; padding: 0 12px 12px 36px; }
+.trash-list { border-top: 1px solid var(--border); }
+.trash-list > div { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.trash-list > div:last-child { border-bottom: 0; }
+.trash-list > div > span { display: flex; align-items: flex-start; gap: 8px; }
+.trash-list > div > span:first-child { min-width: 0; flex-direction: column; gap: 2px; }
+.trash-list strong { max-width: 52ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trash-list small { color: var(--text-soft); }
+.trash-list button { min-height: 40px; }
+.review-nav-actions { display: flex; align-items: center; gap: 8px; }
+.review-nav-actions .text-button { min-height: 40px; }
+
+@media (max-width: 760px) {
+  .trash-list > div { align-items: stretch; flex-direction: column; }
+  .trash-list > div > span:last-child { display: grid; grid-template-columns: 1fr; }
+  .trash-list button { width: 100%; min-height: 44px; }
 }

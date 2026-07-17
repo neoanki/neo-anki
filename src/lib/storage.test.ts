@@ -7,7 +7,7 @@ describe('storage and migrations', () => {
     const seed = createSeedData()
     const legacy = { ...seed, version: 1, deviceId: undefined, goals: undefined, views: undefined, packs: undefined, packConflicts: undefined, assets: undefined, settings: { ...seed.settings, recoveryStrategy: undefined }, items: seed.items.map(({ citations: _c, mediaIds: _m, occlusions: _o, ...item }) => item), cards: seed.cards.map(({ createdAt: _c, updatedAt: _u, ...card }) => card) }
     const migrated = migrateData(legacy as never)
-    expect(migrated.version).toBe(2)
+    expect(migrated.version).toBe(3)
     expect(migrated.items).toHaveLength(seed.items.length)
     expect(migrated.cards[0].createdAt).toBeTruthy()
     expect(migrated.settings.recoveryStrategy).toBe('risk')
@@ -15,10 +15,10 @@ describe('storage and migrations', () => {
   it('saves, loads, validates, and safely falls back from corruption', async () => {
     const data = createSeedData(); await saveData(data)
     expect(loadData().items).toHaveLength(data.items.length)
-    expect(parseBackupText(JSON.stringify(data)).version).toBe(2)
+    expect(parseBackupText(JSON.stringify(data)).version).toBe(3)
     expect(() => parseBackupText('{}')).toThrow(/valid Neo Anki/)
     localStorage.setItem('neo-anki:data:v1', '{bad')
-    expect(loadData().version).toBe(2)
+    expect(loadData().version).toBe(3)
   })
 
   it('uses the narrow desktop bridge instead of browser storage when available', async () => {
@@ -30,6 +30,7 @@ describe('storage and migrations', () => {
       loadData: () => ({ data, storagePath: '/tmp/neo-anki-data.json', recoveredFromBackup: false }),
       saveData: async (value) => { saved.push(value) },
       exportBackup: async () => ({ canceled: false, path: '/tmp/backup.json' }),
+      restoreBackup: async () => ({ canceled: true }),
       resetData: async () => undefined,
       listExtensions: async () => [],
       chooseExtensionPackage: async () => ({ canceled: true }),
@@ -42,9 +43,13 @@ describe('storage and migrations', () => {
     }
 
     try {
-      expect(loadData().deviceId).toBe(data.deviceId)
-      await saveData(data)
-      expect(saved).toEqual([data])
+      const loaded = loadData()
+      expect(loaded.deviceId).toBe(data.deviceId)
+      const changed = { ...loaded, settings: { ...loaded.settings, dailyMinutes: 45 }, updatedAt: new Date(Date.now() + 1000).toISOString() }
+      await saveData(changed)
+      expect(saved).toHaveLength(1)
+      expect(saved[0]).toEqual(expect.objectContaining({ meta: expect.objectContaining({ settings: expect.objectContaining({ dailyMinutes: 45 }) }) }))
+      expect((saved[0] as { upsert: { items: unknown[] } }).upsert.items).toHaveLength(0)
     } finally {
       window.neoAnkiDesktop = original
     }

@@ -1,10 +1,12 @@
 import type { ExtensionPackageManifest, ExtensionPermission } from './extensions/sdk'
+import type { WorkspaceChangeSet } from './lib/workspace-changes'
 
 declare global {
   interface NeoAnkiDesktopLoadResult {
     data: unknown | null
     storagePath: string
     recoveredFromBackup: boolean
+    migratedLegacyData?: boolean
     error?: string
   }
 
@@ -32,8 +34,9 @@ declare global {
   interface NeoAnkiDesktopBridge {
     isDesktop: true
     loadData(): NeoAnkiDesktopLoadResult
-    saveData(data: unknown): Promise<void>
-    exportBackup(data: unknown): Promise<{ canceled: boolean; path?: string }>
+    saveData(changes: WorkspaceChangeSet): Promise<void>
+    exportBackup(): Promise<{ canceled: boolean; path?: string }>
+    restoreBackup(): Promise<{ canceled: boolean }>
     resetData(): Promise<void>
     listExtensions(): Promise<NeoAnkiInstalledExtension[]>
     chooseExtensionPackage(): Promise<{ canceled: boolean; candidate?: NeoAnkiExtensionCandidate }>

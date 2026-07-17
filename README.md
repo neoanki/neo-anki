@@ -12,7 +12,7 @@ A TypeScript-first, local-first desktop spaced-repetition app that plans learnin
 - Learning goals feed urgency into the daily planner rather than becoming a separate task list.
 - Current and legacy Anki `.apkg`/`.colpkg` import (SQLite, zstd, protobuf media maps), plus CSV and Neo Anki JSON; JSON/CSV export and complete backups.
 - Patch-based shared packs with three-way merging, explicit conflict resolution, and preserved review history.
-- Electron desktop application with integrated macOS window chrome, native menus and shortcuts, a plain study queue and card browser, atomic filesystem persistence, a rolling recovery copy, native backup export, and light/dark themes.
+- Electron desktop application with integrated macOS window chrome, native menus and shortcuts, a plain study queue and card browser, transactional SQLite persistence, verified content-addressed media, automatic recovery backups, native backup restore/export, and light/dark themes.
 - A TypeScript extension SDK with uniform permissions and APIs for every publisher. Prompt types, image occlusion, Anki/CSV interoperability, recovery policies, goals and views, shared packs, Insights, and tab sync are registered extensions rather than kernel features.
 - Third-party `.neoanki-extension` packages with manifest and archive validation, permission review, fingerprints, atomic installation, enable/disable, upgrades, downgrades, uninstall, load diagnostics, a public React UI kit, build CLI, and a working example.
 
@@ -25,7 +25,7 @@ npm install
 npm run desktop:dev
 ```
 
-The renderer is sandboxed and has no Node.js access. A narrow preload bridge handles persistence in the operating system's application-data directory. On macOS the primary file is normally `~/Library/Application Support/Neo Anki/neo-anki-data.json`; its previous good version is kept beside it as `neo-anki-data.recovery.json`.
+The renderer is sandboxed and has no Node.js access. A narrow preload bridge handles incremental persistence in the operating system's application-data directory. On macOS the primary workspace is normally `~/Library/Application Support/Neo Anki/neo-anki.sqlite`; verified automatic backups are retained under its `backups/` directory. Existing JSON workspaces migrate once and the original is preserved.
 
 Build an installable macOS DMG and ZIP with:
 
