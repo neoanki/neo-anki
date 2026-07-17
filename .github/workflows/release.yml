@@ -140,7 +140,7 @@ jobs:
         shell: bash
         run: |
           mkdir uploaded-release
-          gh release download "${GITHUB_REF_NAME}" --dir uploaded-release
+          gh release download "${GITHUB_REF_NAME}" --repo "$GITHUB_REPOSITORY" --dir uploaded-release
           cd uploaded-release
           test "$(find . -maxdepth 1 -type f | wc -l | tr -d ' ')" = 13
           for manifest in SHA256SUMS-*.txt; do shasum -a 256 -c "$manifest"; done
