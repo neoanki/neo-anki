@@ -1,4 +1,4 @@
-name: Release candidates
+name: Community releases
 
 on:
   push:
@@ -25,7 +25,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run lint && npm run typecheck && npm run test:coverage && npm run build
+      - run: npm run lint && npm run typecheck && npm run test:coverage && npm run test:timezones && npm run benchmark:planner && npm run license:check && npm run build && npm run extension:check
       - name: Verify tag matches package version
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
@@ -49,13 +49,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     env:
-      CSC_LINK: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-      CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      WIN_CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
-      WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -64,26 +58,38 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build && npm run extension:example && npm run desktop:prepare
-      - name: Build signed release artifacts
-        run: npx electron-builder ${{ matrix.args }} --publish never -c.forceCodeSigning=true
-      - name: Verify macOS signature, notarization, and staple
+      - name: Build no-cost community artifacts
+        run: npx electron-builder ${{ matrix.args }} --publish never
+      - name: Verify expected macOS trust state and launch
         if: runner.os == 'macOS'
         shell: bash
         run: |
           app_path="$(find release -maxdepth 3 -type d -name '*.app' -print -quit)"
           test -n "$app_path"
-          codesign --verify --deep --strict --verbose=2 "$app_path"
-          spctl --assess --verbose --type exec "$app_path"
-          xcrun stapler validate "$app_path"
-      - name: Verify Windows Authenticode signature
+          if codesign -dv --verbose=4 "$app_path" 2>&1 | grep -q 'Authority=Developer ID'; then
+            echo 'Community macOS builds must not claim an unavailable Developer ID identity.'
+            exit 1
+          fi
+          if spctl --assess --type exec "$app_path"; then
+            echo 'Community macOS builds are expected to require the documented Open Anyway flow.'
+            exit 1
+          fi
+          executable="$app_path/Contents/MacOS/Neo Anki"
+          test -x "$executable"
+          NEO_ANKI_PACKAGED_APP="$executable" npx playwright test --config=playwright.desktop.config.ts --grep 'packaged application launches'
+      - name: Verify expected Windows trust state and launch
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $installer = Get-ChildItem release -Filter *.exe | Select-Object -First 1
           if (-not $installer) { throw 'No Windows installer was produced.' }
           $signature = Get-AuthenticodeSignature $installer.FullName
-          if ($signature.Status -ne 'Valid') { throw "Invalid Authenticode signature: $($signature.Status)" }
-      - name: Verify Linux AppImage payload
+          if ($signature.Status -ne 'NotSigned') { throw "Expected an unsigned community installer, got: $($signature.Status)" }
+          $executable = Get-ChildItem release/win-unpacked -Filter *.exe | Select-Object -First 1
+          if (-not $executable) { throw 'No packaged Windows executable was produced.' }
+          $env:NEO_ANKI_PACKAGED_APP = $executable.FullName
+          npx playwright test --config=playwright.desktop.config.ts --grep 'packaged application launches'
+      - name: Verify Linux AppImage payload and launch
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -93,21 +99,23 @@ jobs:
           "$appimage" --appimage-extract >/dev/null
           test -x squashfs-root/AppRun
           test -d squashfs-root/usr
-      - name: Create checksums
-        shell: bash
-        run: |
-          cd release
-          find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS.txt
+          executable="$(find release/linux-unpacked -maxdepth 1 -type f -name 'neo-anki' -print -quit)"
+          test -x "$executable"
+          NEO_ANKI_PACKAGED_APP="$executable" xvfb-run --auto-servernum npx playwright test --config=playwright.desktop.config.ts --grep 'packaged application launches'
+      - name: Stage distributable files and installation guidance
+        run: node scripts/prepare-release-artifacts.mjs "${{ matrix.name }}"
       - name: Create CycloneDX SBOM
         shell: bash
-        run: npm sbom --sbom-format cyclonedx > "release/neo-anki-${{ matrix.name }}.cdx.json"
+        run: npm sbom --sbom-format cyclonedx > "release-artifacts/${{ matrix.name }}/neo-anki-${{ matrix.name }}.cdx.json"
+      - name: Create deterministic checksums
+        run: node scripts/write-checksums.mjs "release-artifacts/${{ matrix.name }}" "SHA256SUMS-${{ matrix.name }}.txt"
       - uses: actions/attest-build-provenance@v4
         with:
-          subject-path: 'release/*'
+          subject-path: 'release-artifacts/${{ matrix.name }}/*'
       - uses: actions/upload-artifact@v7
         with:
           name: neo-anki-${{ matrix.name }}
-          path: release/*
+          path: release-artifacts/${{ matrix.name }}/*
           if-no-files-found: error
           retention-days: 30
 

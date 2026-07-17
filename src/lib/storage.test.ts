@@ -36,10 +36,7 @@ describe('storage and migrations', () => {
       createImportCheckpoint: async () => '',
       reportDiagnostic: async () => undefined,
       exportDiagnostics: async () => ({ canceled: true }),
-      getUpdateState: async () => ({ phase: 'development', currentVersion: '0.1.0' }),
-      checkForUpdates: async () => ({ phase: 'development', currentVersion: '0.1.0' }),
-      downloadUpdate: async () => ({ phase: 'development', currentVersion: '0.1.0' }),
-      installUpdate: async () => undefined,
+      getReleaseInfo: async () => ({ currentVersion: '0.1.0', channel: 'development', automaticUpdates: false, releasesUrl: 'https://github.com/neoanki/neo-anki/releases' }),
       listExtensions: async () => [],
       chooseExtensionPackage: async () => ({ canceled: true }),
       installExtension: async () => { throw new Error('not used') },
@@ -48,7 +45,6 @@ describe('storage and migrations', () => {
       uninstallExtension: async () => undefined,
       reloadForExtensions: async () => undefined,
       onNavigate: () => () => undefined,
-      onUpdateState: () => () => undefined,
     }
 
     try {

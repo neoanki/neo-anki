@@ -703,6 +703,7 @@ p { line-height: 1.45; }
 .update-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .update-heading > span, .update-panel p[role='status'] { display: flex; align-items: center; gap: 8px; }
 .update-heading code { color: var(--text-soft); }
+.release-safety { display: flex; align-items: center; gap: 8px; color: var(--green); font-weight: 650; }
 .update-progress { height: 7px; overflow: hidden; border-radius: 999px; background: var(--surface-muted); }
 .update-progress span { height: 100%; display: block; border-radius: inherit; background: var(--primary); transition: width 180ms ease; }
 .library-pagination { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 18px; border-top: 1px solid var(--border); }
