@@ -18,7 +18,7 @@
     "extension:sdk": "npm run build -w @neo-anki/extension-sdk",
     "extension:check": "npm run extension:sdk && npm run check -w @neo-anki-example/study-pulse",
     "extension:example": "npm run extension:sdk && npm run build -w @neo-anki-example/study-pulse",
-    "desktop:prepare": "esbuild electron/main.ts --bundle --platform=node --format=esm --external:electron --outfile=dist-electron/main.mjs && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/preload.cjs",
+    "desktop:prepare": "esbuild electron/main.ts --bundle --platform=node --format=esm --external:electron --external:electron-updater --outfile=dist-electron/main.mjs && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/preload.cjs",
     "desktop:dev": "npm run desktop:prepare && concurrently -k \"vite --host 127.0.0.1 --port 5173\" \"wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
     "desktop:pack": "npm run build && npm run desktop:prepare && electron-builder --dir",
     "desktop:build": "npm run build && npm run desktop:prepare && electron-builder",
@@ -34,6 +34,7 @@
     "test:all": "npm run lint && npm run typecheck && npm run test:coverage && npm run build && npm run test:e2e && npm run test:desktop"
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "fflate": "^0.8.3",
     "fzstd": "^0.1.1",
     "lucide-react": "^1.24.0",
@@ -75,6 +76,15 @@
     "appId": "app.neoanki.desktop",
     "productName": "Neo Anki",
     "asar": true,
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "electronUpdaterCompatibility": ">=2.16",
+    "generateUpdatesFilesForAllChannels": true,
+    "publish": {
+      "provider": "github",
+      "owner": "neoanki",
+      "repo": "neo-anki",
+      "releaseType": "release"
+    },
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -87,15 +97,27 @@
     "mac": {
       "category": "public.app-category.education",
       "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "notarize": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
       "target": [
         "dmg",
         "zip"
-      ],
-      "identity": null
+      ]
     },
     "win": {
-      "target": "nsis",
+      "target": {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
       "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
     },
     "linux": {
       "category": "Education",

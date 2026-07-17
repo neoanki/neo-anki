@@ -34,6 +34,10 @@ describe('storage and migrations', () => {
       resetData: async () => undefined,
       reportDiagnostic: async () => undefined,
       exportDiagnostics: async () => ({ canceled: true }),
+      getUpdateState: async () => ({ phase: 'development', currentVersion: '0.1.0' }),
+      checkForUpdates: async () => ({ phase: 'development', currentVersion: '0.1.0' }),
+      downloadUpdate: async () => ({ phase: 'development', currentVersion: '0.1.0' }),
+      installUpdate: async () => undefined,
       listExtensions: async () => [],
       chooseExtensionPackage: async () => ({ canceled: true }),
       installExtension: async () => { throw new Error('not used') },
@@ -42,6 +46,7 @@ describe('storage and migrations', () => {
       uninstallExtension: async () => undefined,
       reloadForExtensions: async () => undefined,
       onNavigate: () => () => undefined,
+      onUpdateState: () => () => undefined,
     }
 
     try {

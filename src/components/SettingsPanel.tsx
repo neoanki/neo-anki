@@ -4,6 +4,7 @@ import { useApp } from '../state/AppContext'
 import { downloadBackup, getStorageStatus, parseBackup } from '../lib/storage'
 import { extensionRuntime } from '../extensions/runtime'
 import { ExtensionManagerPanel } from './ExtensionManagerPanel'
+import { UpdatePanel } from './UpdatePanel'
 
 export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
   const { data, persistenceError, setRetention, toggleTheme, replaceData, resetData, mergeImport } = useApp()
@@ -115,6 +116,7 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
           {message && <p className="inline-message" role="status">{message}</p>}
         </div>
 
+        <UpdatePanel />
         <ExtensionManagerPanel />
 
         <div className="danger-zone">

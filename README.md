@@ -18,6 +18,8 @@ A TypeScript-first, local-first desktop spaced-repetition app that plans learnin
 
 The implemented boundary is documented in [docs/core-and-extensions.md](docs/core-and-extensions.md); extension authors can start with [docs/extension-authoring.md](docs/extension-authoring.md) and [docs/extension-sdk.md](docs/extension-sdk.md).
 
+Maintainers should follow [docs/releasing.md](docs/releasing.md) for signed artifacts, notarization, update metadata, staged rollout, and rollback.
+
 ## Run the desktop app
 
 ```bash

@@ -86,7 +86,7 @@ test('packaged macOS application launches without a development server', async (
   test.skip(!executablePath, 'Set NEO_ANKI_PACKAGED_APP to verify a packaged artifact.')
   const userData = await mkdtemp(join(tmpdir(), 'neo-anki-packaged-'))
   try {
-    const packagedApp = await electron.launch({ executablePath, env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData } })
+    const packagedApp = await electron.launch({ executablePath, env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData, NEO_ANKI_TEST_ALLOW_MULTIPLE_INSTANCES: '1' } })
     const window = await packagedApp.firstWindow()
     expect(window.url()).toBe('neoanki://app/index.html')
     await expect(window.getByRole('heading', { name: /how much time can learning reliably have/i })).toBeVisible()

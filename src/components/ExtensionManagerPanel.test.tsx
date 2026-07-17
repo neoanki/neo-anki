@@ -31,6 +31,10 @@ describe('extension manager', () => {
       resetData: async () => undefined,
       reportDiagnostic: async () => undefined,
       exportDiagnostics: async () => ({ canceled: true }),
+      getUpdateState: async () => ({ phase: 'development', currentVersion: '0.1.0' }),
+      checkForUpdates: async () => ({ phase: 'development', currentVersion: '0.1.0' }),
+      downloadUpdate: async () => ({ phase: 'development', currentVersion: '0.1.0' }),
+      installUpdate: async () => undefined,
       listExtensions: async () => [],
       chooseExtensionPackage: async () => ({ canceled: false, candidate: { token: 'review-token', manifest, digest: 'a'.repeat(64), compressedBytes: 2048, unpackedBytes: 4096, isDowngrade: false, addedPermissions: ['ui:pages'] } }),
       installExtension,
@@ -39,6 +43,7 @@ describe('extension manager', () => {
       uninstallExtension: async () => undefined,
       reloadForExtensions: async () => undefined,
       onNavigate: () => () => undefined,
+      onUpdateState: () => () => undefined,
     }
 
     render(<ExtensionManagerPanel />)
