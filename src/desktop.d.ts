@@ -59,7 +59,6 @@ declare global {
 
   interface NeoAnkiReleaseInfo {
     currentVersion: string
-    channel: 'community' | 'development'
     automaticUpdates: false
     releasesUrl: string
   }

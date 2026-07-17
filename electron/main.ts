@@ -206,7 +206,7 @@ const registerDesktopIpc = () => {
 
   ipcMain.handle('neo-anki:get-release-info', (event) => {
     assertTrustedSender(event)
-    return { currentVersion: app.getVersion(), channel: app.isPackaged ? 'community' : 'development', automaticUpdates: false, releasesUrl: 'https://github.com/neoanki/neo-anki/releases' }
+    return { currentVersion: app.getVersion(), automaticUpdates: false, releasesUrl: 'https://github.com/neoanki/neo-anki/releases' }
   })
 
   ipcMain.handle('neo-anki:list-extensions', async (event) => {
