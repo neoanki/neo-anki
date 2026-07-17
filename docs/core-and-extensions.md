@@ -28,6 +28,7 @@ The kernel deliberately does not know a closed list of prompt IDs, page routes, 
 | Shared Packs | Pack install/update/conflict commands and workspace panel |
 | Insights | An extension-contributed application page |
 | Browser Tab Sync | A BroadcastChannel sync transport |
+| Card Timer | Settings panel and review-session tool; disabled by default, with timeout submitted through the core review transaction |
 
 Their source lives under `src/extensions/`. Previous `src/lib/*` and `src/pages/InsightsPage.tsx` paths are compatibility re-exports only; the app itself consumes the registry.
 
@@ -47,6 +48,7 @@ See [extension-sdk.md](extension-sdk.md) for the contract and an independently p
 - Duplicate contribution IDs are rejected before startup completes.
 - Planning-signal strength is clamped to a bounded range; non-finite policy scores are ignored.
 - Commands receive a cloned snapshot and have no effect unless they submit a replacement transaction.
+- Settings and Review contributions are isolated behind host error boundaries; review ratings reject duplicate or stale submissions.
 - Command transactions cannot rewrite the append-only review log, device identity, scheduler settings, or schema version.
 - Pack operations preserve scheduling state; conflicting content edits remain explicit.
 - Session duration, focus, and presentation order never mutate due dates or review history.
@@ -57,6 +59,6 @@ See [extension-sdk.md](extension-sdk.md) for the contract and an independently p
 - Extension-package signatures, verified publisher identity, marketplace discovery, extension automatic updates, and dependency resolution.
 - AI extraction, generation, rewriting, and grading.
 - OCR, PDF pipelines, web clipping, and external knowledge connectors.
-- Code execution, handwriting, drawing, maps, pronunciation scoring, and specialized practice widgets.
+- Code execution, handwriting, drawing, maps, pronunciation scoring, and richer specialized practice widgets.
 - Alternative schedulers. Queue ordering can be extended now; replacing memory-state transitions requires a migration and rollback design.
 - Hosted sync/account providers, collaboration, marketplaces, themes, and decorative gamification.

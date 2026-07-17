@@ -17,6 +17,8 @@ export const extensionPermissions: ExtensionPermission[] = [
   'ui:workspace-panels',
   'ui:create-panels',
   'ui:library-presets',
+  'ui:settings-panels',
+  'review:tools',
   'content:transactions',
 ]
 

@@ -104,4 +104,18 @@ describe('public extension registry', () => {
     }])
     expect(registry.createCards(createInput(['diagram']))).toEqual([{ promptType: 'diagram', estimatedSeconds: 9 }])
   })
+
+  it('exposes review and settings hosts through publisher-neutral permissions', () => {
+    const registry = new ExtensionRegistry()
+    const extension: NeoAnkiExtension = {
+      manifest: manifest('independent.review-tools'),
+      settingsPanels: [{ id: 'timer-settings', component: () => null }],
+      reviewTools: [{ id: 'timer-review', component: () => null }],
+    }
+    expect(() => registry.register(extension)).toThrow('without ui:settings-panels')
+    extension.manifest.permissions = ['ui:settings-panels', 'review:tools']
+    expect(() => registry.register(extension)).not.toThrow()
+    expect(registry.settingsPanels()).toEqual([expect.objectContaining({ id: 'timer-settings', extensionId: 'independent.review-tools' })])
+    expect(registry.reviewTools()).toEqual([expect.objectContaining({ id: 'timer-review', extensionId: 'independent.review-tools' })])
+  })
 })

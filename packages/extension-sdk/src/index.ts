@@ -1,5 +1,5 @@
 import type { ComponentType, Dispatch, SetStateAction } from 'react'
-import type { AppData, CreateKnowledgeInput, DailyPlan, ImportSummary, KnowledgeItem, MediaAsset, OcclusionRect, PracticeCard, Route } from './model.js'
+import type { AppData, CreateKnowledgeInput, DailyPlan, ImportSummary, KnowledgeItem, MediaAsset, OcclusionRect, PracticeCard, ReviewRating, Route } from './model.js'
 
 export * from './model.js'
 
@@ -14,6 +14,8 @@ export type ExtensionPermission =
   | 'ui:workspace-panels'
   | 'ui:create-panels'
   | 'ui:library-presets'
+  | 'ui:settings-panels'
+  | 'review:tools'
   | 'content:transactions'
 
 export interface ExtensionManifest {
@@ -161,6 +163,28 @@ export interface LibraryPresetContribution {
   presets(data: Readonly<AppData>): LibraryPreset[]
 }
 
+export interface ExtensionSettingsPanelProps {
+  extensionId: string
+}
+
+export interface ExtensionSettingsPanelContribution {
+  id: string
+  component: ComponentType<ExtensionSettingsPanelProps>
+}
+
+export interface ReviewToolProps {
+  extensionId: string
+  card: Readonly<PracticeCard>
+  item: Readonly<KnowledgeItem>
+  revealed: boolean
+  submitRating(rating: ReviewRating): void
+}
+
+export interface ReviewToolContribution {
+  id: string
+  component: ComponentType<ReviewToolProps>
+}
+
 export interface NeoAnkiExtension {
   manifest: ExtensionManifest
   promptTypes?: PromptTypeContribution[]
@@ -174,6 +198,8 @@ export interface NeoAnkiExtension {
   workspacePanels?: WorkspacePanelContribution[]
   creationPanels?: CreationPanelContribution[]
   libraryPresets?: LibraryPresetContribution[]
+  settingsPanels?: ExtensionSettingsPanelContribution[]
+  reviewTools?: ReviewToolContribution[]
 }
 
 export interface ExtensionDiagnostic {
