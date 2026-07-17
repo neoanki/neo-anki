@@ -27,4 +27,6 @@ Enabled local extensions load from the separate `neoanki-extension://` protocol.
 
 Extension archives and lifecycle state live under `userData/extensions/`. Package contents are size/path/manifest validated before being written. A new fingerprinted directory is made durable before the active state pointer changes; state updates keep a recovery copy during replacement.
 
-The Electron renderer remains sandboxed without Node integration, and CSP blocks arbitrary remote scripts and connections. The remaining extension-code isolation work is tracked as a release blocker: package JavaScript must execute behind the same capability broker for every publisher rather than inside the application renderer.
+The Electron renderer remains sandboxed without Node integration, and CSP blocks arbitrary remote scripts and connections. SDK v1 deliberately treats locally installed extension JavaScript as full-trust application code, just like bundled extension code; contribution permissions are registration declarations, not a hostile-code sandbox. Installation therefore requires explicit review and warns the user to trust the publisher and source.
+
+The main process independently watches renderer startup. If extension loading prevents the renderer from reporting ready, Neo Anki destroys only the failed window and opens a fresh safe-mode window without locally installed extensions. The database and main process remain open, the incident is recorded in the privacy-limited diagnostic log, and Settings lets the user restart normally after disabling or removing the package.

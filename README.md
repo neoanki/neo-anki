@@ -15,6 +15,7 @@ A TypeScript-first, local-first desktop spaced-repetition app that plans learnin
 - Electron desktop application with integrated macOS window chrome, native menus and shortcuts, a plain study queue and card browser, transactional SQLite persistence, verified content-addressed media, automatic recovery backups, native backup restore/export, and light/dark themes.
 - A TypeScript extension SDK with uniform permissions and APIs for every publisher. Prompt types, image occlusion, Anki/CSV interoperability, recovery policies, goals and views, shared packs, Insights, and tab sync are registered extensions rather than kernel features.
 - Third-party `.neoanki-extension` packages with manifest and archive validation, permission review, fingerprints, atomic installation, enable/disable, upgrades, downgrades, uninstall, load diagnostics, a public React UI kit, build CLI, and a working example.
+- Main-process startup recovery that automatically reopens without local extensions if a package blocks renderer readiness.
 
 The implemented boundary is documented in [docs/core-and-extensions.md](docs/core-and-extensions.md); extension authors can start with [docs/extension-authoring.md](docs/extension-authoring.md) and [docs/extension-sdk.md](docs/extension-sdk.md).
 
@@ -35,7 +36,7 @@ Build an installable macOS DMG and ZIP with:
 npm run desktop:build
 ```
 
-Artifacts are written to `release/`. Local builds are intentionally unsigned until release signing and notarization are configured.
+Artifacts are written to `release/`. Local contributor builds may be unsigned; tagged CI releases fail closed unless macOS signing/notarization and Windows signing credentials are configured.
 
 The Vite browser surface remains available through `npm run dev` for component development and automated browser testing. It is not the primary application or durable storage target.
 

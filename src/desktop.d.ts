@@ -33,6 +33,7 @@ declare global {
 
   interface NeoAnkiDesktopBridge {
     isDesktop: true
+    rendererReady(): void
     loadData(): NeoAnkiDesktopLoadResult
     saveData(changes: WorkspaceChangeSet): Promise<void>
     exportBackup(): Promise<{ canceled: boolean; path?: string }>

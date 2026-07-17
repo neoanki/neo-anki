@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('neoAnkiDesktop', {
   isDesktop: true,
+  rendererReady: () => ipcRenderer.send('neo-anki:renderer-ready'),
   loadData: () => ipcRenderer.sendSync('neo-anki:load-data'),
   saveData: (changes: unknown) => ipcRenderer.invoke('neo-anki:save-data', changes),
   exportBackup: () => ipcRenderer.invoke('neo-anki:export-backup'),

@@ -35,7 +35,7 @@ Their source lives under `src/extensions/`. Previous `src/lib/*` and `src/pages/
 
 Every extension supplies the same `NeoAnkiExtension` object and goes through `ExtensionRegistry.register`. Registration decisions use manifest version, declared permissions, and contribution IDs—not publisher identity. Bundled extensions do not import the private application context; contributed pages and panels receive public, read-only host props and write through the same command API.
 
-Bundled extensions are registered at application startup. User-approved local `.neoanki-extension` packages are validated, installed atomically, served from a dedicated desktop protocol, loaded as browser modules, and passed to the same registry. “Bundled” and “local package” are distribution labels only.
+Bundled extensions are registered at application startup. User-approved local `.neoanki-extension` packages are validated, installed atomically, served from a dedicated desktop protocol, loaded as browser modules, and passed to the same registry. “Bundled” and “local package” are distribution labels only. SDK v1 uses a full-trust code model for both: permissions constrain registry contributions but are not a hostile-code sandbox.
 
 See [extension-sdk.md](extension-sdk.md) for the contract and an independently published example.
 
@@ -43,6 +43,7 @@ See [extension-sdk.md](extension-sdk.md) for the contract and an independently p
 
 - Unknown or crashing prompt renderers fall back to the basic renderer, so cards remain reviewable.
 - Contribution failures are isolated and recorded as diagnostics.
+- A startup watchdog automatically opens a fresh window without local packages if extension evaluation blocks renderer readiness.
 - Duplicate contribution IDs are rejected before startup completes.
 - Planning-signal strength is clamped to a bounded range; non-finite policy scores are ignored.
 - Commands receive a cloned snapshot and have no effect unless they submit a replacement transaction.
@@ -53,7 +54,7 @@ See [extension-sdk.md](extension-sdk.md) for the contract and an independently p
 
 ## Still postponed
 
-- Package signatures, verified publisher identity, marketplace discovery, automatic updates, and dependency resolution.
+- Extension-package signatures, verified publisher identity, marketplace discovery, extension automatic updates, and dependency resolution.
 - AI extraction, generation, rewriting, and grading.
 - OCR, PDF pipelines, web clipping, and external knowledge connectors.
 - Code execution, handwriting, drawing, maps, pronunciation scoring, and specialized practice widgets.

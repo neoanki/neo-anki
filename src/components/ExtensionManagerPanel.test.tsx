@@ -24,6 +24,7 @@ describe('extension manager', () => {
     const installExtension = vi.fn(async () => ({ manifest, enabled: true, directory: 'fixture', digest: 'a'.repeat(64), installedAt: '', updatedAt: '', entryUrl: '' }))
     window.neoAnkiDesktop = {
       isDesktop: true,
+      rendererReady: () => undefined,
       loadData: () => ({ data: null, storagePath: '', recoveredFromBackup: false }),
       saveData: async () => undefined,
       exportBackup: async () => ({ canceled: true }),

@@ -27,6 +27,7 @@ describe('storage and migrations', () => {
     const original = window.neoAnkiDesktop
     window.neoAnkiDesktop = {
       isDesktop: true,
+      rendererReady: () => undefined,
       loadData: () => ({ data, storagePath: '/tmp/neo-anki-data.json', recoveredFromBackup: false }),
       saveData: async (value) => { saved.push(value) },
       exportBackup: async () => ({ canceled: false, path: '/tmp/backup.json' }),

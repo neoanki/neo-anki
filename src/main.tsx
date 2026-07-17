@@ -12,6 +12,7 @@ void initializeExternalExtensions().finally(() => {
       <AppErrorBoundary><AppProvider><App /></AppProvider></AppErrorBoundary>
     </StrictMode>,
   )
+  queueMicrotask(() => window.neoAnkiDesktop?.rendererReady())
 })
 
 window.addEventListener('error', (event) => {

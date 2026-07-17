@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { _electron as electron } from 'playwright'
 import { zipSync } from 'fflate'
 import initSqlJs from 'sql.js'
-import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -75,6 +75,31 @@ test('installs, loads, and disables a third-party extension package', async () =
     await window.getByRole('button', { name: 'Reload now' }).click()
     await expect(window.getByRole('heading', { name: 'Today' })).toBeVisible()
     await expect(window.getByRole('button', { name: /study pulse/i })).toHaveCount(0)
+    await desktop.close()
+  } finally {
+    await rm(userData, { recursive: true, force: true })
+  }
+})
+
+test('automatically recovers from an extension that blocks renderer startup', async () => {
+  const userData = await mkdtemp(join(tmpdir(), 'neo-anki-extension-watchdog-'))
+  const extensionPath = join(userData, 'blocking.neoanki-extension')
+  const manifest = {
+    format: 'neo-anki-extension', schemaVersion: 1, id: 'org.example.blocking', name: 'Blocking fixture', version: '1.0.0', sdkVersion: 1,
+    publisher: 'Test fixture', permissions: [], entry: 'dist/index.js',
+  }
+  await writeFile(extensionPath, zipSync({ 'manifest.json': new TextEncoder().encode(JSON.stringify(manifest)), 'dist/index.js': new TextEncoder().encode('while (true) {}') }))
+  try {
+    const desktop = await electron.launch({ args: ['.', `--install-extension=${extensionPath}`], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData, NEO_ANKI_STARTUP_TIMEOUT_MS: '750' } })
+    await desktop.firstWindow()
+    const recoveredWindow = await desktop.waitForEvent('window')
+    await expect.poll(() => recoveredWindow.url()).toContain('safe-mode=1')
+    await expect(recoveredWindow.getByRole('heading', { name: /how much time can learning reliably have/i })).toBeVisible()
+    await recoveredWindow.getByRole('button', { name: /30 minutes/i }).click()
+    await recoveredWindow.getByRole('button', { name: /build my first plan/i }).click()
+    await recoveredWindow.getByRole('button', { name: 'Settings', exact: true }).click()
+    await expect(recoveredWindow.getByText('Safe mode is active')).toBeVisible()
+    await expect.poll(async () => readFile(join(userData, 'diagnostics', 'diagnostics.jsonl'), 'utf8')).toContain('extension-startup-timeout')
     await desktop.close()
   } finally {
     await rm(userData, { recursive: true, force: true })

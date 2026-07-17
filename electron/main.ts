@@ -12,6 +12,7 @@ const APP_SCHEME = 'neoanki'
 const EXTENSION_SCHEME = 'neoanki-extension'
 const MEDIA_SCHEME = 'neoanki-media'
 const devServerUrl = process.env.VITE_DEV_SERVER_URL
+const rendererStartupTimeoutMs = process.env.NEO_ANKI_STARTUP_TIMEOUT_MS ? Math.max(500, Number(process.env.NEO_ANKI_STARTUP_TIMEOUT_MS) || 12_000) : 12_000
 
 protocol.registerSchemesAsPrivileged([
   { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
@@ -33,6 +34,8 @@ type UpdatePhase = 'development' | 'idle' | 'checking' | 'available' | 'current'
 interface DesktopUpdateState { phase: UpdatePhase; currentVersion: string; version?: string; percent?: number; error?: string }
 let updateState: DesktopUpdateState = { phase: 'development', currentVersion: app.getVersion() }
 let applicationUpdater: AppUpdater | null = null
+let rendererReady = false
+let rendererStartupTimer: NodeJS.Timeout | null = null
 const publishUpdateState = (next: DesktopUpdateState) => {
   updateState = next
   mainWindow?.webContents.send('neo-anki:update-state', updateState)
@@ -130,7 +133,34 @@ const assertTrustedSender = (event: IpcMainEvent | IpcMainInvokeEvent) => {
   if (!event.senderFrame || !isTrustedUrl(event.senderFrame.url)) throw new Error('Rejected desktop request from an untrusted renderer.')
 }
 
+const clearRendererStartupTimer = () => {
+  if (rendererStartupTimer) clearTimeout(rendererStartupTimer)
+  rendererStartupTimer = null
+}
+
+const armRendererStartupWatchdog = () => {
+  clearRendererStartupTimer()
+  if (rendererReady || !mainWindow) return
+  rendererStartupTimer = setTimeout(() => {
+    const currentUrl = mainWindow?.webContents.getURL() || ''
+    if (!mainWindow || currentUrl.includes('safe-mode=1')) {
+      void diagnosticsLog.record({ source: 'main', level: 'error', code: 'safe-mode-startup-timeout', message: 'The renderer did not become ready in safe mode.' })
+      return
+    }
+    void diagnosticsLog.record({ source: 'extension-host', level: 'error', code: 'extension-startup-timeout', message: 'The renderer did not become ready; Neo Anki restarted without locally installed extensions.' })
+    const windowToRecover = mainWindow
+    windowToRecover.destroy()
+    void createWindow('?safe-mode=1&recovered=extension-startup')
+  }, rendererStartupTimeoutMs)
+  rendererStartupTimer.unref()
+}
+
 const registerDesktopIpc = () => {
+  ipcMain.on('neo-anki:renderer-ready', (event) => {
+    assertTrustedSender(event)
+    rendererReady = true
+    clearRendererStartupTimer()
+  })
   ipcMain.on('neo-anki:load-data', (event) => {
     try {
       assertTrustedSender(event)
@@ -290,7 +320,7 @@ const registerAppProtocol = () => {
   })
 }
 
-const createWindow = async () => {
+const createWindow = async (query = '') => {
   mainWindow = new BrowserWindow({
     title: 'Neo Anki',
     width: 1280,
@@ -318,9 +348,11 @@ const createWindow = async () => {
   })
   mainWindow.once('ready-to-show', () => mainWindow?.show())
   mainWindow.on('closed', () => { mainWindow = null })
+  mainWindow.webContents.on('did-start-loading', () => { rendererReady = false; armRendererStartupWatchdog() })
+  mainWindow.webContents.on('did-finish-load', armRendererStartupWatchdog)
 
-  if (devServerUrl) await mainWindow.loadURL(devServerUrl)
-  else await mainWindow.loadURL(`${APP_SCHEME}://app/index.html`)
+  if (devServerUrl) await mainWindow.loadURL(`${devServerUrl}${query}`)
+  else await mainWindow.loadURL(`${APP_SCHEME}://app/index.html${query}`)
 }
 
 if (hasSingleInstanceLock) app.whenReady().then(async () => {
