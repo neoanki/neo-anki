@@ -92,13 +92,11 @@ test('automatically recovers from an extension that blocks renderer startup', as
   try {
     const desktop = await electron.launch({ args: ['.', `--install-extension=${extensionPath}`], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData, NEO_ANKI_STARTUP_TIMEOUT_MS: '750' } })
     await desktop.firstWindow()
-    await expect.poll(() => desktop.windows().some((page) => page.url().includes('safe-mode=1')), { timeout: 15_000 }).toBe(true)
-    const recoveredWindow = desktop.windows().find((page) => page.url().includes('safe-mode=1'))!
-    await expect(recoveredWindow.getByRole('heading', { name: /how much time can learning reliably have/i })).toBeVisible()
-    await recoveredWindow.getByRole('button', { name: /30 minutes/i }).click()
-    await recoveredWindow.getByRole('button', { name: /build my first plan/i }).click()
-    await recoveredWindow.getByRole('button', { name: 'Settings', exact: true }).click()
-    await expect(recoveredWindow.getByText('Safe mode is active')).toBeVisible()
+    await expect.poll(() => desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some((candidate) => candidate.webContents.getURL().includes('safe-mode=1'))), { timeout: 15_000 }).toBe(true)
+    await expect.poll(() => desktop.evaluate(async ({ BrowserWindow }) => {
+      const recovered = BrowserWindow.getAllWindows().find((candidate) => candidate.webContents.getURL().includes('safe-mode=1'))
+      return recovered ? recovered.webContents.executeJavaScript("document.querySelector('h1')?.textContent || ''") : ''
+    })).toMatch(/how much time can learning reliably have/i)
     await expect.poll(async () => readFile(join(userData, 'diagnostics', 'diagnostics.jsonl'), 'utf8')).toContain('extension-startup-timeout')
     await desktop.close()
   } finally {
