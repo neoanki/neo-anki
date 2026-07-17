@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
+import { stdout } from 'node:process'
 
 const root = resolve(import.meta.dirname, '..')
 const allowed = new Set(['MIT', 'ISC', 'BSD-2-Clause', 'BSD-3-Clause', 'Apache-2.0', 'Python-2.0', 'BlueOak-1.0.0', '0BSD'])
@@ -56,4 +57,4 @@ const notices = [
 ].join('\n')
 mkdirSync(join(root, 'build'), { recursive: true })
 writeFileSync(join(root, 'build', 'THIRD_PARTY_NOTICES.txt'), notices, 'utf8')
-console.log(`Verified ${records.length} runtime packages and generated third-party notices.`)
+stdout.write(`Verified ${records.length} runtime packages and generated third-party notices.\n`)
