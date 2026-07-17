@@ -12,6 +12,8 @@ Community releases require no paid certificate and no release secret. They delib
 
 Every platform artifact is accompanied by platform-specific installation guidance, deterministic SHA-256 checksums, a CycloneDX SBOM, and GitHub build-provenance attestations. Only top-level distributable files are uploaded; unpacked staging directories and automatic-update metadata are excluded.
 
+Release filenames are normalized before hashing. After the draft is uploaded, CI downloads all 13 assets again and fails unless every checksum, SBOM, and primary artifact attestation still verifies under its final GitHub filename.
+
 Automatic application updates are disabled. An unsigned application must not silently install unsigned remote code. Users download each release manually and verify its checksum or attestation. Microsoft Store distribution can later provide free signing and automatic updates for a Store-specific Windows package.
 
 ## Release sequence

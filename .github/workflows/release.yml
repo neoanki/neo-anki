@@ -134,3 +134,15 @@ jobs:
           draft: true
           generate_release_notes: true
           files: artifacts/*
+      - name: Verify uploaded draft assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          mkdir uploaded-release
+          gh release download "${GITHUB_REF_NAME}" --dir uploaded-release
+          cd uploaded-release
+          test "$(find . -maxdepth 1 -type f | wc -l | tr -d ' ')" = 13
+          for manifest in SHA256SUMS-*.txt; do shasum -a 256 -c "$manifest"; done
+          for sbom in *.cdx.json; do jq -e '.bomFormat == "CycloneDX" and (.components | length > 0)' "$sbom" >/dev/null; done
+          for artifact in *.AppImage *.dmg *.zip *.exe; do gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY" >/dev/null; done
