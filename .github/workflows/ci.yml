@@ -31,10 +31,13 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:coverage
+      - run: npm run test:timezones
+      - run: npm run benchmark:planner
       - run: npm run build
       - run: npm run extension:check
       - run: npm pack --dry-run -w @neo-anki/extension-sdk
       - run: npm audit --audit-level=high
+      - run: npm run license:check
       - uses: actions/upload-artifact@v4
         if: always()
         with:

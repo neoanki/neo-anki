@@ -13,3 +13,5 @@ We aim to acknowledge a report within three business days, provide an initial as
 ## Scope
 
 The Electron main process, preload bridge, persistence and backup formats, importers, update mechanism, extension package loader, and SDK capability boundary are all in scope.
+
+Locally installed SDK v1 extensions are an explicit full-trust code boundary. Installing a malicious extension is not itself a sandbox escape; bypassing the install review, package validation, publisher warning, safe-mode recovery, or the renderer’s Electron/OS sandbox is in scope. Contribution permission declarations restrict registry activation but are not advertised as isolation from deliberately malicious package code.

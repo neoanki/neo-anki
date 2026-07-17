@@ -4,6 +4,7 @@ import { createSeedData } from '../data/seed'
 import type { KnowledgeItem, PracticeCard, ReviewEvent, UserSettings } from '../types'
 import { makeEmptyFSRSCard } from './fsrs'
 import { buildDailyPlan, buildStudySession } from './planner'
+import { addDays, dayKey } from './date'
 
 const now = new Date('2026-07-16T10:00:00.000Z')
 const settings = (dailyMinutes: number): UserSettings => ({
@@ -98,6 +99,26 @@ describe('time-budget planner', () => {
     expect(plan.spentSeconds).toBe(180)
     expect(plan.remainingSeconds).toBe(420)
     expect(plan.reviewSeconds + plan.newSeconds).toBeLessThanOrEqual(420)
+  })
+
+  it('counts same-day events after a backward clock adjustment but not yesterday', () => {
+    const localNow = new Date(2026, 6, 17, 10, 0)
+    const card = makeCard(State.Review, localNow)
+    const review = (id: string, reviewedAt: Date): ReviewEvent => ({ id, cardId: card.id, rating: 3, reviewedAt: reviewedAt.toISOString(), durationSeconds: 60, previousDue: localNow.toISOString(), nextDue: localNow.toISOString() })
+    const plan = buildDailyPlan([card], [
+      review('future-after-rollback', new Date(2026, 6, 17, 11, 0)),
+      review('previous-day', new Date(2026, 6, 16, 23, 59)),
+    ], settings(10), localNow)
+    expect(plan.spentSeconds).toBe(60)
+    expect(plan.remainingSeconds).toBe(540)
+  })
+
+  it('keeps seven distinct local forecast dates across DST', () => {
+    const localNow = new Date(2026, 2, 7, 12, 0)
+    const cards = Array.from({ length: 8 }, (_, index) => makeCard(State.Review, new Date(2026, 2, 7 + index, 10), `dst-${index}`))
+    const forecast = buildDailyPlan(cards, [], settings(30), localNow).forecast
+    expect(new Set(forecast.map((day) => day.date)).size).toBe(7)
+    expect(forecast.map((day) => day.date)).toEqual(Array.from({ length: 7 }, (_, index) => dayKey(addDays(localNow, index))))
   })
 })
 

@@ -688,3 +688,23 @@ p { line-height: 1.45; }
   .trash-list > div > span:last-child { display: grid; grid-template-columns: 1fr; }
   .trash-list button { width: 100%; min-height: 44px; }
 }
+
+/* Fatal recovery ------------------------------------------------------------ */
+
+.fatal-recovery { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--bg); color: var(--text); }
+.fatal-recovery-card { width: min(680px, 100%); padding: clamp(28px, 5vw, 52px); border: 1px solid var(--border); border-radius: 24px; background: var(--surface); box-shadow: var(--shadow-lg); }
+.fatal-recovery-card h1 { margin: 8px 0 14px; font-size: clamp(2rem, 6vw, 3.4rem); line-height: 1.02; }
+.fatal-recovery-card > p:not(.eyebrow, .inline-message) { max-width: 58ch; color: var(--text-soft); line-height: 1.65; }
+.fatal-mark { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 16px; color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.fatal-recovery details { margin: 22px 0; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; }
+.fatal-recovery details code { display: block; margin-top: 10px; overflow-wrap: anywhere; color: var(--text-soft); }
+.fatal-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.fatal-actions button { min-height: 44px; }
+.update-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.update-heading > span, .update-panel p[role='status'] { display: flex; align-items: center; gap: 8px; }
+.update-heading code { color: var(--text-soft); }
+.update-progress { height: 7px; overflow: hidden; border-radius: 999px; background: var(--surface-muted); }
+.update-progress span { height: 100%; display: block; border-radius: inherit; background: var(--primary); transition: width 180ms ease; }
+.library-pagination { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 18px; border-top: 1px solid var(--border); }
+.library-pagination p { margin: 0; color: var(--text-soft); font-size: .78rem; }
+@media (max-width: 560px) { .library-pagination { align-items: stretch; flex-direction: column; text-align: center; } }

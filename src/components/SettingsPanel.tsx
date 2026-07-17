@@ -1,23 +1,44 @@
-import { ArchiveRestore, Database, Download, Moon, RotateCcw, Sun, Upload, X } from 'lucide-react'
+import { ArchiveRestore, Bug, Database, Download, Moon, RotateCcw, Sun, Upload, X } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useApp } from '../state/AppContext'
 import { downloadBackup, getStorageStatus, parseBackup } from '../lib/storage'
 import { extensionRuntime } from '../extensions/runtime'
 import { ExtensionManagerPanel } from './ExtensionManagerPanel'
+import { UpdatePanel } from './UpdatePanel'
+
+const MAX_IMPORT_BYTES = 2 * 1024 * 1024 * 1024
+const LARGE_IMPORT_BYTES = 500 * 1024 * 1024
+const formatImportSize = (bytes: number) => bytes >= 1024 * 1024 * 1024 ? `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB` : `${Math.ceil(bytes / 1024 / 1024)} MB`
 
 export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
   const { data, persistenceError, setRetention, toggleTheme, replaceData, resetData, mergeImport } = useApp()
   const fileRef = useRef<HTMLInputElement>(null)
+  const importToken = useRef(0)
   const [message, setMessage] = useState('')
-  const [busyAction, setBusyAction] = useState<'backup' | 'restore' | ''>('')
+  const [busyAction, setBusyAction] = useState<'backup' | 'restore' | 'diagnostics' | 'import' | ''>('')
   const storage = getStorageStatus()
 
   const importFile = async (file?: File) => {
     if (!file) return
+    if (file.size > MAX_IMPORT_BYTES) { setMessage(`That file is ${formatImportSize(file.size)}. Neo Anki limits a single import to 2 GB to protect the current workspace.`); return }
+    if (file.size > LARGE_IMPORT_BYTES && !window.confirm(`This import is ${formatImportSize(file.size)} and may take several minutes. Continue?`)) return
+    const replacesWorkspace = file.name.toLowerCase().endsWith('.json')
+    if (replacesWorkspace && !window.confirm('Restore this JSON backup as the complete workspace? Neo Anki will create a recovery checkpoint before replacing current data.')) return
+    const token = ++importToken.current
+    setBusyAction('import'); setMessage(`Reading ${file.name}… Your workspace has not changed.`)
     try {
-      if (file.name.toLowerCase().endsWith('.json')) replaceData(await parseBackup(file))
+      if (replacesWorkspace) {
+        const replacement = await parseBackup(file)
+        if (token !== importToken.current) return
+        await window.neoAnkiDesktop?.createImportCheckpoint()
+        if (token !== importToken.current) return
+        replaceData(replacement)
+      }
       else {
         const result = await extensionRuntime.importFile(file)
+        if (token !== importToken.current) return
+        await window.neoAnkiDesktop?.createImportCheckpoint()
+        if (token !== importToken.current) return
         mergeImport(result)
         setMessage(`Imported ${result.items.length} ${result.items.length === 1 ? 'item' : 'items'}. ${result.warnings.join(' ')}`)
         return
@@ -25,7 +46,14 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
       setMessage('Backup imported successfully.')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not import that file.')
-    }
+    } finally { if (token === importToken.current) { setBusyAction(''); if (fileRef.current) fileRef.current.value = '' } }
+  }
+
+  const cancelImport = () => {
+    importToken.current += 1
+    setBusyAction('')
+    setMessage('Import canceled. The workspace was not changed.')
+    if (fileRef.current) fileRef.current.value = ''
   }
 
   const exportWith = async (id: string) => {
@@ -54,6 +82,16 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not restore that backup. Your current workspace was not changed.')
     } finally { setBusyAction('') }
+  }
+
+  const exportDiagnostics = async () => {
+    if (!window.neoAnkiDesktop) return
+    setBusyAction('diagnostics'); setMessage('')
+    try {
+      const result = await window.neoAnkiDesktop.exportDiagnostics()
+      if (!result.canceled) setMessage(result.path ? `Diagnostics saved to ${result.path}` : 'Diagnostics exported successfully.')
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not export diagnostics.') }
+    finally { setBusyAction('') }
   }
 
   return (
@@ -98,20 +136,23 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
             <button className="secondary-button" disabled={Boolean(busyAction)} onClick={exportBackup}><Download size={18} /> {busyAction === 'backup' ? 'Exporting…' : 'Export backup'}</button>
             {window.neoAnkiDesktop && <button className="secondary-button" disabled={Boolean(busyAction)} onClick={restoreBackup}><ArchiveRestore size={18} /> {busyAction === 'restore' ? 'Restoring…' : 'Restore backup'}</button>}
             {extensionRuntime.exporters().map((exporter) => <button className="secondary-button" key={exporter.id} onClick={() => exportWith(exporter.id)}><Download size={18} /> {exporter.label}</button>)}
-            <button className="secondary-button" onClick={() => fileRef.current?.click()}><Upload size={18} /> Import</button>
-            <input ref={fileRef} className="visually-hidden" type="file" accept=".json,.csv,.apkg,.colpkg" onChange={(event) => importFile(event.target.files?.[0])} />
+            <button className="secondary-button" disabled={Boolean(busyAction)} onClick={() => fileRef.current?.click()}><Upload size={18} /> {busyAction === 'import' ? 'Importing…' : 'Import'}</button>
+            {busyAction === 'import' && <button className="text-button danger" onClick={cancelImport}>Cancel import</button>}
+            {window.neoAnkiDesktop && <button className="secondary-button" disabled={Boolean(busyAction)} onClick={() => void exportDiagnostics()}><Bug size={18}/> {busyAction === 'diagnostics' ? 'Exporting…' : 'Export diagnostics'}</button>}
+            <input ref={fileRef} className="visually-hidden" type="file" accept=".json,.csv,.apkg,.colpkg" onChange={(event) => void importFile(event.target.files?.[0])} />
           </div>
           {message && <p className="inline-message" role="status">{message}</p>}
         </div>
 
+        <UpdatePanel />
         <ExtensionManagerPanel />
 
         <div className="danger-zone">
           <div>
             <strong>Reset workspace</strong>
-            <p>Remove the active data file and restore the sample collection.</p>
+            <p>Back up the current workspace automatically, then restore the sample collection.</p>
           </div>
-          <button className="text-button danger" onClick={() => window.confirm('Reset the complete Neo Anki workspace? A manual backup is recommended first.') && resetData()}><RotateCcw size={17} /> Reset</button>
+          <button className="text-button danger" onClick={() => window.confirm('Reset the complete Neo Anki workspace? A recovery backup will be created first.') && resetData()}><RotateCcw size={17} /> Reset</button>
         </div>
       </section>
     </div>

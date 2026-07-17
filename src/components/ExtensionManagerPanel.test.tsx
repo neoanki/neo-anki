@@ -24,11 +24,19 @@ describe('extension manager', () => {
     const installExtension = vi.fn(async () => ({ manifest, enabled: true, directory: 'fixture', digest: 'a'.repeat(64), installedAt: '', updatedAt: '', entryUrl: '' }))
     window.neoAnkiDesktop = {
       isDesktop: true,
+      rendererReady: () => undefined,
       loadData: () => ({ data: null, storagePath: '', recoveredFromBackup: false }),
       saveData: async () => undefined,
       exportBackup: async () => ({ canceled: true }),
       restoreBackup: async () => ({ canceled: true }),
       resetData: async () => undefined,
+      createImportCheckpoint: async () => '',
+      reportDiagnostic: async () => undefined,
+      exportDiagnostics: async () => ({ canceled: true }),
+      getUpdateState: async () => ({ phase: 'development', currentVersion: '0.1.0' }),
+      checkForUpdates: async () => ({ phase: 'development', currentVersion: '0.1.0' }),
+      downloadUpdate: async () => ({ phase: 'development', currentVersion: '0.1.0' }),
+      installUpdate: async () => undefined,
       listExtensions: async () => [],
       chooseExtensionPackage: async () => ({ canceled: false, candidate: { token: 'review-token', manifest, digest: 'a'.repeat(64), compressedBytes: 2048, unpackedBytes: 4096, isDowngrade: false, addedPermissions: ['ui:pages'] } }),
       installExtension,
@@ -37,6 +45,7 @@ describe('extension manager', () => {
       uninstallExtension: async () => undefined,
       reloadForExtensions: async () => undefined,
       onNavigate: () => () => undefined,
+      onUpdateState: () => () => undefined,
     }
 
     render(<ExtensionManagerPanel />)

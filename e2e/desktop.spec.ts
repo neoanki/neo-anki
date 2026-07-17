@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { _electron as electron } from 'playwright'
 import { zipSync } from 'fflate'
 import initSqlJs from 'sql.js'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -81,12 +81,35 @@ test('installs, loads, and disables a third-party extension package', async () =
   }
 })
 
+test('automatically recovers from an extension that blocks renderer startup', async () => {
+  const userData = await mkdtemp(join(tmpdir(), 'neo-anki-extension-watchdog-'))
+  const extensionPath = join(userData, 'blocking.neoanki-extension')
+  const manifest = {
+    format: 'neo-anki-extension', schemaVersion: 1, id: 'org.example.blocking', name: 'Blocking fixture', version: '1.0.0', sdkVersion: 1,
+    publisher: 'Test fixture', permissions: [], entry: 'dist/index.js',
+  }
+  await writeFile(extensionPath, zipSync({ 'manifest.json': new TextEncoder().encode(JSON.stringify(manifest)), 'dist/index.js': new TextEncoder().encode('while (true) {}') }))
+  try {
+    const desktop = await electron.launch({ args: ['.', `--install-extension=${extensionPath}`], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData, NEO_ANKI_STARTUP_TIMEOUT_MS: '750' } })
+    await desktop.firstWindow()
+    await expect.poll(() => desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some((candidate) => candidate.webContents.getURL().includes('safe-mode=1'))), { timeout: 15_000 }).toBe(true)
+    await expect.poll(() => desktop.evaluate(async ({ BrowserWindow }) => {
+      const recovered = BrowserWindow.getAllWindows().find((candidate) => candidate.webContents.getURL().includes('safe-mode=1'))
+      return recovered ? recovered.webContents.executeJavaScript("document.querySelector('h1')?.textContent || ''") : ''
+    })).toMatch(/how much time can learning reliably have/i)
+    await expect.poll(async () => readFile(join(userData, 'diagnostics', 'diagnostics.jsonl'), 'utf8')).toContain('extension-startup-timeout')
+    await desktop.close()
+  } finally {
+    await rm(userData, { recursive: true, force: true })
+  }
+})
+
 test('packaged macOS application launches without a development server', async () => {
   const executablePath = process.env.NEO_ANKI_PACKAGED_APP
   test.skip(!executablePath, 'Set NEO_ANKI_PACKAGED_APP to verify a packaged artifact.')
   const userData = await mkdtemp(join(tmpdir(), 'neo-anki-packaged-'))
   try {
-    const packagedApp = await electron.launch({ executablePath, env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData } })
+    const packagedApp = await electron.launch({ executablePath, env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData, NEO_ANKI_TEST_ALLOW_MULTIPLE_INSTANCES: '1' } })
     const window = await packagedApp.firstWindow()
     expect(window.url()).toBe('neoanki://app/index.html')
     await expect(window.getByRole('heading', { name: /how much time can learning reliably have/i })).toBeVisible()
@@ -106,6 +129,7 @@ test('desktop security policy permits the WebAssembly Anki importer', async () =
     await window.getByRole('button', { name: /open settings/i }).click()
     await window.locator('input[type=file][accept=".json,.csv,.apkg,.colpkg"]').setInputFiles({ name: 'csp.apkg', mimeType: 'application/octet-stream', buffer: await createAnkiPackage() })
     await expect(window.locator('.inline-message')).toContainText('Imported 1 item')
+    await expect.poll(async () => (await readdir(join(userData, 'backups'))).some((name) => name.includes('before-import'))).toBe(true)
   } finally {
     await app.close()
     await rm(userData, { recursive: true, force: true })

@@ -37,12 +37,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: macos-arm64
+          - name: macos-universal
             os: macos-15
-            args: --mac --arm64
-          - name: macos-x64
-            os: macos-15-intel
-            args: --mac --x64
+            args: --mac --universal
           - name: windows-x64
             os: windows-2025
             args: --win --x64
@@ -68,7 +65,34 @@ jobs:
       - run: npm ci
       - run: npm run build && npm run extension:example && npm run desktop:prepare
       - name: Build signed release artifacts
-        run: npx electron-builder ${{ matrix.args }} --publish never
+        run: npx electron-builder ${{ matrix.args }} --publish never -c.forceCodeSigning=true
+      - name: Verify macOS signature, notarization, and staple
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app_path="$(find release -maxdepth 3 -type d -name '*.app' -print -quit)"
+          test -n "$app_path"
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          spctl --assess --verbose --type exec "$app_path"
+          xcrun stapler validate "$app_path"
+      - name: Verify Windows Authenticode signature
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem release -Filter *.exe | Select-Object -First 1
+          if (-not $installer) { throw 'No Windows installer was produced.' }
+          $signature = Get-AuthenticodeSignature $installer.FullName
+          if ($signature.Status -ne 'Valid') { throw "Invalid Authenticode signature: $($signature.Status)" }
+      - name: Verify Linux AppImage payload
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          appimage="$(find release -maxdepth 1 -name '*.AppImage' -print -quit)"
+          test -n "$appimage"
+          chmod +x "$appimage"
+          "$appimage" --appimage-extract >/dev/null
+          test -x squashfs-root/AppRun
+          test -d squashfs-root/usr
       - name: Create checksums
         shell: bash
         run: |

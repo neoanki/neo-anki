@@ -27,6 +27,7 @@ const ManifestSummary = ({ manifest, addedPermissions = [] }: { manifest: Extens
 
 export const ExtensionManagerPanel = () => {
   const bridge = window.neoAnkiDesktop
+  const safeMode = new URLSearchParams(window.location.search).get('safe-mode') === '1'
   const [installed, setInstalled] = useState<NeoAnkiInstalledExtension[]>([])
   const [candidate, setCandidate] = useState<NeoAnkiExtensionCandidate | null>(null)
   const [busy, setBusy] = useState(false)
@@ -101,6 +102,8 @@ export const ExtensionManagerPanel = () => {
   return <div className="setting-block extension-manager">
     <div className="extensions-heading"><span><Puzzle size={18} /><strong>Extensions</strong></span><small>{bundled.length + installed.filter((record) => record.enabled).length} active</small></div>
     <p>Bundled and locally installed extensions use the same SDK, registry, permissions, and failure isolation.</p>
+
+    {safeMode && <div className="extension-reload" role="status"><span><ShieldCheck size={17}/><span><strong>Safe mode is active</strong><small>Locally installed extensions were skipped for this launch.</small></span></span><button className="secondary-button compact" onClick={() => { window.location.search = '' }}>Restart normally</button></div>}
 
     {bridge ? <button className="secondary-button extension-install-button" disabled={busy || Boolean(candidate)} onClick={choosePackage}><PackagePlus size={18} /> {busy ? 'Reading package…' : 'Install from file…'}</button> : <p className="extension-browser-note">Local extension installation is available in the desktop app.</p>}
 

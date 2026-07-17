@@ -51,7 +51,7 @@ The default export is the same `NeoAnkiExtension` object passed to `ExtensionReg
 | `ui:create-panels` | React authoring panels in Create |
 | `ui:library-presets` | Named query and collection presets in Library |
 
-Non-empty contributions without their declared permission are rejected. Contribution IDs are global within their kind and collisions are rejected.
+Non-empty contributions without their declared permission are rejected. Contribution IDs are global within their kind and collisions are rejected. These declarations constrain SDK registration; SDK v1 extensions are explicitly installed full-trust code, so permissions are not a hostile-code sandbox.
 
 ## UI host
 
@@ -74,6 +74,7 @@ Commands receive a cloned snapshot and have no effect unless they call `replaceD
 - Invalid queue policy → kernel ordering.
 - Failing sync transport → local-only operation.
 - Failing import, command, or module load → diagnostic plus unchanged existing data.
+- Extension blocks initial renderer readiness → main-process watchdog opens a fresh safe-mode window without local packages.
 
 ## Compatibility
 

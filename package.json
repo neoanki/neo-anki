@@ -18,7 +18,7 @@
     "extension:sdk": "npm run build -w @neo-anki/extension-sdk",
     "extension:check": "npm run extension:sdk && npm run check -w @neo-anki-example/study-pulse",
     "extension:example": "npm run extension:sdk && npm run build -w @neo-anki-example/study-pulse",
-    "desktop:prepare": "esbuild electron/main.ts --bundle --platform=node --format=esm --external:electron --outfile=dist-electron/main.mjs && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/preload.cjs",
+    "desktop:prepare": "esbuild electron/main.ts --bundle --platform=node --format=esm --external:electron --external:electron-updater --outfile=dist-electron/main.mjs && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/preload.cjs && npm run license:check",
     "desktop:dev": "npm run desktop:prepare && concurrently -k \"vite --host 127.0.0.1 --port 5173\" \"wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
     "desktop:pack": "npm run build && npm run desktop:prepare && electron-builder --dir",
     "desktop:build": "npm run build && npm run desktop:prepare && electron-builder",
@@ -27,13 +27,17 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:unit": "vitest run",
+    "test:timezones": "cross-env TZ=America/New_York vitest run src/lib/date.test.ts src/lib/planner.test.ts && cross-env TZ=Europe/Kyiv vitest run src/lib/date.test.ts src/lib/planner.test.ts",
+    "benchmark:planner": "tsx scripts/benchmark-planner.ts",
+    "license:check": "node scripts/check-licenses.mjs",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
-    "test:all": "npm run lint && npm run typecheck && npm run test:coverage && npm run build && npm run test:e2e && npm run test:desktop"
+    "test:all": "npm run lint && npm run typecheck && npm run test:coverage && npm run test:timezones && npm run benchmark:planner && npm run license:check && npm run build && npm run test:e2e && npm run test:desktop"
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "fflate": "^0.8.3",
     "fzstd": "^0.1.1",
     "lucide-react": "^1.24.0",
@@ -65,6 +69,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.3",
     "jsdom": "^29.1.1",
+    "tsx": "^4.23.1",
     "typescript": "~5.7.2",
     "typescript-eslint": "^8.64.0",
     "vite": "^8.1.5",
@@ -75,6 +80,15 @@
     "appId": "app.neoanki.desktop",
     "productName": "Neo Anki",
     "asar": true,
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "electronUpdaterCompatibility": ">=2.16",
+    "generateUpdatesFilesForAllChannels": true,
+    "publish": {
+      "provider": "github",
+      "owner": "neoanki",
+      "repo": "neo-anki",
+      "releaseType": "release"
+    },
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -82,20 +96,35 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
+      "build/THIRD_PARTY_NOTICES.txt",
       "package.json"
     ],
     "mac": {
       "category": "public.app-category.education",
       "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "notarize": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
       "target": [
         "dmg",
         "zip"
-      ],
-      "identity": null
+      ]
     },
     "win": {
-      "target": "nsis",
+      "target": {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      },
       "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
     },
     "linux": {
       "category": "Education",

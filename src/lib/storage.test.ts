@@ -27,11 +27,19 @@ describe('storage and migrations', () => {
     const original = window.neoAnkiDesktop
     window.neoAnkiDesktop = {
       isDesktop: true,
+      rendererReady: () => undefined,
       loadData: () => ({ data, storagePath: '/tmp/neo-anki-data.json', recoveredFromBackup: false }),
       saveData: async (value) => { saved.push(value) },
       exportBackup: async () => ({ canceled: false, path: '/tmp/backup.json' }),
       restoreBackup: async () => ({ canceled: true }),
       resetData: async () => undefined,
+      createImportCheckpoint: async () => '',
+      reportDiagnostic: async () => undefined,
+      exportDiagnostics: async () => ({ canceled: true }),
+      getUpdateState: async () => ({ phase: 'development', currentVersion: '0.1.0' }),
+      checkForUpdates: async () => ({ phase: 'development', currentVersion: '0.1.0' }),
+      downloadUpdate: async () => ({ phase: 'development', currentVersion: '0.1.0' }),
+      installUpdate: async () => undefined,
       listExtensions: async () => [],
       chooseExtensionPackage: async () => ({ canceled: true }),
       installExtension: async () => { throw new Error('not used') },
@@ -40,6 +48,7 @@ describe('storage and migrations', () => {
       uninstallExtension: async () => undefined,
       reloadForExtensions: async () => undefined,
       onNavigate: () => () => undefined,
+      onUpdateState: () => () => undefined,
     }
 
     try {

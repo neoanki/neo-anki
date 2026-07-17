@@ -99,4 +99,6 @@ Updates are installed into a new fingerprinted version directory. The active reg
 
 Local extensions execute as JavaScript in Neo Anki’s sandboxed renderer. They have no Node.js integration, and the application Content Security Policy blocks arbitrary remote scripts and connections. However, contribution permissions describe intended SDK use; they are not a hostile-code security sandbox. An extension can render UI and receives data required by its declared contributions. Install only packages whose publisher and source you trust.
 
+If a package crashes or blocks startup, the main process opens a fresh safe-mode window without local packages and records a diagnostic. This recovery mechanism protects availability; it does not make untrusted code safe.
+
 Neo Anki does not currently claim package signatures, publisher verification, a marketplace, automatic updates, or dependency resolution. SHA-256 fingerprints provide integrity identification, not authorship.

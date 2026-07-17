@@ -4,8 +4,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatDue } from '../lib/date'
 import { analyzeCardHealth } from '../lib/content'
 import { useApp } from '../state/AppContext'
-import type { KnowledgeItem } from '../types'
+import type { KnowledgeItem, PracticeCard } from '../types'
 import { extensionRuntime } from '../extensions/runtime'
+
+const LIBRARY_PAGE_SIZE = 100
 
 const EditDialog = ({ item, onClose }: { item: KnowledgeItem; onClose: () => void }) => {
   const { updateItem } = useApp()
@@ -36,6 +38,7 @@ export const LibraryPage = () => {
   const [collection, setCollection] = useState('All collections')
   const [editing, setEditing] = useState<KnowledgeItem | null>(null)
   const [recentlyTrashed, setRecentlyTrashed] = useState<{ id: string; name: string } | null>(null)
+  const [visibleCount, setVisibleCount] = useState(LIBRARY_PAGE_SIZE)
   const searchRef = useRef<HTMLInputElement>(null)
   const collections = ['All collections', ...new Set(data.items.map((item) => item.collection))]
   const libraryPresets = extensionRuntime.libraryPresets(data)
@@ -43,6 +46,16 @@ export const LibraryPage = () => {
     const haystack = `${item.prompt} ${item.answer} ${item.collection} ${item.tags.join(' ')}`.toLowerCase()
     return haystack.includes(query.toLowerCase()) && (collection === 'All collections' || item.collection === collection)
   }), [data.items, query, collection])
+  const cardsByItem = useMemo(() => {
+    const result = new Map<string, PracticeCard[]>()
+    for (const card of data.cards) {
+      const existing = result.get(card.itemId)
+      if (existing) existing.push(card)
+      else result.set(card.itemId, [card])
+    }
+    return result
+  }, [data.cards])
+  const visibleItems = filtered.slice(0, visibleCount)
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => { if (event.key === '/' && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)) { event.preventDefault(); searchRef.current?.focus() } }
@@ -57,15 +70,15 @@ export const LibraryPage = () => {
       </header>
 
       <div className="library-toolbar">
-        <label className="search-field"><Search size={19} /><span className="visually-hidden">Search knowledge</span><input ref={searchRef} type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search questions, answers, tags…  /" /></label>
-        <label className="filter-field"><Filter size={18} /><span className="visually-hidden">Filter by collection</span><select value={collection} onChange={(event) => setCollection(event.target.value)}>{collections.map((name) => <option key={name}>{name}</option>)}</select></label>
-        {libraryPresets.length > 0 && <label className="filter-field"><span className="visually-hidden">Apply saved view</span><select defaultValue="" onChange={(event) => { const preset = libraryPresets.find((candidate) => candidate.id === event.target.value); if (preset) { setQuery(preset.query); setCollection(preset.collection || 'All collections') } }}><option value="">Saved views</option>{libraryPresets.map((preset) => <option value={preset.id} key={preset.id}>{preset.label}</option>)}</select></label>}
+        <label className="search-field"><Search size={19} /><span className="visually-hidden">Search knowledge</span><input ref={searchRef} type="search" value={query} onChange={(event) => { setQuery(event.target.value); setVisibleCount(LIBRARY_PAGE_SIZE) }} placeholder="Search questions, answers, tags…  /" /></label>
+        <label className="filter-field"><Filter size={18} /><span className="visually-hidden">Filter by collection</span><select value={collection} onChange={(event) => { setCollection(event.target.value); setVisibleCount(LIBRARY_PAGE_SIZE) }}>{collections.map((name) => <option key={name}>{name}</option>)}</select></label>
+        {libraryPresets.length > 0 && <label className="filter-field"><span className="visually-hidden">Apply saved view</span><select defaultValue="" onChange={(event) => { const preset = libraryPresets.find((candidate) => candidate.id === event.target.value); if (preset) { setQuery(preset.query); setCollection(preset.collection || 'All collections'); setVisibleCount(LIBRARY_PAGE_SIZE) } }}><option value="">Saved views</option>{libraryPresets.map((preset) => <option value={preset.id} key={preset.id}>{preset.label}</option>)}</select></label>}
       </div>
 
       <section className="library-list" aria-label="Knowledge items">
         <div className="library-list-header"><span>Knowledge</span><span>Practice prompts</span><span>Status</span><span className="visually-hidden">Actions</span></div>
-        {filtered.map((item) => {
-          const cards = data.cards.filter((card) => card.itemId === item.id)
+        {visibleItems.map((item) => {
+          const cards = cardsByItem.get(item.id) || []
           const active = cards.filter((card) => !card.suspended)
           const nextDue = active.map((card) => new Date(card.fsrs.due)).sort((a, b) => a.getTime() - b.getTime())[0]
           const health = analyzeCardHealth(item.prompt, item.answer, item.citations)
@@ -78,8 +91,9 @@ export const LibraryPage = () => {
             </article>
           )
         })}
-        {!filtered.length && <div className="empty-state"><Archive size={30} /><h2>No knowledge found</h2><p>Try another filter or add a new item.</p><button className="secondary-button" onClick={() => { setQuery(''); setCollection('All collections') }}><MoreHorizontal size={18} /> Clear filters</button></div>}
+        {!filtered.length && <div className="empty-state"><Archive size={30} /><h2>No knowledge found</h2><p>Try another filter or add a new item.</p><button className="secondary-button" onClick={() => { setQuery(''); setCollection('All collections'); setVisibleCount(LIBRARY_PAGE_SIZE) }}><MoreHorizontal size={18} /> Clear filters</button></div>}
       </section>
+      {filtered.length > visibleItems.length && <div className="library-pagination"><p aria-live="polite">Showing {visibleItems.length} of {filtered.length} matching items.</p><button className="secondary-button" onClick={() => setVisibleCount((count) => Math.min(filtered.length, count + LIBRARY_PAGE_SIZE))}>Show {Math.min(LIBRARY_PAGE_SIZE, filtered.length - visibleItems.length)} more</button></div>}
       {recentlyTrashed && data.trash.some((entry) => entry.id === recentlyTrashed.id) && <div className="undo-banner" role="status"><span><Trash2 size={17}/><span><strong>Moved to Trash</strong><small>{recentlyTrashed.name}</small></span></span><button className="secondary-button compact" onClick={() => { restoreItem(recentlyTrashed.id); setRecentlyTrashed(null) }}><Undo2 size={16}/> Undo</button></div>}
       {data.trash.length > 0 && <details className="trash-panel"><summary><span><Archive size={18}/> Trash</span><small>{data.trash.length} {data.trash.length === 1 ? 'item' : 'items'}</small></summary><p>Deleted knowledge stays recoverable. Review events remain in your history even after permanent removal.</p><div className="trash-list">{data.trash.map((entry) => <div key={entry.id}><span><strong>{entry.item.prompt}</strong><small>Deleted {new Date(entry.deletedAt).toLocaleString()}</small></span><span><button className="secondary-button compact" onClick={() => restoreItem(entry.id)}><ArchiveRestore size={16}/> Restore</button><button className="text-button danger" onClick={() => window.confirm('Permanently remove this content from Trash? Its historical review events will remain, but the knowledge item cannot be restored.') && purgeItem(entry.id)}><Trash2 size={16}/> Remove permanently</button></span></div>)}</div></details>}
       {editing && <EditDialog item={editing} onClose={() => setEditing(null)} />}

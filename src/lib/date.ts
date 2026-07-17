@@ -16,7 +16,12 @@ export const addDays = (date: Date, days: number) => {
   return copy
 }
 
-export const dayKey = (date: Date) => startOfDay(date).toISOString().slice(0, 10)
+export const dayKey = (date: Date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
 export const formatDuration = (seconds: number) => {
   if (seconds < 60) return `${Math.max(0, Math.round(seconds))} sec`

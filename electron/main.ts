@@ -1,15 +1,18 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import type { AppUpdater, ProgressInfo, UpdateInfo } from 'electron-updater'
 import { readFile } from 'node:fs/promises'
 import { join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ExtensionManager } from './extension-manager.js'
 import { WorkspaceStore } from './workspace-store.js'
+import { DiagnosticsLog } from './diagnostics-log.js'
 import type { WorkspaceChangeSet } from '../src/lib/workspace-changes.js'
 
 const APP_SCHEME = 'neoanki'
 const EXTENSION_SCHEME = 'neoanki-extension'
 const MEDIA_SCHEME = 'neoanki-media'
 const devServerUrl = process.env.VITE_DEV_SERVER_URL
+const rendererStartupTimeoutMs = process.env.NEO_ANKI_STARTUP_TIMEOUT_MS ? Math.max(500, Number(process.env.NEO_ANKI_STARTUP_TIMEOUT_MS) || 12_000) : 12_000
 
 protocol.registerSchemesAsPrivileged([
   { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
@@ -23,10 +26,45 @@ app.setName('Neo Anki')
 let mainWindow: BrowserWindow | null = null
 let extensionManager: ExtensionManager
 let workspaceStore: WorkspaceStore
+let diagnosticsLog: DiagnosticsLog
 let saveQueue: Promise<void> = Promise.resolve()
 let quitAfterFlush = false
 
-const hasSingleInstanceLock = app.requestSingleInstanceLock()
+type UpdatePhase = 'development' | 'idle' | 'checking' | 'available' | 'current' | 'downloading' | 'ready' | 'error'
+interface DesktopUpdateState { phase: UpdatePhase; currentVersion: string; version?: string; percent?: number; error?: string }
+let updateState: DesktopUpdateState = { phase: 'development', currentVersion: app.getVersion() }
+let applicationUpdater: AppUpdater | null = null
+let rendererReady = false
+let rendererStartupTimer: NodeJS.Timeout | null = null
+const publishUpdateState = (next: DesktopUpdateState) => {
+  updateState = next
+  mainWindow?.webContents.send('neo-anki:update-state', updateState)
+}
+
+const configureUpdates = async () => {
+  if (!app.isPackaged) return publishUpdateState({ phase: 'development', currentVersion: app.getVersion() })
+  const { autoUpdater } = await import('electron-updater')
+  applicationUpdater = autoUpdater
+  applicationUpdater.autoDownload = false
+  applicationUpdater.autoInstallOnAppQuit = true
+  applicationUpdater.allowDowngrade = false
+  applicationUpdater.on('checking-for-update', () => publishUpdateState({ phase: 'checking', currentVersion: app.getVersion() }))
+  applicationUpdater.on('update-available', (info: UpdateInfo) => publishUpdateState({ phase: 'available', currentVersion: app.getVersion(), version: info.version }))
+  applicationUpdater.on('update-not-available', () => publishUpdateState({ phase: 'current', currentVersion: app.getVersion() }))
+  applicationUpdater.on('download-progress', (progress: ProgressInfo) => publishUpdateState({ phase: 'downloading', currentVersion: app.getVersion(), version: updateState.version, percent: Math.max(0, Math.min(100, progress.percent)) }))
+  applicationUpdater.on('update-downloaded', (info: UpdateInfo) => {
+    void workspaceStore.createAutomaticBackup('before-update').catch((error) => diagnosticsLog.record({ source: 'main', level: 'warning', code: 'update-backup', message: error instanceof Error ? error.message : 'Could not create the pre-update backup.' }))
+    publishUpdateState({ phase: 'ready', currentVersion: app.getVersion(), version: info.version, percent: 100 })
+  })
+  applicationUpdater.on('error', (error: Error) => {
+    publishUpdateState({ phase: 'error', currentVersion: app.getVersion(), version: updateState.version, error: error.message })
+    void diagnosticsLog.record({ source: 'main', level: 'error', code: 'auto-update', message: error.message, stack: error.stack })
+  })
+  publishUpdateState({ phase: 'idle', currentVersion: app.getVersion() })
+  setTimeout(() => { void applicationUpdater?.checkForUpdates() }, 15_000).unref()
+}
+
+const hasSingleInstanceLock = process.env.NEO_ANKI_TEST_ALLOW_MULTIPLE_INSTANCES === '1' || app.requestSingleInstanceLock()
 if (!hasSingleInstanceLock) app.quit()
 app.on('second-instance', () => {
   if (!mainWindow) return
@@ -95,7 +133,37 @@ const assertTrustedSender = (event: IpcMainEvent | IpcMainInvokeEvent) => {
   if (!event.senderFrame || !isTrustedUrl(event.senderFrame.url)) throw new Error('Rejected desktop request from an untrusted renderer.')
 }
 
+const clearRendererStartupTimer = () => {
+  if (rendererStartupTimer) clearTimeout(rendererStartupTimer)
+  rendererStartupTimer = null
+}
+
+const armRendererStartupWatchdog = () => {
+  clearRendererStartupTimer()
+  if (rendererReady || !mainWindow) return
+  rendererStartupTimer = setTimeout(() => {
+    const currentUrl = mainWindow?.webContents.getURL() || ''
+    if (!mainWindow || currentUrl.includes('safe-mode=1')) {
+      void diagnosticsLog.record({ source: 'main', level: 'error', code: 'safe-mode-startup-timeout', message: 'The renderer did not become ready in safe mode.' })
+      return
+    }
+    void diagnosticsLog.record({ source: 'extension-host', level: 'error', code: 'extension-startup-timeout', message: 'The renderer did not become ready; Neo Anki restarted without locally installed extensions.' })
+    const windowToRecover = mainWindow
+    void createWindow('?safe-mode=1&recovered=extension-startup').then(() => {
+      if (!windowToRecover.isDestroyed()) windowToRecover.destroy()
+    }).catch((error) => {
+      void diagnosticsLog.record({ source: 'main', level: 'error', code: 'safe-mode-window', message: error instanceof Error ? error.message : 'Could not open the safe-mode recovery window.' })
+    })
+  }, rendererStartupTimeoutMs)
+  rendererStartupTimer.unref()
+}
+
 const registerDesktopIpc = () => {
+  ipcMain.on('neo-anki:renderer-ready', (event) => {
+    assertTrustedSender(event)
+    rendererReady = true
+    clearRendererStartupTimer()
+  })
   ipcMain.on('neo-anki:load-data', (event) => {
     try {
       assertTrustedSender(event)
@@ -140,6 +208,55 @@ const registerDesktopIpc = () => {
     await saveQueue.catch(() => undefined)
     await workspaceStore.createAutomaticBackup('before-reset')
     workspaceStore.clear()
+  })
+
+  ipcMain.handle('neo-anki:create-import-checkpoint', async (event) => {
+    assertTrustedSender(event)
+    await saveQueue.catch(() => undefined)
+    return workspaceStore.createAutomaticBackup('before-import')
+  })
+
+  ipcMain.handle('neo-anki:report-diagnostic', async (event, diagnostic: { source?: string; level?: string; code?: string; message?: string; stack?: string }) => {
+    assertTrustedSender(event)
+    await diagnosticsLog.record({
+      source: diagnostic.source === 'extension-host' ? 'extension-host' : 'renderer',
+      level: diagnostic.level === 'warning' || diagnostic.level === 'info' ? diagnostic.level : 'error',
+      code: diagnostic.code || 'renderer-error',
+      message: diagnostic.message || 'Unknown renderer error',
+      stack: diagnostic.stack,
+    })
+  })
+
+  ipcMain.handle('neo-anki:export-diagnostics', async (event) => {
+    assertTrustedSender(event)
+    const options = { title: 'Export Neo Anki Diagnostics', defaultPath: `neo-anki-diagnostics-${new Date().toISOString().slice(0, 10)}.jsonl`, filters: [{ name: 'JSON Lines', extensions: ['jsonl'] }] }
+    const result = mainWindow ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options)
+    if (result.canceled || !result.filePath) return { canceled: true }
+    await diagnosticsLog.export(result.filePath)
+    return { canceled: false, path: result.filePath }
+  })
+
+  ipcMain.handle('neo-anki:get-update-state', (event) => { assertTrustedSender(event); return updateState })
+  ipcMain.handle('neo-anki:check-for-updates', async (event) => {
+    assertTrustedSender(event)
+    if (!app.isPackaged) return updateState
+    if (!applicationUpdater) await configureUpdates()
+    await applicationUpdater?.checkForUpdates()
+    return updateState
+  })
+  ipcMain.handle('neo-anki:download-update', async (event) => {
+    assertTrustedSender(event)
+    if (updateState.phase !== 'available') throw new Error('No verified update is ready to download.')
+    if (!applicationUpdater) throw new Error('The update service is not ready.')
+    await applicationUpdater.downloadUpdate()
+    return updateState
+  })
+  ipcMain.handle('neo-anki:install-update', async (event) => {
+    assertTrustedSender(event)
+    if (updateState.phase !== 'ready') throw new Error('The update has not finished downloading.')
+    await saveQueue.catch(() => undefined)
+    if (!applicationUpdater) throw new Error('The update service is not ready.')
+    applicationUpdater.quitAndInstall(false, true)
   })
 
   ipcMain.handle('neo-anki:list-extensions', async (event) => {
@@ -206,8 +323,8 @@ const registerAppProtocol = () => {
   })
 }
 
-const createWindow = async () => {
-  mainWindow = new BrowserWindow({
+const createWindow = async (query = '') => {
+  const window = new BrowserWindow({
     title: 'Neo Anki',
     width: 1280,
     height: 820,
@@ -224,22 +341,28 @@ const createWindow = async () => {
       sandbox: true,
     },
   })
+  mainWindow = window
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  window.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://') || url.startsWith('mailto:')) void shell.openExternal(url)
     return { action: 'deny' }
   })
-  mainWindow.webContents.on('will-navigate', (event, url) => {
+  window.webContents.on('will-navigate', (event, url) => {
     if (!isTrustedUrl(url)) event.preventDefault()
   })
-  mainWindow.once('ready-to-show', () => mainWindow?.show())
-  mainWindow.on('closed', () => { mainWindow = null })
+  window.once('ready-to-show', () => window.show())
+  window.on('closed', () => { if (mainWindow === window) mainWindow = null })
+  window.webContents.on('did-start-loading', () => { rendererReady = false; armRendererStartupWatchdog() })
+  window.webContents.on('did-finish-load', armRendererStartupWatchdog)
 
-  if (devServerUrl) await mainWindow.loadURL(devServerUrl)
-  else await mainWindow.loadURL(`${APP_SCHEME}://app/index.html`)
+  if (devServerUrl) await window.loadURL(`${devServerUrl}${query}`)
+  else await window.loadURL(`${APP_SCHEME}://app/index.html${query}`)
 }
 
 if (hasSingleInstanceLock) app.whenReady().then(async () => {
+  diagnosticsLog = new DiagnosticsLog(join(app.getPath('userData'), 'diagnostics'), app.getVersion())
+  process.on('uncaughtException', (error) => { void diagnosticsLog.record({ source: 'main', level: 'error', code: 'uncaught-exception', message: error.message, stack: error.stack }) })
+  process.on('unhandledRejection', (reason) => { const error = reason instanceof Error ? reason : new Error(String(reason)); void diagnosticsLog.record({ source: 'main', level: 'error', code: 'unhandled-rejection', message: error.message, stack: error.stack }) })
   workspaceStore = new WorkspaceStore(app.getPath('userData'))
   extensionManager = new ExtensionManager(app.getPath('userData'))
   const installPath = process.argv.find((value) => value.startsWith('--install-extension='))?.slice('--install-extension='.length)
@@ -252,6 +375,10 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   installApplicationMenu()
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   await createWindow()
+  void configureUpdates().catch((error) => {
+    publishUpdateState({ phase: 'error', currentVersion: app.getVersion(), error: error instanceof Error ? error.message : 'The update service could not start.' })
+    void diagnosticsLog.record({ source: 'main', level: 'error', code: 'update-initialize', message: error instanceof Error ? error.message : 'The update service could not start.' })
+  })
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow() })
 }).catch((error) => {
   dialog.showErrorBox('Neo Anki could not start', error instanceof Error ? error.message : 'The local workspace could not be opened.')

@@ -1,6 +1,7 @@
 {
   "name": "@neo-anki-example/study-pulse",
   "version": "1.0.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "neoAnki": { "entry": "src/index.tsx" },
