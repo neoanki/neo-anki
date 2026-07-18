@@ -14,6 +14,7 @@ import type { WorkspacePatchV2 } from '../packages/compatibility-domain/src/inde
 const APP_SCHEME = 'neoanki'
 const EXTENSION_SCHEME = 'neoanki-extension'
 const MEDIA_SCHEME = 'neoanki-media'
+const EXTENSION_WORKER_LOCKDOWN = ';(()=>{for(const name of ["fetch","XMLHttpRequest","WebSocket","EventSource","WebTransport","RTCPeerConnection","Worker","SharedWorker","BroadcastChannel","indexedDB","caches","importScripts"]){try{Object.defineProperty(globalThis,name,{value:undefined,writable:false,configurable:false})}catch{try{globalThis[name]=undefined}catch{}}}})();\n'
 const devServerUrl = process.env.VITE_DEV_SERVER_URL
 const rendererStartupTimeoutMs = process.env.NEO_ANKI_STARTUP_TIMEOUT_MS ? Math.max(500, Number(process.env.NEO_ANKI_STARTUP_TIMEOUT_MS) || 12_000) : 12_000
 
@@ -372,9 +373,7 @@ const registerAppProtocol = () => {
         const entry = url.searchParams.get('entry') || ''
         const digest = url.searchParams.get('v') || ''
         const source = await extensionManager.readWorkerEntry(id, entry, digest)
-        const disabledGlobals = ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'WebTransport', 'RTCPeerConnection', 'Worker', 'SharedWorker', 'BroadcastChannel', 'indexedDB', 'caches', 'importScripts']
-        const lockdown = `;(()=>{for(const name of ${JSON.stringify(disabledGlobals)}){try{Object.defineProperty(globalThis,name,{value:undefined,writable:false,configurable:false})}catch{try{globalThis[name]=undefined}catch{}}}})();\n`
-        return new Response(Buffer.concat([Buffer.from(lockdown), Buffer.from(source)]), { headers: {
+        return new Response(Buffer.concat([Buffer.from(EXTENSION_WORKER_LOCKDOWN), Buffer.from(source)]), { headers: {
           'Content-Type': 'text/javascript; charset=utf-8',
           'Content-Security-Policy': "default-src 'none'; script-src 'none'; connect-src 'none'; worker-src 'none'; child-src 'none'; object-src 'none'; base-uri 'none'",
           'Cache-Control': 'no-store',

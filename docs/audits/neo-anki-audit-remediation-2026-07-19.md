@@ -39,6 +39,16 @@ This ledger closes the findings in `neo-anki-comprehensive-audit-2026-07-19.md` 
 | DEP-001 | The one build-time Expo/xcode UUID advisory is registered with reachability, controls, upstream state and expiry; no high/critical advisories remain. | Dependency risk register |
 | SEC-001 | The browser same-origin key-use boundary and high-sensitivity recommendation are explicit. | Browser sync security doc |
 
+## Release-gate findings discovered during remediation
+
+These defects were not part of the original pre-fix audit. They were found by the clean CI and security-analysis matrix while preparing 0.2.0, fixed on the release branch, and retained here so future maintenance does not lose their regressions.
+
+| Finding | Resolution in 0.2.0 | Primary evidence |
+| --- | --- | --- |
+| CI-002 — Desktop extension journey selected a stale versioned artifact | The journey derives the package ID and version from the built extension manifest, so a clean build and a developer tree select the same artifact. | Cross-platform desktop E2E |
+| SEC-002 — Plain-text rendering could decode nested entities more than once | Named entities are decoded through one combined replacement pass; encoded markup remains encoded after one text conversion. | Card-rendering regression and CodeQL |
+| SEC-003 — Worker lockdown JavaScript was assembled through interpolation | The network/global lockdown prelude is a fixed host-owned bootstrap prepended to the separately verified extension entry. | Desktop extension E2E and CodeQL |
+
 ## Release exit gate
 
 Release is eligible only when the complete local matrix and all required GitHub checks pass on the release commit. A failed required oracle, desktop durability journey, artifact trust check, checksum, SBOM validation or attestation blocks publication.

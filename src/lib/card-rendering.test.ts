@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import type { Card, CardTemplate, MediaAsset, Note, NoteType } from '../../packages/compatibility-domain/src'
-import { renderWorkspaceCard } from './card-rendering'
+import { plainTextAnswer, renderWorkspaceCard } from './card-rendering'
 
 const now = '2026-07-18T12:00:00.000Z'
 const base = { revision: 1, createdAt: now, updatedAt: now }
 const media: MediaAsset = { ...base, id: 'media', profileId: 'profile', filename: 'pixel.png', mimeType: 'image/png', byteLength: 4, sha256: 'a'.repeat(64), storageKey: 'a'.repeat(64) }
 
 describe('Workspace v4 card rendering projection', () => {
+  it('decodes one layer of HTML entities without turning encoded markup into text', () => {
+    expect(plainTextAnswer('&lt;b&gt;answer&lt;/b&gt; &amp;lt;script&amp;gt;')).toBe('<b>answer</b> &lt;script&gt;')
+  })
+
   it('renders named fields, conditions, typed answers, media, and FrontSide', () => {
     const type: NoteType = { ...base, id: 'type', profileId: 'profile', name: 'Custom', fieldIds: ['front', 'back', 'hint'], templateIds: ['template'], kind: 'standard', css: '.card { color: purple; }' }
     const note: Note = { ...base, id: 'note', profileId: 'profile', noteTypeId: type.id, fields: { front: 'Capital?<img src="pixel.png">', back: '<b>Paris</b>', hint: 'Europe' }, tags: ['geo'], marked: false }
