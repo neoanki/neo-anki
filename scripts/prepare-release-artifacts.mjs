@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readdir, rm } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
 
@@ -28,5 +28,16 @@ const stagedFiles = sourceFiles.map((file) => ({ source: file, destination: file
 if (new Set(stagedFiles.map(({ destination }) => destination)).size !== stagedFiles.length) throw new Error(`Normalized artifact names collide for ${targetName}.`)
 for (const file of stagedFiles) await copyFile(join(sourceDirectory, file.source), join(destinationDirectory, file.destination))
 await copyFile(resolve(target.instructions), join(destinationDirectory, `INSTALL-${targetName}.md`))
+const packageJson = JSON.parse(await readFile(resolve('package.json'), 'utf8'))
+const evidence = {
+  schemaVersion: 1,
+  version: `v${packageJson.version}`,
+  commit: process.env.GITHUB_SHA || 'local',
+  platform: targetName,
+  workflowRun: process.env.GITHUB_RUN_ID || 'local',
+  node: process.version,
+  gates: ['lint', 'typecheck', 'unit-coverage', 'timezone', 'anki-oracle-25.9.4', 'browser-chromium-firefox-webkit', 'desktop-durability', 'mobile-export', 'packaged-launch'],
+}
+await writeFile(join(destinationDirectory, `RELEASE-EVIDENCE-${targetName}.json`), `${JSON.stringify(evidence, null, 2)}\n`, 'utf8')
 
 process.stdout.write(`Staged ${stagedFiles.map(({ destination }) => destination).join(', ')} for ${targetName}.\n`)

@@ -1,0 +1,65 @@
+import { describe, expect, it, vi } from 'vitest'
+import type { ExtensionHostV2, ExtensionManifestV2, WorkerTransportMessageV2 } from '../../../packages/extension-sdk/src/index'
+import { createSandboxedExtensionUiV2, ExtensionWorkerRuntimeV2 } from './runtime'
+
+const manifest = (permissions: ExtensionManifestV2['permissions'] = ['study:signals']): ExtensionManifestV2 => ({
+  format: 'neo-anki-extension', schemaVersion: 2, sdkVersion: 2, id: 'org.neoanki.fixture', name: 'Fixture', version: '2.0.0', publisher: 'Neo Anki', publisherKey: 'fixture-key', permissions, workerEntry: 'worker.js', provenance: { sourceCommit: 'a'.repeat(40), buildSystem: 'fixture' }, uiEntries: [{ id: 'settings', surface: 'settings', entry: 'settings.js' }],
+})
+
+const host = (): ExtensionHostV2 => ({
+  applyPatch: vi.fn(async () => ({ workspaceRevision: 2 })),
+  createMedia: vi.fn(async () => ({ id: 'media', sha256: 'a'.repeat(64), byteLength: 1, workspaceRevision: 2 })),
+  fetch: vi.fn(async () => ({ status: 200, headers: {}, body: new Uint8Array([1]) })),
+  cancel: vi.fn(async () => undefined),
+  secrets: { read: vi.fn(async () => ({})), mutate: vi.fn(async () => undefined) },
+  config: { read: vi.fn(async () => null), write: vi.fn(async () => ({ workspaceRevision: 2 })) },
+  content: { listNotes: vi.fn(async () => ({ workspaceRevision: 2, notes: [], availableMediaIds: [] })) },
+})
+
+class FakeWorker {
+  sent: WorkerTransportMessageV2[] = []
+  terminated = false
+  private listeners = new Map<string, Array<(event: MessageEvent<WorkerTransportMessageV2>) => void>>()
+  postMessage(message: WorkerTransportMessageV2) { this.sent.push(message) }
+  terminate() { this.terminated = true }
+  addEventListener(type: string, listener: (event: MessageEvent<WorkerTransportMessageV2>) => void) { this.listeners.set(type, [...(this.listeners.get(type) || []), listener]) }
+  emit(message: WorkerTransportMessageV2) { for (const listener of this.listeners.get('message') || []) listener({ data: message } as MessageEvent<WorkerTransportMessageV2>) }
+}
+
+describe('SDK v2 isolated runtimes', () => {
+  it('executes bounded worker contributions and rejects malformed signals', async () => {
+    const worker = new FakeWorker(); const runtime = new ExtensionWorkerRuntimeV2(manifest(), 'blob:https://neoanki.test/worker', host(), () => worker as never)
+    worker.emit({ protocol: 2, type: 'ready', extensionId: manifest().id })
+    const request = { type: 'planning-signals' as const, request: { requestId: 'signals-1', contributionId: 'planner', now: new Date().toISOString(), items: [] } }
+    const pending = runtime.execute(request)
+    await Promise.resolve()
+    expect(worker.sent.at(-1)).toMatchObject({ type: 'request', request })
+    worker.emit({ protocol: 2, type: 'response', response: { type: 'planning-signals', requestId: 'signals-1', signals: [{ itemId: 'item', score: .5, reason: 'useful' }] } })
+    await expect(pending).resolves.toMatchObject({ type: 'planning-signals' })
+
+    const invalid = runtime.execute({ ...request, request: { ...request.request, requestId: 'signals-2' } })
+    await Promise.resolve()
+    worker.emit({ protocol: 2, type: 'response', response: { type: 'planning-signals', requestId: 'signals-2', signals: [{ itemId: 'item', score: Number.NaN, reason: 'bad' }] } })
+    await expect(invalid).rejects.toThrow(/invalid planning signals/)
+    runtime.close()
+  })
+
+  it('enforces manifest permissions on worker-to-host RPC', async () => {
+    const worker = new FakeWorker(); const workerHost = host(); const runtime = new ExtensionWorkerRuntimeV2(manifest(), 'blob:https://neoanki.test/worker', workerHost, () => worker as never)
+    worker.emit({ protocol: 2, type: 'ready', extensionId: manifest().id })
+    worker.emit({ protocol: 2, type: 'host-call', callId: 'network', method: 'fetch', args: [{ operationId: 'op', url: 'https://example.com' }] })
+    await Promise.resolve()
+    expect(worker.sent.at(-1)).toMatchObject({ type: 'host-result', ok: false, error: { code: 'permission-denied' } })
+    expect(workerHost.fetch).not.toHaveBeenCalled()
+    runtime.close()
+  })
+
+  it('creates DOM/CSS-isolated UI frames without ambient network access', () => {
+    const runtime = createSandboxedExtensionUiV2(manifest(['ui:settings']), 'settings', 'blob:https://neoanki.test/settings', { locale: 'en', theme: 'dark', dto: {} })
+    expect(runtime.iframe.title).toContain('Fixture')
+    expect(runtime.iframe.getAttribute('sandbox')).toBe('allow-scripts')
+    expect(runtime.iframe.getAttribute('sandbox')).not.toContain('allow-same-origin')
+    expect(atob(runtime.iframe.src.split(',')[1]!)).toContain("connect-src 'none'")
+    runtime.close()
+  })
+})

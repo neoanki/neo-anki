@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, safeStorage, session, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { readFile } from 'node:fs/promises'
 import { join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -6,7 +6,10 @@ import { ExtensionManager } from './extension-manager.js'
 import { ExtensionServices } from './extension-services.js'
 import { WorkspaceStore } from './workspace-store.js'
 import { DiagnosticsLog } from './diagnostics-log.js'
+import { DesktopSyncManager } from './sync-manager.js'
+import { secureSecretStorageAvailable } from './secret-backend.js'
 import type { WorkspaceChangeSet } from '../src/lib/workspace-changes.js'
+import type { WorkspacePatchV2 } from '../packages/compatibility-domain/src/index.js'
 
 const APP_SCHEME = 'neoanki'
 const EXTENSION_SCHEME = 'neoanki-extension'
@@ -28,6 +31,7 @@ let extensionManager: ExtensionManager
 let extensionServices: ExtensionServices
 let workspaceStore: WorkspaceStore
 let diagnosticsLog: DiagnosticsLog
+let syncManager: DesktopSyncManager
 let saveQueue: Promise<void> = Promise.resolve()
 let quitAfterFlush = false
 
@@ -183,7 +187,41 @@ const registerDesktopIpc = () => {
   ipcMain.handle('neo-anki:create-import-checkpoint', async (event) => {
     assertTrustedSender(event)
     await saveQueue.catch(() => undefined)
-    return workspaceStore.createAutomaticBackup('before-import')
+    return workspaceStore.createImportCheckpoint()
+  })
+
+  ipcMain.handle('neo-anki:list-migration-recovery-files', (event) => {
+    assertTrustedSender(event)
+    return workspaceStore.listMigrationRecoveryFiles()
+  })
+
+  ipcMain.handle('neo-anki:remove-migration-recovery-file', (event, kind: 'source-package' | 'workspace-checkpoint', name: string) => {
+    assertTrustedSender(event)
+    workspaceStore.removeMigrationRecoveryFile(kind, name)
+  })
+
+  ipcMain.handle('neo-anki:commit-workspace-v4-import', async (event, input: { document: unknown; media: unknown[]; sourceArchive?: Uint8Array; operation: 'additive' | 'replace-profile' }) => {
+    assertTrustedSender(event)
+    await saveQueue.catch(() => undefined)
+    return workspaceStore.commitWorkspaceV4Import(input)
+  })
+
+  ipcMain.handle('neo-anki:load-workspace-v4-export-payload', async (event) => {
+    assertTrustedSender(event)
+    await saveQueue.catch(() => undefined)
+    return workspaceStore.workspaceV4ExportPayload()
+  })
+
+  ipcMain.handle('neo-anki:load-workspace-v4-document', async (event) => {
+    assertTrustedSender(event)
+    await saveQueue.catch(() => undefined)
+    return workspaceStore.workspaceV4Document()
+  })
+
+  ipcMain.handle('neo-anki:apply-core-workspace-patch-v2', async (event, patch: WorkspacePatchV2) => {
+    assertTrustedSender(event)
+    await saveQueue.catch(() => undefined)
+    return workspaceStore.applyCoreWorkspacePatch(patch)
   })
 
   ipcMain.handle('neo-anki:report-diagnostic', async (event, diagnostic: { source?: string; level?: string; code?: string; message?: string; stack?: string }) => {
@@ -215,7 +253,6 @@ const registerDesktopIpc = () => {
     assertTrustedSender(event)
     return extensionManager.list()
   })
-
   ipcMain.handle('neo-anki:choose-extension', async (event) => {
     assertTrustedSender(event)
     const options: Electron.OpenDialogOptions = { title: 'Choose Neo Anki Extension', properties: ['openFile'], filters: [{ name: 'Neo Anki extension', extensions: ['neoanki-extension'] }] }
@@ -236,17 +273,21 @@ const registerDesktopIpc = () => {
 
   ipcMain.handle('neo-anki:set-extension-enabled', async (event, id: string, enabled: boolean) => {
     assertTrustedSender(event)
+    extensionServices.release(id)
     await extensionManager.setEnabled(id, enabled)
   })
 
-  ipcMain.handle('neo-anki:uninstall-extension', async (event, id: string) => {
+  ipcMain.handle('neo-anki:uninstall-extension', async (event, id: string, deleteSecrets: boolean) => {
     assertTrustedSender(event)
+    extensionServices.release(id)
+    if (deleteSecrets) await extensionServices.deleteAllSecrets(id)
     await extensionManager.uninstall(id)
   })
 
   ipcMain.handle('neo-anki:reload-for-extensions', async (event) => {
     assertTrustedSender(event)
     await saveQueue.catch(() => undefined)
+    extensionServices.release()
     mainWindow?.webContents.reload()
   })
   ipcMain.handle('neo-anki:extension-network-fetch', async (event, token: string, request) => {
@@ -257,28 +298,90 @@ const registerDesktopIpc = () => {
     assertTrustedSender(event)
     return extensionServices.claim(id)
   })
-  ipcMain.handle('neo-anki:extension-secret-has', async (event, token: string, key: string) => {
-    assertTrustedSender(event)
-    return extensionServices.hasSecret(token, key)
+  ipcMain.handle('neo-anki:extension-apply-patch-v2', async (event, token: string, patch: WorkspacePatchV2) => {
+    assertTrustedSender(event); const extensionId = await extensionServices.authorize(token, 'content:patch-own')
+    return workspaceStore.applyExtensionWorkspacePatch(extensionId, patch)
   })
-  ipcMain.handle('neo-anki:extension-secret-get', async (event, token: string, key: string) => {
-    assertTrustedSender(event)
-    return extensionServices.getSecret(token, key)
+  ipcMain.handle('neo-anki:extension-create-media-v2', async (event, token: string, request: { filename: string; mimeType: string; bytes: Uint8Array; altText?: string }) => {
+    assertTrustedSender(event); const extensionId = await extensionServices.authorize(token, 'media:create')
+    return workspaceStore.createExtensionMedia(extensionId, request)
   })
-  ipcMain.handle('neo-anki:extension-secret-set', async (event, token: string, key: string, value: string) => {
-    assertTrustedSender(event)
-    await extensionServices.setSecret(token, key, value)
+  ipcMain.handle('neo-anki:extension-secret-read-batch-v2', (event, token: string, keys: string[]) => { assertTrustedSender(event); return extensionServices.readSecretBatch(token, keys) })
+  ipcMain.handle('neo-anki:extension-secret-mutate-batch-v2', (event, token: string, changes) => { assertTrustedSender(event); return extensionServices.mutateSecretBatch(token, changes) })
+  ipcMain.handle('neo-anki:extension-config-read-v2', async (event, token: string) => {
+    assertTrustedSender(event); const extensionId = await extensionServices.authorize(token, 'config:sync')
+    return workspaceStore.readExtensionConfig(extensionId)
   })
-  ipcMain.handle('neo-anki:extension-secret-delete', async (event, token: string, key: string) => {
-    assertTrustedSender(event)
-    await extensionServices.deleteSecret(token, key)
+  ipcMain.handle('neo-anki:extension-config-write-v2', async (event, token: string, value: unknown) => {
+    assertTrustedSender(event); const extensionId = await extensionServices.authorize(token, 'config:sync')
+    return workspaceStore.writeExtensionConfig(extensionId, value)
   })
+  ipcMain.handle('neo-anki:extension-content-list-notes-v2', async (event, token: string, query: { cursor?: string; limit?: number; noteIds?: string[] }) => {
+    assertTrustedSender(event); const extensionId = await extensionServices.authorize(token, 'content:read')
+    return workspaceStore.extensionContentNotes(extensionId, query)
+  })
+  ipcMain.handle('neo-anki:extension-cancel-v2', (event, token: string, operationId: string) => { assertTrustedSender(event); extensionServices.cancel(token, operationId) })
+  ipcMain.handle('neo-anki:sync-status', (event) => { assertTrustedSender(event); return syncManager.status() })
+  ipcMain.handle('neo-anki:sync-list-devices', (event) => { assertTrustedSender(event); return syncManager.listDevices() })
+  ipcMain.handle('neo-anki:sync-create-account', async (event, endpoint: string) => {
+    assertTrustedSender(event); await saveQueue
+    const payload = workspaceStore.workspaceV4ExportPayload()
+    return syncManager.createAccount(endpoint, payload.document, payload.media)
+  })
+  ipcMain.handle('neo-anki:sync-recover-account', async (event, recoveryBundle: string) => {
+    assertTrustedSender(event); await saveQueue
+    let data = workspaceStore.load()
+    const result = await syncManager.recoverAccount(recoveryBundle, workspaceStore.workspaceV4Document(), async (payload) => {
+      await workspaceStore.createAutomaticBackup('before-sync-recovery')
+      data = workspaceStore.commitSynchronizedWorkspace(payload)
+    })
+    return { data, status: result.status }
+  })
+  ipcMain.handle('neo-anki:sync-now', async (event) => {
+    assertTrustedSender(event); await saveQueue
+    const payload = workspaceStore.workspaceV4ExportPayload(); let data = workspaceStore.load()
+    const result = await syncManager.synchronize(payload.document, payload.media, [], async (synchronized) => {
+      if (!synchronized.received) return
+      await workspaceStore.createAutomaticBackup('before-sync-merge')
+      data = workspaceStore.commitSynchronizedWorkspace(synchronized)
+    })
+    return { data, status: result.status, sent: result.sent, received: result.received }
+  })
+  ipcMain.handle('neo-anki:sync-resolve-conflict', async (event, conflictId: string, choice: 'existing' | 'incoming') => {
+    assertTrustedSender(event); await saveQueue
+    if (!['existing', 'incoming'].includes(choice)) throw new Error('Sync conflict resolution is invalid.')
+    const payload = workspaceStore.workspaceV4ExportPayload()
+    await workspaceStore.createAutomaticBackup('before-sync-conflict-resolution')
+    let data = workspaceStore.load()
+    const result = await syncManager.resolveConflict(String(conflictId), choice, payload.document, payload.media, (synchronized) => { data = workspaceStore.commitSynchronizedWorkspace(synchronized) })
+    return { data, status: result.status, sent: result.sent, received: result.received }
+  })
+  ipcMain.handle('neo-anki:sync-rotate-recovery', (event) => { assertTrustedSender(event); return syncManager.rotateRecoveryBundle() })
+  ipcMain.handle('neo-anki:sync-revoke-device', (event, actorId: string) => { assertTrustedSender(event); return syncManager.revokeDevice(actorId) })
+  ipcMain.handle('neo-anki:sync-disconnect', (event) => { assertTrustedSender(event); return syncManager.disconnect() })
+  ipcMain.handle('neo-anki:sync-delete-account', (event) => { assertTrustedSender(event); return syncManager.deleteAccount() })
 }
 
 const registerAppProtocol = () => {
   protocol.handle(APP_SCHEME, async (request) => {
     const url = new URL(request.url)
     if (url.host !== 'app') return new Response('Not found', { status: 404 })
+    if (url.pathname === '/__extension-worker.js') {
+      try {
+        const id = url.searchParams.get('id') || ''
+        const entry = url.searchParams.get('entry') || ''
+        const digest = url.searchParams.get('v') || ''
+        const source = await extensionManager.readWorkerEntry(id, entry, digest)
+        const disabledGlobals = ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'WebTransport', 'RTCPeerConnection', 'Worker', 'SharedWorker', 'BroadcastChannel', 'indexedDB', 'caches', 'importScripts']
+        const lockdown = `;(()=>{for(const name of ${JSON.stringify(disabledGlobals)}){try{Object.defineProperty(globalThis,name,{value:undefined,writable:false,configurable:false})}catch{try{globalThis[name]=undefined}catch{}}}})();\n`
+        return new Response(Buffer.concat([Buffer.from(lockdown), Buffer.from(source)]), { headers: {
+          'Content-Type': 'text/javascript; charset=utf-8',
+          'Content-Security-Policy': "default-src 'none'; script-src 'none'; connect-src 'none'; worker-src 'none'; child-src 'none'; object-src 'none'; base-uri 'none'",
+          'Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff',
+        } })
+      } catch { return new Response('Extension worker not found', { status: 404 }) }
+    }
     const distRoot = resolve(app.getAppPath(), 'dist')
     const pathname = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname)
     const target = resolve(distRoot, `.${pathname}`)
@@ -289,7 +392,15 @@ const registerAppProtocol = () => {
     const url = new URL(request.url)
     const requestedPath = decodeURIComponent(url.pathname.replace(/^\//, ''))
     const target = await extensionManager.resolveAsset(url.hostname, requestedPath)
-    return target ? net.fetch(pathToFileURL(target).toString()) : new Response('Extension asset not found', { status: 404 })
+    if (!target) return new Response('Extension asset not found', { status: 404 })
+    const source = await net.fetch(pathToFileURL(target).toString())
+    const javascript = target.endsWith('.js') || target.endsWith('.mjs')
+    return new Response(source.body, { status: source.status, headers: {
+      'Content-Type': javascript ? 'text/javascript; charset=utf-8' : source.headers.get('content-type') || 'application/octet-stream',
+      'Access-Control-Allow-Origin': '*',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+      ...(javascript ? { 'Content-Security-Policy': "default-src 'none'; script-src 'self'; connect-src 'none'; worker-src 'none'; child-src 'none'; object-src 'none'; base-uri 'none'" } : {}),
+    } })
   })
   protocol.handle(MEDIA_SCHEME, (request) => {
     const url = new URL(request.url)
@@ -328,7 +439,7 @@ const createWindow = async (query = '') => {
   })
   window.once('ready-to-show', () => window.show())
   window.on('closed', () => { if (mainWindow === window) mainWindow = null })
-  window.webContents.on('did-start-loading', () => { rendererReady = false; armRendererStartupWatchdog() })
+  window.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame) { rendererReady = false; armRendererStartupWatchdog() } })
   window.webContents.on('did-finish-load', armRendererStartupWatchdog)
 
   if (devServerUrl) await window.loadURL(`${devServerUrl}${query}`)
@@ -340,6 +451,11 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   process.on('uncaughtException', (error) => { void diagnosticsLog.record({ source: 'main', level: 'error', code: 'uncaught-exception', message: error.message, stack: error.stack }) })
   process.on('unhandledRejection', (reason) => { const error = reason instanceof Error ? reason : new Error(String(reason)); void diagnosticsLog.record({ source: 'main', level: 'error', code: 'unhandled-rejection', message: error.message, stack: error.stack }) })
   workspaceStore = new WorkspaceStore(app.getPath('userData'))
+  syncManager = new DesktopSyncManager(app.getPath('userData'), {
+    available: () => secureSecretStorageAvailable(process.platform, safeStorage.isEncryptionAvailable(), process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : undefined),
+    seal: (value) => new Uint8Array(safeStorage.encryptString(value)),
+    open: (value) => safeStorage.decryptString(Buffer.from(value)),
+  })
   extensionManager = new ExtensionManager(app.getPath('userData'))
   extensionServices = new ExtensionServices(app.getPath('userData'), extensionManager)
   const installPath = process.argv.find((value) => value.startsWith('--install-extension='))?.slice('--install-extension='.length)
@@ -351,6 +467,17 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   registerAppProtocol()
   installApplicationMenu()
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
+  if ((await syncManager.status()).pendingCommit) {
+    try {
+      const payload = workspaceStore.workspaceV4ExportPayload()
+      await syncManager.synchronize(payload.document, payload.media, [], async (synchronized) => {
+        await workspaceStore.createAutomaticBackup('before-resuming-sync-commit')
+        workspaceStore.commitSynchronizedWorkspace(synchronized)
+      })
+    } catch (error) {
+      await diagnosticsLog.record({ source: 'main', level: 'error', code: 'sync-commit-resume', message: error instanceof Error ? error.message : 'Interrupted sync commit could not be resumed.' })
+    }
+  }
   await createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow() })
 }).catch((error) => {

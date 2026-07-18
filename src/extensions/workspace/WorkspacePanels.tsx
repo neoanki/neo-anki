@@ -1,9 +1,9 @@
 import { Flag, Plus, Save, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import type { ExtensionPageProps } from '../sdk'
+import type { CoreModulePageProps } from '../core-module'
 import { emptyViewFilter } from './service'
 
-const WorkspaceForm = ({ kind, runCommand }: { kind: 'goal' | 'view'; runCommand: ExtensionPageProps['runCommand'] }) => {
+const WorkspaceForm = ({ kind, runCommand }: { kind: 'goal' | 'view'; runCommand: CoreModulePageProps['runCommand'] }) => {
   const [name, setName] = useState('')
   const [query, setQuery] = useState('')
   const [deadline, setDeadline] = useState('')
@@ -25,10 +25,10 @@ const WorkspaceForm = ({ kind, runCommand }: { kind: 'goal' | 'view'; runCommand
   </form>
 }
 
-export const GoalsPanel = ({ data, runCommand }: ExtensionPageProps) => {
+export const GoalsPanel = ({ data, runCommand }: CoreModulePageProps) => {
   return <div className="plans-layout"><WorkspaceForm kind="goal" runCommand={runCommand}/><section className="stack-list" aria-label="Learning goals">{data.goals.map((goal) => <article className="stack-card" key={goal.id}><div><strong>{goal.name}</strong><p>{goal.filter.query || 'All matching knowledge'}{goal.deadline ? ` · due ${goal.deadline}` : ''}</p></div><button className="icon-button danger-hover" aria-label={`Delete ${goal.name}`} onClick={() => void runCommand('workspace.delete-goal', goal.id)}><Trash2 size={18}/></button></article>)}{!data.goals.length && <div className="empty-state"><Flag size={28}/><p>No learning goals.</p></div>}</section></div>
 }
 
-export const SavedViewsPanel = ({ data, runCommand }: ExtensionPageProps) => {
+export const SavedViewsPanel = ({ data, runCommand }: CoreModulePageProps) => {
   return <div className="plans-layout"><WorkspaceForm kind="view" runCommand={runCommand}/><section className="stack-list" aria-label="Saved views">{data.views.map((view) => <article className="stack-card" key={view.id}><div><strong>{view.name}</strong><p>{view.filter.query || 'All matching knowledge'}</p></div><button className="icon-button danger-hover" aria-label={`Delete ${view.name}`} onClick={() => void runCommand('workspace.delete-view', view.id)}><Trash2 size={18}/></button></article>)}{!data.views.length && <div className="empty-state"><Save size={28}/><p>No saved views.</p></div>}</section></div>
 }

@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { createSeedData } from '../data/seed'
 import type { CreateKnowledgeInput } from '../types'
 import { ExtensionRegistry } from './registry'
-import type { ExtensionManifest, ExtensionPermission, NeoAnkiExtension } from './sdk'
+import type { CoreModuleManifest, CoreModulePermission, NeoAnkiCoreModule } from './core-module'
 
-const manifest = (id: string, permissions: ExtensionPermission[] = [], publisher = 'Independent developer'): ExtensionManifest => ({
+const manifest = (id: string, permissions: CoreModulePermission[] = []): CoreModuleManifest => ({
   id,
   name: id,
   version: '1.0.0',
-  sdkVersion: 1,
-  publisher,
+  runtime: 'core',
+  publisher: 'Neo Anki',
   permissions,
 })
 
@@ -25,17 +25,17 @@ const createInput = (variants: string[]): CreateKnowledgeInput => ({
   variants,
 })
 
-describe('public extension registry', () => {
-  it('applies the same permission checks to every publisher', () => {
+describe('trusted core-module registry', () => {
+  it('enforces declared contribution permissions', () => {
     const registry = new ExtensionRegistry()
-    const contribution: NeoAnkiExtension = {
+    const contribution: NeoAnkiCoreModule = {
       manifest: manifest('independent.prompts'),
       promptTypes: [{ id: 'independent', label: 'Independent', createCards: () => [], render: () => ({ prompt: '', answer: '', context: '', typed: false, citations: [] }) }],
     }
     expect(() => registry.register(contribution)).toThrow('without prompts:contribute')
     contribution.manifest.permissions = ['prompts:contribute']
     expect(() => registry.register(contribution)).not.toThrow()
-    expect(registry.list()[0].publisher).toBe('Independent developer')
+    expect(registry.list()[0].runtime).toBe('core')
   })
 
   it('rejects colliding public contribution IDs across extensions', () => {
@@ -70,11 +70,28 @@ describe('public extension registry', () => {
     const data = createSeedData()
     const registry = new ExtensionRegistry([{
       manifest: manifest('independent.planner', ['planning:signals', 'planning:policies']),
-      planningSignals: [{ id: 'priority', signalsFor: () => [{ id: 'high', label: 'High', score: 99 }, { id: 'low', label: 'Low', score: -3 }] }],
+      planningSignals: [{ id: 'priority', signalsFor: () => [{ id: 'high', label: 'High', score: 99 }, { id: 'low', label: 'Low', score: -3 }, { id: 'nan', label: 'Invalid', score: Number.NaN }] }],
       queuePolicies: [{ id: 'invalid', label: 'Invalid', score: () => Number.NaN }],
     }])
     expect(registry.planningSignals(data.items[0], data, new Date()).map((signal) => signal.score)).toEqual([4, 0])
     expect(registry.scoreQueuePolicy('invalid', { card: data.cards[0], overdueDays: 3, extensionBoost: 0 })).toBeNull()
+  })
+
+  it('rejects invalid relationships and foreign extension metadata atomically', async () => {
+    const data = createSeedData()
+    data.items[0].extensionData = { 'another.extension': { protected: true } }
+    const registry = new ExtensionRegistry([{
+      manifest: manifest('independent.safety', ['content:transactions']),
+      commands: [
+        { id: 'orphan-card', run: (context) => context.replaceData({ ...context.data, cards: context.data.cards.map((card, index) => index ? card : { ...card, itemId: 'missing-item' }) }) },
+        { id: 'foreign-metadata', run: (context) => context.replaceData({ ...context.data, items: context.data.items.map((item, index) => index ? item : { ...item, extensionData: { 'another.extension': { protected: false } } }) }) },
+      ],
+    }])
+
+    await expect(registry.runCommand('orphan-card', data, undefined)).rejects.toThrow('Unknown knowledge item')
+    await expect(registry.runCommand('foreign-metadata', data, undefined)).rejects.toThrow('cannot modify metadata owned by another.extension')
+    expect(data.cards[0].itemId).not.toBe('missing-item')
+    expect(data.items[0].extensionData).toEqual({ 'another.extension': { protected: true } })
   })
 
   it('requires explicit transactions and protects review history and settings', async () => {
@@ -92,22 +109,22 @@ describe('public extension registry', () => {
 
     const committed = await registry.runCommand('bounded-transaction', data, undefined)
     expect(committed.items[0].answer).toBe('Allowed content change')
-    expect(committed.reviews).toBe(data.reviews)
-    expect(committed.settings).toBe(data.settings)
+    expect(committed.reviews).toEqual(data.reviews)
+    expect(committed.settings).toEqual(data.settings)
     expect(committed.deviceId).toBe(data.deviceId)
   })
 
-  it('creates cards from an independently published prompt through the public API', () => {
+  it('creates cards from a trusted prompt module', () => {
     const registry = new ExtensionRegistry([{
-      manifest: manifest('independent.cards', ['prompts:contribute'], 'Someone Else'),
+      manifest: manifest('independent.cards', ['prompts:contribute']),
       promptTypes: [{ id: 'diagram', label: 'Diagram', createCards: () => [{ promptType: 'diagram', estimatedSeconds: 9 }], render: (item) => ({ prompt: item.prompt, answer: item.answer, context: item.context, typed: false, citations: item.citations }) }],
     }])
     expect(registry.createCards(createInput(['diagram']))).toEqual([{ promptType: 'diagram', estimatedSeconds: 9 }])
   })
 
-  it('exposes review and settings hosts through publisher-neutral permissions', () => {
+  it('exposes review and settings surfaces through declared permissions', () => {
     const registry = new ExtensionRegistry()
-    const extension: NeoAnkiExtension = {
+    const extension: NeoAnkiCoreModule = {
       manifest: manifest('independent.review-tools'),
       settingsPanels: [{ id: 'timer-settings', component: () => null }],
       reviewTools: [{ id: 'timer-review', component: () => null }],
@@ -119,9 +136,8 @@ describe('public extension registry', () => {
     expect(registry.reviewTools()).toEqual([expect.objectContaining({ id: 'timer-review', extensionId: 'independent.review-tools' })])
   })
 
-  it('applies the same network declaration rules to every publisher', () => {
+  it('rejects modules that are not compiled as trusted core code', () => {
     const registry = new ExtensionRegistry()
-    expect(() => registry.register({ manifest: { ...manifest('independent.network'), networkDomains: ['api.example.com'] } })).toThrow('without network:fetch')
-    expect(() => registry.register({ manifest: { ...manifest('independent.network', ['network:fetch', 'storage:secrets']), networkDomains: ['api.example.com'] } })).not.toThrow()
+    expect(() => registry.register({ manifest: { ...manifest('independent.runtime'), runtime: 'worker' as never } })).toThrow('not a trusted core module')
   })
 })

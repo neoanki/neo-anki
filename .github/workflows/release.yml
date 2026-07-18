@@ -14,18 +14,32 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  NEO_ANKI_EXTENSION_SOURCE_COMMIT: ${{ github.sha }}
+  NEO_ANKI_EXTENSION_CORE_COMMIT: ${{ github.sha }}
+
 jobs:
   verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 45
+    env:
+      ANKI_ORACLE_PYTHON: python3
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+          cache: pip
+      - run: python3 -m pip install anki==25.9.4
       - run: npm ci
-      - run: npm run lint && npm run typecheck && npm run test:coverage && npm run test:timezones && npm run benchmark:planner && npm run license:check && npm run build && npm run extension:check
+      - run: npm run lint && npm run typecheck && npm run test:coverage && npm run test:timezones && npm run benchmark:planner && npm run license:check && npm run build && npm run extension:check && npm run mobile:export
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npm run test:e2e
+      - run: xvfb-run --auto-servernum npm run test:desktop
       - name: Verify tag matches package version
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
@@ -51,7 +65,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     env:
-      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      CSC_IDENTITY_AUTO_DISCOVERY: 'true'
+      CSC_LINK: ${{ runner.os == 'macOS' && secrets.MAC_CSC_LINK || runner.os == 'Windows' && secrets.WIN_CSC_LINK || '' }}
+      CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.MAC_CSC_KEY_PASSWORD || runner.os == 'Windows' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -59,34 +78,41 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Require platform signing credentials
+        if: runner.os == 'macOS' || runner.os == 'Windows'
+        shell: bash
+        run: |
+          test -n "$CSC_LINK"
+          test -n "$CSC_KEY_PASSWORD"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            test -n "$APPLE_ID"
+            test -n "$APPLE_APP_SPECIFIC_PASSWORD"
+            test -n "$APPLE_TEAM_ID"
+          fi
       - run: npm run build && npm run extension:example && npm run desktop:prepare
       - name: Build release artifacts
         run: npx electron-builder ${{ matrix.args }} --publish never
-      - name: Verify expected macOS trust state and launch
+      - name: Verify macOS signing, notarization, and launch
         if: runner.os == 'macOS'
         shell: bash
         run: |
           app_path="$(find release -maxdepth 3 -type d -name '*.app' -print -quit)"
           test -n "$app_path"
-          if codesign -dv --verbose=4 "$app_path" 2>&1 | grep -q 'Authority=Developer ID'; then
-            echo 'The macOS release must not claim an unavailable Developer ID identity.'
-            exit 1
-          fi
-          if spctl --assess --type exec "$app_path"; then
-            echo 'The unsigned macOS release is expected to require the documented Open Anyway flow.'
-            exit 1
-          fi
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          codesign -dv --verbose=4 "$app_path" 2>&1 | grep 'Authority=Developer ID Application'
+          spctl --assess --type exec --verbose=4 "$app_path"
+          xcrun stapler validate "$app_path"
           executable="$app_path/Contents/MacOS/Neo Anki"
           test -x "$executable"
           NEO_ANKI_PACKAGED_APP="$executable" npx playwright test --config=playwright.desktop.config.ts --grep 'packaged application launches'
-      - name: Verify expected Windows trust state and launch
+      - name: Verify Windows Authenticode trust and launch
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $installer = Get-ChildItem release -Filter *.exe | Select-Object -First 1
           if (-not $installer) { throw 'No Windows installer was produced.' }
           $signature = Get-AuthenticodeSignature $installer.FullName
-          if ($signature.Status -ne 'NotSigned') { throw "Expected an unsigned installer, got: $($signature.Status)" }
+          if ($signature.Status -ne 'Valid') { throw "Expected a valid Authenticode signature, got: $($signature.Status)" }
           $executable = Get-ChildItem release/win-unpacked -Filter *.exe | Select-Object -First 1
           if (-not $executable) { throw 'No packaged Windows executable was produced.' }
           $env:NEO_ANKI_PACKAGED_APP = $executable.FullName
@@ -146,7 +172,8 @@ jobs:
           mkdir uploaded-release
           gh release download "${GITHUB_REF_NAME}" --repo "$GITHUB_REPOSITORY" --dir uploaded-release
           cd uploaded-release
-          test "$(find . -maxdepth 1 -type f | wc -l | tr -d ' ')" = 13
+          test "$(find . -maxdepth 1 -type f | wc -l | tr -d ' ')" = 16
           for manifest in SHA256SUMS-*.txt; do shasum -a 256 -c "$manifest"; done
           for sbom in *.cdx.json; do jq -e '.bomFormat == "CycloneDX" and (.components | length > 0)' "$sbom" >/dev/null; done
+          for evidence in RELEASE-EVIDENCE-*.json; do jq -e '.commit == env.GITHUB_SHA and .version == env.GITHUB_REF_NAME' "$evidence" >/dev/null; done
           for artifact in *.AppImage *.dmg *.zip *.exe; do gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY" >/dev/null; done

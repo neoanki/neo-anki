@@ -1,0 +1,15 @@
+{
+  "name": "@neo-anki/card-rendering",
+  "version": "0.2.0",
+  "description": "Portable Anki/Neo template, cloze, typed-answer, and media renderer.",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "files": ["dist"],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "scripts": { "build": "tsc -p tsconfig.json", "check": "tsc --noEmit -p tsconfig.json" },
+  "dependencies": { "@neo-anki/compatibility-domain": "0.2.0" },
+  "devDependencies": { "typescript": "~5.7.2" }
+}

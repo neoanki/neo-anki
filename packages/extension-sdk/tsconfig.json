@@ -9,8 +9,7 @@
     "declarationMap": true,
     "sourceMap": true,
     "outDir": "dist",
-    "rootDir": "src",
-    "jsx": "react-jsx"
+    "rootDir": "src"
   },
-  "include": ["src"]
+  "include": ["src/index.ts", "src/package-format.ts"]
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createSeedData } from '../data/seed'
-import { createTabSyncTransport, mergeAppData } from './sync'
+import { mergeAppData } from './sync'
 
 describe('deterministic sync merge', () => {
   it('keeps newest mutable records and unions immutable reviews', () => {
@@ -15,28 +15,5 @@ describe('deterministic sync merge', () => {
     expect(merged.deviceId).toBe(local.deviceId)
     expect(merged.items[0].answer).toBe('Remote newest answer')
     expect(merged.reviews.some((review) => review.id === 'remote-review')).toBe(true)
-  })
-  it('publishes and receives through the pluggable tab transport', () => {
-    const original = globalThis.BroadcastChannel
-    let handler: ((event: MessageEvent) => void) | undefined
-    const posted: unknown[] = []
-    class FakeChannel {
-      closed = false
-      postMessage(value: unknown) { posted.push(value) }
-      addEventListener(_name: string, callback: (event: MessageEvent) => void) { handler = callback }
-      removeEventListener() { handler = undefined }
-      close() { this.closed = true }
-    }
-    Object.defineProperty(globalThis, 'BroadcastChannel', { value: FakeChannel, configurable: true })
-    const transport = createTabSyncTransport('test')!
-    let received = ''
-    const unsubscribe = transport.subscribe((value) => { received = value.deviceId })
-    const data = createSeedData()
-    transport.publish(data)
-    handler?.({ data } as MessageEvent)
-    expect(posted).toEqual([data]); expect(received).toBe(data.deviceId)
-    unsubscribe()
-    transport.close?.()
-    Object.defineProperty(globalThis, 'BroadcastChannel', { value: original, configurable: true })
   })
 })

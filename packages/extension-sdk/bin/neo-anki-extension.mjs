@@ -3,51 +3,56 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import process from 'node:process'
+import { createHash, createPrivateKey, createPublicKey, sign } from 'node:crypto'
+import { Buffer } from 'node:buffer'
 import { build } from 'esbuild'
-import { createExtensionPackage, EXTENSION_PACKAGE_SUFFIX, validateExtensionPackageManifest } from '../dist/index.js'
+import { createExtensionPackage, EXTENSION_PACKAGE_SUFFIX, EXTENSION_SIGNATURE_PATH, validateExtensionPackageManifest } from '../dist/index.js'
 
 const cwd = resolve(process.argv[3] || process.cwd())
 const command = process.argv[2] || 'help'
 
-const reactHostPlugin = {
-  name: 'neo-anki-react-host',
-  setup(buildApi) {
-    const host = {
-      react: 'neoanki://app/extension-host/react.js',
-      'react/jsx-runtime': 'neoanki://app/extension-host/jsx-runtime.js',
-      'react/jsx-dev-runtime': 'neoanki://app/extension-host/jsx-dev-runtime.js',
-    }
-    buildApi.onResolve({ filter: /^react(?:\/jsx-(?:dev-)?runtime)?$/ }, (args) => ({ path: host[args.path], external: true }))
-  },
-}
-
 const readProject = async () => {
   const manifest = validateExtensionPackageManifest(JSON.parse(await readFile(join(cwd, 'manifest.json'), 'utf8')))
   const packageJson = JSON.parse(await readFile(join(cwd, 'package.json'), 'utf8'))
-  const source = resolve(cwd, packageJson.neoAnki?.entry || (existsSync(join(cwd, 'src/index.tsx')) ? 'src/index.tsx' : 'src/index.ts'))
-  if (!existsSync(source)) throw new Error(`Extension source entry does not exist: ${source}`)
-  return { manifest, source }
+  const entries = []
+  if (manifest.workerEntry) entries.push({ packagePath: manifest.workerEntry, source: resolve(cwd, packageJson.neoAnki?.workerEntry || 'src/worker.ts') })
+  for (const ui of manifest.uiEntries || []) entries.push({ packagePath: ui.entry, source: resolve(cwd, packageJson.neoAnki?.uiEntries?.[ui.id] || `src/${ui.id}.ts`) })
+  for (const entry of entries) if (!existsSync(entry.source)) throw new Error(`Extension source entry does not exist: ${entry.source}`)
+  return { manifest, entries, packageJson }
 }
 
 const compile = async () => {
   const project = await readProject()
-  const result = await build({
-    entryPoints: [project.source],
-    bundle: true,
-    format: 'esm',
-    platform: 'browser',
-    target: 'es2022',
-    jsx: 'automatic',
-    minify: false,
-    sourcemap: false,
-    outfile: 'index.js',
-    write: false,
-    plugins: [reactHostPlugin],
-    logLevel: 'silent',
-  })
-  const module = result.outputFiles.find((file) => file.path.endsWith('.js'))?.contents
-  if (!module) throw new Error('The extension compiler did not produce a JavaScript module.')
-  return { ...project, module }
+  const files = {}
+  for (const entry of project.entries) {
+    const result = await build({
+      entryPoints: [entry.source], bundle: true, format: 'esm', platform: 'browser', target: 'es2022', jsx: 'automatic', minify: false, sourcemap: false,
+      outfile: basename(entry.packagePath), write: false, logLevel: 'silent',
+    })
+    const module = result.outputFiles.find((file) => file.path.endsWith('.js'))?.contents
+    if (!module) throw new Error(`The extension compiler did not produce ${entry.packagePath}.`)
+    files[entry.packagePath] = module
+  }
+  return { ...project, files }
+}
+
+const signPackage = async (compiled) => {
+  const sourceCommit = process.env.NEO_ANKI_EXTENSION_SOURCE_COMMIT?.trim()
+  const coreCommit = process.env.NEO_ANKI_EXTENSION_CORE_COMMIT?.trim()
+  const provenance = { ...compiled.manifest.provenance, ...(sourceCommit ? { sourceCommit } : {}), ...(coreCommit ? { coreCommit } : {}) }
+  const manifest = validateExtensionPackageManifest({ ...compiled.manifest, provenance })
+  const configured = compiled.packageJson.neoAnki?.signingKey
+  const environmentKey = process.env.NEO_ANKI_EXTENSION_SIGNING_KEY
+  const keySource = environmentKey || (configured ? await readFile(resolve(cwd, configured), 'utf8') : '')
+  if (!keySource) throw new Error('Extension packages require NEO_ANKI_EXTENSION_SIGNING_KEY or neoAnki.signingKey.')
+  const privateKey = createPrivateKey(keySource)
+  const publicKey = createPublicKey(privateKey).export({ type: 'spki', format: 'der' }).toString('base64')
+  if (!environmentKey && publicKey !== manifest.publisherKey) throw new Error('Signing key does not match manifest.publisherKey.')
+  const signedManifest = environmentKey ? { ...manifest, publisherKey: publicKey } : manifest
+  const unsigned = createExtensionPackage(signedManifest, compiled.files)
+  const unsignedDigest = createHash('sha256').update(unsigned).digest('hex')
+  const signature = sign(null, Buffer.from(unsignedDigest, 'hex'), privateKey).toString('base64')
+  return createExtensionPackage(signedManifest, { ...compiled.files, [EXTENSION_SIGNATURE_PATH]: `${JSON.stringify({ version: 1, algorithm: 'ed25519', publicKey, unsignedDigest, signature }, null, 2)}\n` })
 }
 
 const run = async () => {
@@ -57,10 +62,10 @@ const run = async () => {
   }
   if (!['check', 'build'].includes(command)) throw new Error(`Unknown command: ${command}`)
   const compiled = await compile()
-  const files = { [compiled.manifest.entry]: compiled.module }
+  const files = { ...compiled.files }
   const readme = join(cwd, 'README.md')
   if (existsSync(readme)) files['README.md'] = await readFile(readme)
-  const archive = createExtensionPackage(compiled.manifest, files)
+  const archive = await signPackage({ ...compiled, files })
   if (command === 'check') {
     process.stdout.write(`✓ ${compiled.manifest.id} v${compiled.manifest.version} is valid (${Math.ceil(archive.byteLength / 1024)} KB)\n`)
     return

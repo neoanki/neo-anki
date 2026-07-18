@@ -1,0 +1,24 @@
+services:
+  sync:
+    build:
+      context: ../..
+      dockerfile: deploy/sync-service.Dockerfile
+    restart: unless-stopped
+    environment:
+      NEO_ANKI_SYNC_ALLOWED_ORIGINS: ${NEO_ANKI_SYNC_ALLOWED_ORIGINS:-}
+      NEO_ANKI_SYNC_TRUST_PROXY: ${NEO_ANKI_SYNC_TRUST_PROXY:-false}
+      NEO_ANKI_SYNC_METRICS_TOKEN: ${NEO_ANKI_SYNC_METRICS_TOKEN:-}
+    volumes:
+      - neo-anki-sync-data:/data
+    ports:
+      - "127.0.0.1:8787:8787"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  neo-anki-sync-data:

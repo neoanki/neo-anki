@@ -1,15 +1,15 @@
-import type { NeoAnkiExtension } from '../sdk'
+import type { NeoAnkiCoreModule } from '../core-module'
 import { goalUrgency, goalsForItem } from './service'
 import type { LearningGoal, SavedView } from '../../types'
 import { GoalsPanel, SavedViewsPanel } from './WorkspacePanels'
 
-export const workspaceExtension: NeoAnkiExtension = {
+export const workspaceExtension: NeoAnkiCoreModule = {
   manifest: {
     id: 'neo-anki.workspace',
     name: 'Goals & Saved Views',
-    version: '1.0.0',
-    sdkVersion: 1,
-    publisher: 'Neo Anki contributors',
+    version: '1.1.0',
+    runtime: 'core',
+    publisher: 'Neo Anki',
     permissions: ['planning:signals', 'content:transactions', 'ui:workspace-panels', 'ui:library-presets'],
   },
   planningSignals: [{

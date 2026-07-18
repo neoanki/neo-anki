@@ -1,7 +1,8 @@
 import type { AppData, CreateKnowledgeInput, ImportSummary, KnowledgeItem, PracticeCard, Route } from '../types'
-import type { CardSeed, CreationPanelContribution, ExtensionDiagnostic, ExtensionPageContribution, ExtensionPermission, ExtensionSettingsPanelContribution, FileExporterContribution, LibraryPreset, NeoAnkiExtension, PlanningSignal, PortableRenderedCard, PromptTypeContribution, QueuePolicyCandidate, ReviewToolContribution, SyncTransport, WorkspacePanelContribution } from './sdk'
+import { parseWorkspaceData } from '../lib/workspace-schema'
+import type { CardSeed, CoreModulePermission, CreationPanelContribution, ExtensionDiagnostic, ExtensionPageContribution, ExtensionSettingsPanelContribution, FileExporterContribution, LibraryPreset, NeoAnkiCoreModule, PlanningSignal, PortableRenderedCard, PromptTypeContribution, QueuePolicyCandidate, ReviewToolContribution, SyncTransport, WorkspacePanelContribution } from './core-module'
 
-const contributionPermissions: Array<[keyof NeoAnkiExtension, ExtensionPermission]> = [
+const contributionPermissions: Array<[keyof NeoAnkiCoreModule, CoreModulePermission]> = [
   ['promptTypes', 'prompts:contribute'],
   ['importers', 'imports:files'],
   ['exporters', 'exports:files'],
@@ -16,9 +17,32 @@ const contributionPermissions: Array<[keyof NeoAnkiExtension, ExtensionPermissio
   ['settingsPanels', 'ui:settings-panels'],
   ['reviewTools', 'review:tools'],
 ]
-const knownPermissions = new Set<ExtensionPermission>([...contributionPermissions.map(([, permission]) => permission), 'network:fetch', 'storage:secrets'])
+const knownPermissions = new Set<CoreModulePermission>(contributionPermissions.map(([, permission]) => permission))
 const extensionIdPattern = /^[a-z0-9]+(?:[.-][a-z0-9]+)+$/
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
+const MAX_EXTENSION_TRANSACTION_BYTES = 8 * 1024 * 1024
+const MAX_EXTENSION_TRANSACTION_RECORDS = 10_000
+const MAX_EXTENSION_DIAGNOSTICS = 500
+
+const sameJson = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right)
+
+const assertExtensionMetadataOwnership = (ownerId: string, before: AppData, after: AppData) => {
+  const beforeById = new Map(before.items.map((item) => [item.id, item]))
+  for (const item of after.items) {
+    const previous = beforeById.get(item.id)
+    if (!previous) {
+      const foreign = Object.keys(item.extensionData || {}).filter((namespace) => namespace !== ownerId)
+      if (foreign.length) throw new Error(`Extension ${ownerId} cannot create metadata owned by ${foreign[0]}.`)
+      continue
+    }
+    const namespaces = new Set([...Object.keys(previous.extensionData || {}), ...Object.keys(item.extensionData || {})])
+    for (const namespace of namespaces) {
+      if (namespace !== ownerId && !sameJson(previous.extensionData?.[namespace], item.extensionData?.[namespace])) {
+        throw new Error(`Extension ${ownerId} cannot modify metadata owned by ${namespace}.`)
+      }
+    }
+  }
+}
 
 const fallbackRender = (item: KnowledgeItem): PortableRenderedCard => ({
   prompt: item.prompt,
@@ -30,19 +54,18 @@ const fallbackRender = (item: KnowledgeItem): PortableRenderedCard => ({
 })
 
 export class ExtensionRegistry {
-  private extensions = new Map<string, NeoAnkiExtension>()
+  private extensions = new Map<string, NeoAnkiCoreModule>()
   private diagnostics: ExtensionDiagnostic[] = []
 
-  constructor(extensions: NeoAnkiExtension[] = []) {
+  constructor(extensions: NeoAnkiCoreModule[] = []) {
     extensions.forEach((extension) => this.register(extension))
   }
 
-  register(extension: NeoAnkiExtension) {
+  register(extension: NeoAnkiCoreModule) {
     const { manifest } = extension
     if (!manifest || !extensionIdPattern.test(manifest.id) || !manifest.name?.trim() || !manifest.publisher?.trim() || !semverPattern.test(manifest.version)) throw new Error('Extension manifest identity is invalid.')
-    if (manifest.sdkVersion !== 1) throw new Error(`${manifest.name} requires an unsupported extension SDK.`)
+    if (manifest.runtime !== 'core') throw new Error(`${manifest.name} is not a trusted core module.`)
     if (new Set(manifest.permissions).size !== manifest.permissions.length || manifest.permissions.some((permission) => !knownPermissions.has(permission))) throw new Error(`${manifest.name} declares invalid extension permissions.`)
-    if (manifest.networkDomains?.length && !manifest.permissions.includes('network:fetch')) throw new Error(`${manifest.name} declares network domains without network:fetch.`)
     if (this.extensions.has(manifest.id)) throw new Error(`Extension ${manifest.id} is already registered.`)
     for (const [field, permission] of contributionPermissions) {
       const contributions = extension[field] as unknown[] | undefined
@@ -126,11 +149,11 @@ export class ExtensionRegistry {
     catch (error) { this.record(entry.extension.manifest.id, `${promptType}.compareAnswer`, error); return null }
   }
 
-  async importFile(file: File): Promise<ImportSummary> {
+  async importFile(file: File, reportProgress?: (message: string) => void): Promise<ImportSummary> {
     const suffix = `.${file.name.toLowerCase().split('.').pop()}`
     const contribution = [...this.extensions.values()].flatMap((extension) => extension.importers || []).find((importer) => importer.extensions.includes(suffix))
     if (!contribution) throw new Error(`No installed extension can import ${suffix}.`)
-    try { return await contribution.import(file) }
+    try { return await contribution.import(file, reportProgress) }
     catch (error) { this.record(contribution.id, 'import', error); throw error }
   }
 
@@ -139,7 +162,11 @@ export class ExtensionRegistry {
 
   planningSignals(item: KnowledgeItem, data: Readonly<AppData>, now: Date): PlanningSignal[] {
     return [...this.extensions.values()].flatMap((extension) => (extension.planningSignals || []).flatMap((provider) => {
-      try { return provider.signalsFor(item, data, now).map((signal) => ({ ...signal, score: Math.min(4, Math.max(0, signal.score)) })) }
+      try {
+        return provider.signalsFor(item, data, now)
+          .filter((signal) => Boolean(signal.id?.trim()) && Boolean(signal.label?.trim()) && Number.isFinite(signal.score))
+          .map((signal) => ({ ...signal, score: Math.min(4, Math.max(0, signal.score)) }))
+      }
       catch (error) { this.record(extension.manifest.id, provider.id, error); return [] }
     }))
   }
@@ -168,8 +195,12 @@ export class ExtensionRegistry {
     let next = data
     try {
       await command.run({ data: snapshot, replaceData: (replacement) => { next = replacement } }, payload)
-      if (!Array.isArray(next.items) || !Array.isArray(next.cards) || !Array.isArray(next.assets)) throw new Error('Extension returned an invalid data transaction.')
-      return { ...next, version: data.version, deviceId: data.deviceId, reviews: data.reviews, settings: data.settings, trash: data.trash }
+      const protectedData = { ...next, version: data.version, deviceId: data.deviceId, reviews: data.reviews, settings: data.settings, trash: data.trash }
+      const recordCount = protectedData.items.length + protectedData.cards.length + protectedData.assets.length + protectedData.goals.length + protectedData.views.length + protectedData.packs.length + protectedData.packConflicts.length
+      if (recordCount > MAX_EXTENSION_TRANSACTION_RECORDS) throw new Error(`Extension transaction exceeds ${MAX_EXTENSION_TRANSACTION_RECORDS.toLocaleString()} records.`)
+      if (new TextEncoder().encode(JSON.stringify(protectedData)).byteLength > MAX_EXTENSION_TRANSACTION_BYTES) throw new Error('Extension transaction exceeds 8 MB.')
+      assertExtensionMetadataOwnership(owner.manifest.id, data, protectedData)
+      return parseWorkspaceData(protectedData)
     } catch (error) { this.record(owner.manifest.id, id, error); throw error }
   }
 
@@ -198,5 +229,6 @@ export class ExtensionRegistry {
 
   private record(extensionId: string, contribution: string, error: unknown) {
     this.diagnostics.push({ extensionId, contribution, message: error instanceof Error ? error.message : 'Extension contribution failed.' })
+    if (this.diagnostics.length > MAX_EXTENSION_DIAGNOSTICS) this.diagnostics.splice(0, this.diagnostics.length - MAX_EXTENSION_DIAGNOSTICS)
   }
 }

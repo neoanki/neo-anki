@@ -1,0 +1,10 @@
+.git
+node_modules
+coverage
+dist
+dist-electron
+release
+test-results
+apps/mobile/dist
+**/development
+**/build/*.neoanki-extension

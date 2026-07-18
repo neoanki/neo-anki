@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import type { ExtensionSettingsPanelProps, ReviewToolProps } from '../sdk'
-import { defineExtension } from '../sdk'
+import { useEffect, useState } from 'react'
+import type { CoreModuleReviewToolProps, CoreModuleSettingsPanelProps } from '../core-module'
+import { defineCoreModule } from '../core-module'
 
 export const CARD_TIMER_STORAGE_KEY = 'neoanki:extension:org.neoanki.card-timer:settings:v1'
 const SETTINGS_EVENT = 'neoanki:card-timer-settings-changed'
@@ -49,16 +49,16 @@ const useCardTimerSettings = () => {
   return settings
 }
 
-export const CardTimerSettingsPanel = ({ extensionId }: ExtensionSettingsPanelProps) => {
+export const CardTimerSettingsPanel = ({ moduleId }: CoreModuleSettingsPanelProps) => {
   const settings = useCardTimerSettings()
   const update = (changes: Partial<CardTimerSettings>) => writeCardTimerSettings({ ...settings, ...changes })
-  const inputId = `${extensionId}-seconds`
+  const inputId = `${moduleId}-seconds`
 
   return (
-    <section className="setting-block card-timer-settings" aria-labelledby={`${extensionId}-title`}>
+    <section className="setting-block card-timer-settings" aria-labelledby={`${moduleId}-title`}>
       <div className="extension-setting-heading">
         <div>
-          <strong id={`${extensionId}-title`}>Card timer</strong>
+          <strong id={`${moduleId}-title`}>Card timer</strong>
           <p>Set one time limit for every card in a practice session.</p>
         </div>
         <label className="extension-switch">
@@ -83,27 +83,19 @@ export const CardTimerSettingsPanel = ({ extensionId }: ExtensionSettingsPanelPr
           />
         </div>
       )}
-      <p className="card-timer-explanation">At zero, Neo Anki records <strong>Forgot</strong> and advances to the next card. The countdown continues after the answer is revealed.</p>
+      <p className="card-timer-explanation">At zero, Neo Anki shows that the target time elapsed. Time alone never records a memory grade; reveal and grade the card yourself.</p>
     </section>
   )
 }
 
-const ActiveCardTimer = ({ seconds, submitRating }: { seconds: number; submitRating: ReviewToolProps['submitRating'] }) => {
+const ActiveCardTimer = ({ seconds }: { seconds: number }) => {
   const [remaining, setRemaining] = useState(seconds)
-  const submitRatingRef = useRef(submitRating)
-
-  useEffect(() => { submitRatingRef.current = submitRating }, [submitRating])
 
   useEffect(() => {
-    let expired = false
     const deadline = performance.now() + seconds * 1000
     const tick = () => {
       const next = Math.max(0, Math.ceil((deadline - performance.now()) / 1000))
       setRemaining(next)
-      if (next === 0 && !expired) {
-        expired = true
-        submitRatingRef.current(1)
-      }
     }
     const interval = window.setInterval(tick, 200)
     return () => window.clearInterval(interval)
@@ -117,25 +109,26 @@ const ActiveCardTimer = ({ seconds, submitRating }: { seconds: number; submitRat
       <span className="card-timer-value">{remaining}s</span>
       <span className="card-timer-track" aria-hidden="true"><span style={{ width: `${percentage}%` }} /></span>
       {remaining === 5 && <span className="visually-hidden" role="status">Five seconds remaining for this card.</span>}
+      {remaining === 0 && <span className="visually-hidden" role="status">Target time elapsed. Reveal and grade the card when ready.</span>}
     </div>
   )
 }
 
-export const CardTimerReviewTool = ({ card, submitRating }: ReviewToolProps) => {
+export const CardTimerReviewTool = ({ card }: CoreModuleReviewToolProps) => {
   const settings = useCardTimerSettings()
   if (!settings.enabled) return null
-  return <ActiveCardTimer key={`${card.id}:${settings.seconds}`} seconds={settings.seconds} submitRating={submitRating} />
+  return <ActiveCardTimer key={`${card.id}:${settings.seconds}`} seconds={settings.seconds} />
 }
 
-export const cardTimerExtension = defineExtension({
+export const cardTimerExtension = defineCoreModule({
   manifest: {
     id: 'org.neoanki.card-timer',
     name: 'Card Timer',
-    version: '1.0.0',
-    sdkVersion: 1,
-    publisher: 'Neo Anki contributors',
+    version: '1.1.0',
+    runtime: 'core',
+    publisher: 'Neo Anki',
     permissions: ['ui:settings-panels', 'review:tools'],
-    description: 'Optionally limits each card, records a forgotten answer at timeout, and advances automatically. Disabled by default.',
+    description: 'Shows an optional per-card target time without grading memory from elapsed time. Disabled by default.',
   },
   settingsPanels: [{ id: 'card-timer.settings', component: CardTimerSettingsPanel }],
   reviewTools: [{ id: 'card-timer.review', component: CardTimerReviewTool }],

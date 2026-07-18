@@ -42,6 +42,7 @@ export const knowledgeItemSchema = z.object({
   mediaIds: z.array(id),
   occlusions: z.array(occlusionSchema),
   provenance: provenanceSchema.optional(),
+  noteModel: z.object({ noteTypeId: id, noteTypeName: text, fields: z.array(z.object({ id, name: text, ordinal: z.number().int().nonnegative(), value: text })) }).optional(),
   extensionData: z.record(z.string(), z.unknown()).optional(),
   createdAt: timestamp,
   updatedAt: timestamp,
@@ -60,13 +61,50 @@ const storedFsrsSchema = z.object({
   learning_steps: z.number().int().nonnegative().optional(),
 }).passthrough()
 
+const cardQueueSchema = z.enum(['new', 'learn', 'review', 'relearn', 'preview'])
+const ankiSchedulingSchema = z.object({
+  strategy: z.literal('anki'), queue: cardQueueSchema, due: finiteNumber, dueAt: optionalTimestamp,
+  intervalDays: finiteNumber.nonnegative(), easeFactor: finiteNumber.nonnegative(), repetitions: z.number().int().nonnegative(),
+  lapses: z.number().int().nonnegative(), remainingSteps: z.number().int().nonnegative(), originalDue: finiteNumber.optional(),
+  originalDeckId: id.optional(), mod: finiteNumber, stability: finiteNumber.positive().optional(),
+  difficulty: finiteNumber.min(0).max(10).optional(), desiredRetention: finiteNumber.min(0.7).max(0.99).optional(),
+  decay: finiteNumber.positive().optional(), lastReviewAt: optionalTimestamp,
+}).passthrough()
+const neoFsrsSchedulingSchema = z.object({
+  strategy: z.literal('neo-fsrs'), queue: cardQueueSchema, dueAt: timestamp,
+  stability: finiteNumber.nonnegative(), difficulty: finiteNumber.min(0).max(10), elapsedDays: finiteNumber.nonnegative(),
+  scheduledDays: finiteNumber.nonnegative(), reps: z.number().int().nonnegative(), lapses: z.number().int().nonnegative(),
+  state: z.number().int().min(0).max(3), lastReviewAt: optionalTimestamp, continuityOverrideDueAt: optionalTimestamp,
+}).passthrough()
+const cardSchedulingSchema = z.discriminatedUnion('strategy', [ankiSchedulingSchema, neoFsrsSchedulingSchema])
+const cardRenderingSchema = z.object({
+  questionHtml: text, answerHtml: text, css: text,
+  typedAnswer: z.object({ fieldName: text, expected: text }).optional(),
+  source: z.enum(['anki-template', 'neo-native']),
+}).passthrough()
+
 export const practiceCardSchema = z.object({
   id,
   itemId: id,
+  deckName: text.optional(),
+  presetId: id.optional(),
+  schedulerOptions: z.object({
+    desiredRetention: finiteNumber.min(0.7).max(0.99), maximumIntervalDays: finiteNumber.positive(),
+    learningStepsMinutes: z.array(finiteNumber.positive()), relearningStepsMinutes: z.array(finiteNumber.positive()),
+    newCardsPerDay: z.number().int().nonnegative(), reviewsPerDay: z.number().int().nonnegative(),
+    buryNewSiblings: z.boolean(), buryReviewSiblings: z.boolean(), leechThreshold: z.number().int().positive(), leechAction: z.enum(['flag', 'suspend']),
+  }).optional(),
   variant: id,
   occlusionId: id.optional(),
+  promptData: z.record(z.string(), z.unknown()).optional(),
   suspended: z.boolean(),
+  buriedUntil: optionalTimestamp,
+  buriedBy: z.enum(['user', 'scheduler']).optional(),
+  flags: z.number().int().min(0).max(7).optional(),
+  leech: z.boolean().optional(),
   fsrs: storedFsrsSchema,
+  scheduling: cardSchedulingSchema.optional(),
+  rendering: cardRenderingSchema.optional(),
   estimatedSeconds: finiteNumber.nonnegative(),
   createdAt: timestamp,
   updatedAt: timestamp,
@@ -74,14 +112,22 @@ export const practiceCardSchema = z.object({
 
 export const reviewEventSchema = z.object({
   id,
+  deviceId: id.optional(),
   cardId: id,
-  rating: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  rating: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
+  kind: z.enum(['review', 'preview', 'migration', 'reversal']).optional(),
+  reversesReviewId: id.optional(),
   reviewedAt: timestamp,
   durationSeconds: finiteNumber.nonnegative(),
+  rawDurationSeconds: finiteNumber.nonnegative().optional(),
   previousDue: timestamp,
   nextDue: timestamp,
   previousCard: storedFsrsSchema.optional(),
+  previousScheduling: cardSchedulingSchema.optional(),
+  scheduler: z.enum(['anki', 'neo-fsrs']).optional(),
   previousEstimatedSeconds: finiteNumber.nonnegative().optional(),
+  previousCardState: z.object({ suspended: z.boolean(), buriedUntil: optionalTimestamp, buriedBy: z.enum(['user', 'scheduler']).optional(), flags: z.number().int().min(0).max(7).optional(), leech: z.boolean().optional() }).optional(),
+  siblingChanges: z.array(z.object({ cardId: id, previousBuriedUntil: optionalTimestamp, previousBuriedBy: z.enum(['user', 'scheduler']).optional() })).optional(),
 }).passthrough()
 
 export const mediaAssetSchema = z.object({
@@ -133,6 +179,7 @@ const packManifestItemSchema = z.object({
   collection: text,
   tags: z.array(text),
   citations: z.array(citationSchema.omit({ id: true })).optional(),
+  cards: z.array(z.object({ id, variant: id, promptData: z.record(z.string(), z.unknown()).optional(), occlusionId: id.optional() })).optional(),
   variants: z.array(id).optional(),
 }).passthrough()
 
@@ -177,6 +224,9 @@ export const userSettingsSchema = z.object({
   theme: z.enum(['light', 'dark']),
   onboardingComplete: z.boolean(),
   recoveryStrategy: id,
+  burySiblings: z.boolean().default(true),
+  leechThreshold: z.number().int().min(1).max(100).default(8),
+  leechAction: z.enum(['flag', 'suspend']).default('flag'),
 }).passthrough()
 
 export const workspaceSchema = z.object({
@@ -197,10 +247,124 @@ export const workspaceSchema = z.object({
 
 const issueSummary = (error: z.ZodError) => error.issues.slice(0, 5).map((issue) => `${issue.path.join('.') || 'workspace'}: ${issue.message}`).join('; ')
 
+export interface WorkspaceInvariantIssue {
+  path: string
+  message: string
+}
+
+const MAX_INVARIANT_ISSUES = 20
+
+const duplicateValues = (values: string[]) => {
+  const seen = new Set<string>()
+  const duplicates = new Set<string>()
+  for (const value of values) {
+    if (seen.has(value)) duplicates.add(value)
+    seen.add(value)
+  }
+  return [...duplicates]
+}
+
+/**
+ * Validates relationships that a shape schema cannot express. Keep this function
+ * synchronous and deterministic so every ingress boundary can use the same rules.
+ */
+export const collectWorkspaceInvariantIssues = (data: AppData): WorkspaceInvariantIssue[] => {
+  const issues: WorkspaceInvariantIssue[] = []
+  const add = (path: string, message: string) => {
+    if (issues.length < MAX_INVARIANT_ISSUES) issues.push({ path, message })
+  }
+  const unique = (path: string, values: string[]) => duplicateValues(values).forEach((value) => add(path, `Duplicate id ${value}.`))
+
+  unique('items', data.items.map((value) => value.id))
+  unique('cards', data.cards.map((value) => value.id))
+  unique('reviews', data.reviews.map((value) => value.id))
+  unique('assets', data.assets.map((value) => value.id))
+  unique('goals', data.goals.map((value) => value.id))
+  unique('views', data.views.map((value) => value.id))
+  unique('packs', data.packs.map((value) => value.id))
+  unique('packConflicts', data.packConflicts.map((value) => value.id))
+  unique('trash', data.trash.map((value) => value.id))
+
+  const itemIds = new Set(data.items.map((value) => value.id))
+  const cardIds = new Set(data.cards.map((value) => value.id))
+  const assetIds = new Set(data.assets.map((value) => value.id))
+  const packIds = new Set(data.packs.map((value) => value.packId))
+  const trashItemIds = new Set(data.trash.map((value) => value.item.id))
+  const reviewById = new Map(data.reviews.map((value) => [value.id, value]))
+  const reversedReviewIds = new Set<string>()
+
+  data.items.forEach((item, index) => {
+    unique(`items.${index}.mediaIds`, item.mediaIds)
+    unique(`items.${index}.occlusions`, item.occlusions.map((value) => value.id))
+    unique(`items.${index}.citations`, item.citations.map((value) => value.id))
+    item.mediaIds.forEach((assetId) => { if (!assetIds.has(assetId)) add(`items.${index}.mediaIds`, `Unknown media asset ${assetId}.`) })
+    item.occlusions.forEach((occlusion, occlusionIndex) => {
+      if (occlusion.width <= 0 || occlusion.height <= 0) add(`items.${index}.occlusions.${occlusionIndex}`, 'Occlusion dimensions must be positive.')
+      if (occlusion.x < 0 || occlusion.y < 0 || occlusion.x + occlusion.width > 1 || occlusion.y + occlusion.height > 1) add(`items.${index}.occlusions.${occlusionIndex}`, 'Occlusion coordinates must remain inside the normalized image bounds.')
+    })
+  })
+
+  data.cards.forEach((card, index) => {
+    if (!itemIds.has(card.itemId)) add(`cards.${index}.itemId`, `Unknown knowledge item ${card.itemId}.`)
+    if (card.occlusionId) {
+      const item = data.items.find((candidate) => candidate.id === card.itemId)
+      if (!item?.occlusions.some((candidate) => candidate.id === card.occlusionId)) add(`cards.${index}.occlusionId`, `Unknown occlusion ${card.occlusionId}.`)
+    }
+    if (card.variant === 'cloze' && card.promptData?.clozeOrdinal !== undefined && (!Number.isInteger(card.promptData.clozeOrdinal) || Number(card.promptData.clozeOrdinal) < 1)) add(`cards.${index}.promptData.clozeOrdinal`, 'Cloze ordinals must be positive integers.')
+    if (card.fsrs.stability < 0 || card.fsrs.difficulty < 0 || card.fsrs.elapsed_days < 0 || card.fsrs.scheduled_days < 0) add(`cards.${index}.fsrs`, 'FSRS values cannot be negative.')
+  })
+
+  data.packs.forEach((pack, index) => {
+    unique(`packs.${index}.itemMap`, Object.values(pack.itemMap))
+    for (const [sourceId, itemId] of Object.entries(pack.itemMap)) {
+      if (!pack.baseItems[sourceId]) add(`packs.${index}.itemMap.${sourceId}`, 'Pack mapping has no base item.')
+      if (!itemIds.has(itemId)) add(`packs.${index}.itemMap.${sourceId}`, `Unknown knowledge item ${itemId}.`)
+    }
+  })
+
+  data.packConflicts.forEach((conflict, index) => {
+    if (!packIds.has(conflict.packId)) add(`packConflicts.${index}.packId`, `Unknown pack ${conflict.packId}.`)
+    if (!itemIds.has(conflict.itemId)) add(`packConflicts.${index}.itemId`, `Unknown knowledge item ${conflict.itemId}.`)
+  })
+
+  data.reviews.forEach((review, index) => {
+    if (review.kind === 'reversal') {
+      if (!review.reversesReviewId) add(`reviews.${index}.reversesReviewId`, 'A reversal must name the review it reverses.')
+      else {
+        const target = reviewById.get(review.reversesReviewId)
+        if (!target) add(`reviews.${index}.reversesReviewId`, `Unknown review ${review.reversesReviewId}.`)
+        else if (target.kind === 'reversal') add(`reviews.${index}.reversesReviewId`, 'A reversal cannot reverse another reversal.')
+        if (reversedReviewIds.has(review.reversesReviewId)) add(`reviews.${index}.reversesReviewId`, 'A review can be reversed only once.')
+        reversedReviewIds.add(review.reversesReviewId)
+      }
+    } else if (review.reversesReviewId) add(`reviews.${index}.reversesReviewId`, 'Only reversal events may name a reversed review.')
+  })
+
+  data.trash.forEach((entry, index) => {
+    if (itemIds.has(entry.item.id)) add(`trash.${index}.item.id`, 'A trashed item cannot also be live.')
+    unique(`trash.${index}.cards`, entry.cards.map((value) => value.id))
+    entry.cards.forEach((card, cardIndex) => {
+      if (card.itemId !== entry.item.id) add(`trash.${index}.cards.${cardIndex}.itemId`, 'A trashed card must belong to its trashed item.')
+      if (cardIds.has(card.id)) add(`trash.${index}.cards.${cardIndex}.id`, 'A trashed card cannot also be live.')
+    })
+  })
+  if (duplicateValues([...itemIds, ...trashItemIds]).length) add('trash', 'Live and trashed item identifiers must not overlap.')
+
+  // Review events intentionally survive permanent card deletion; their cardId is
+  // historical provenance and is therefore not required to reference a live row.
+  return issues
+}
+
+export const validateWorkspaceInvariants = (data: AppData): AppData => {
+  const issues = collectWorkspaceInvariantIssues(data)
+  if (issues.length) throw new Error(`Workspace invariants are invalid. ${issues.slice(0, 5).map((issue) => `${issue.path}: ${issue.message}`).join('; ')}`)
+  return data
+}
+
 export const parseWorkspaceData = (input: unknown): AppData => {
   const result = workspaceSchema.safeParse(input)
   if (!result.success) throw new Error(`Workspace data is invalid. ${issueSummary(result.error)}`)
-  return result.data as AppData
+  return validateWorkspaceInvariants(result.data as AppData)
 }
 
 export type LegacyWorkspaceData = Partial<AppData> & {
@@ -225,6 +389,7 @@ export const migrateWorkspaceData = (input: LegacyWorkspaceData): AppData => {
     mediaIds: item.mediaIds || [],
     occlusions: item.occlusions || [],
     provenance: item.provenance,
+    noteModel: item.noteModel,
     extensionData: item.extensionData,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
@@ -234,8 +399,15 @@ export const migrateWorkspaceData = (input: LegacyWorkspaceData): AppData => {
     itemId: card.itemId,
     variant: card.variant,
     occlusionId: card.occlusionId,
+    promptData: card.promptData,
     suspended: card.suspended,
+    buriedUntil: card.buriedUntil,
+    buriedBy: card.buriedBy,
+    flags: card.flags,
+    leech: card.leech,
     fsrs: card.fsrs,
+    scheduling: card.scheduling,
+    rendering: card.rendering,
     estimatedSeconds: card.estimatedSeconds,
     createdAt: card.createdAt || now,
     updatedAt: card.updatedAt || card.fsrs.last_review || now,
@@ -258,6 +430,9 @@ export const migrateWorkspaceData = (input: LegacyWorkspaceData): AppData => {
       theme: input.settings?.theme ?? 'light',
       onboardingComplete: input.settings?.onboardingComplete ?? false,
       recoveryStrategy: input.settings?.recoveryStrategy ?? 'risk',
+      burySiblings: input.settings?.burySiblings ?? true,
+      leechThreshold: input.settings?.leechThreshold ?? 8,
+      leechAction: input.settings?.leechAction ?? 'flag',
     },
     updatedAt: input.updatedAt || now,
   })

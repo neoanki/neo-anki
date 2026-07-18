@@ -1,12 +1,15 @@
 {
   "format": "neo-anki-extension",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "org.neoanki.examples.study-pulse",
   "name": "Study Pulse",
-  "version": "1.0.0",
-  "sdkVersion": 1,
+  "version": "2.1.0",
+  "sdkVersion": 2,
   "publisher": "Neo Anki SDK examples",
-  "description": "A third-party example that adds a workload page and a shortest-first recovery policy.",
-  "permissions": ["ui:pages", "planning:policies"],
-  "entry": "dist/index.js"
+  "description": "A worker-isolated and iframe-sandboxed workload extension example.",
+  "publisherKey": "MCowBQYDK2VwAyEA7Dj6QuonLpqmdZFSdx/OSSvjXv0C5UxiwVm1p5OA0xU=",
+  "permissions": ["study:signals", "ui:page"],
+  "workerEntry": "dist/worker.js",
+  "uiEntries": [{ "id": "study-pulse", "surface": "page", "entry": "dist/page.js" }],
+  "provenance": { "sourceCommit": "08abef4294b9558ee02878d21bc397af94113a5b", "buildSystem": "neo-anki-extension-cli" }
 }

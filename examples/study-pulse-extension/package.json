@@ -1,19 +1,15 @@
 {
   "name": "@neo-anki-example/study-pulse",
-  "version": "1.0.0",
+  "version": "2.1.0",
   "license": "MIT",
   "private": true,
   "type": "module",
-  "neoAnki": { "entry": "src/index.tsx" },
+  "neoAnki": { "workerEntry": "src/worker.ts", "uiEntries": { "study-pulse": "src/page.ts" }, "signingKey": "development/test-ed25519-private.pem" },
   "scripts": {
     "check": "neo-anki-extension check",
     "build": "neo-anki-extension build"
   },
   "dependencies": {
-    "@neo-anki/extension-sdk": "1.0.0",
-    "react": "^19.0.0"
-  },
-  "devDependencies": {
-    "@types/react": "^19.0.0"
+    "@neo-anki/extension-sdk": "2.1.0"
   }
 }

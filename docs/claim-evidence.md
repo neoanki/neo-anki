@@ -1,0 +1,21 @@
+# Public claim evidence register
+
+Every public capability claim must name an automated or reproducible owner. A release must weaken or remove a claim when its evidence is red; presentation quality is never evidence of compatibility.
+
+| Capability | Allowed public wording | Evidence owner | Replacement gate |
+| --- | --- | --- | --- |
+| Anki import | Supported migrations preserve the fields listed in the compatibility contract; unsupported semantics are reported or refused before commit. Extraction is cancellable, incremental and bounded. | `src/lib/anki.test.ts`, `src/lib/anki-corpus.test.ts`, `src/extensions/interoperability/index.test.ts`, pinned Anki oracle | Corpus, large-media, cancellation and round-trip oracle stay green for every declared schema. |
+| Workspace backups and exit | Neo-native SQLite backups are semantically and media validated; supported `.apkg`/`.colpkg` exports provide an interoperable exit. Original packages use verified durable activation and dedicated checkpoints remain until explicit removal. | `electron/workspace-store.test.ts`, Anki round-trip oracle | Backup recovery, rollback-file fault tests and Anki import comparison are green. |
+| Review history | Reviews and undo reversals are append-only Workspace v4 entities and converge through encrypted sync. | `src/state/AppContext.test.tsx`, `src/lib/sync-client.test.ts` | Reversal and concurrent delivery tests stay green. |
+| Extension install | Only signed schema/SDK 2 packages are accepted; installation is recoverable and same-digest reinstall is idempotent. No full-trust compatibility loader exists. | `src/extensions/package-format.test.ts`, `electron/extension-manager.test.ts` | Legacy rejection, lifecycle fault matrix and SDK 2 isolation tests stay green. |
+| Extension transactions | SDK v2 uses scoped DTOs and typed, size-bounded patches rejected unless ownership and complete workspace invariants pass. | `src/extensions/v2/runtime.test.ts`, compatibility-domain tests | Shared SDK v2 conformance suite stays green. |
+| Diagnostics | Bounded structured diagnostics redact paths, URLs, credentials, embedded data, and common study-content fields. | `electron/diagnostics-log.test.ts` | User preview and adversarial redaction corpus are green. |
+| TTS generated media | SDK v2 TTS hashes decoded audio through the core media API, rejects stale assets and uses cancellable checkpointed concurrent batches. Provider/model/data/cost/credential disclosures are shown before use. | TTS 18-test coverage suite, package validation, signed source/core provenance verification, packaged-core journey covering mocked generation, persistence, restart, cached playback, invalidation and cancellation | Cross-repository journey stays green; no paid endpoint or real credential is used in CI. |
+| Encrypted sync | Desktop, browser and native clients exchange signed E2E-encrypted entity/media operations through a content-blind service. Safe compaction requires durable per-device acknowledgements; meaningful concurrent edits preserve both values until a canonical explicit resolution is synchronized. | sync protocol/client/service/desktop/browser tests; mobile type/export gates | Hosted reliability and real-device recovery/convergence gates pass. |
+| Platform trust | Tagged releases are blocked unless Developer ID notarization and Authenticode verification pass; local builds are unsigned. | release workflow trust jobs | Both signed packaged-launch jobs are green for the release tag. |
+| Better UX | No superiority claim. Individual usability advantages may be described as heuristic. | comparative study (pending) | The separately defined UX-superiority gate passes. |
+| Anki replacement | Not yet a drop-in replacement. | comprehensive audit and persona matrix | Every persona gate, rollback, sync, and UX-superiority gate passes. |
+
+The release owner reviews this table with `docs/audits/neo-anki-comprehensive-audit-2026-07-19.md`, its 0.2.0 remediation ledger, the dependency risk register, and the mobile release checklist before creating a public tag.
+
+The browser acceptance matrix covers light/dark contrast with axe enabled, keyboard routes, malformed-import alerts, reduced motion, 200% text scaling, and 375/768/1024/1440 widths. Packaged platform assistive-technology audits remain a release gate rather than a source-level claim.

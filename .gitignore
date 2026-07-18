@@ -13,3 +13,5 @@ vite.config.d.ts
 .DS_Store
 *.local
 .neo-anki-test-data
+.expo/
+examples/study-pulse-extension/build/

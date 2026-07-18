@@ -1,13 +1,13 @@
-import type { NeoAnkiExtension } from '../sdk'
+import type { NeoAnkiCoreModule } from '../core-module'
 import { ImageOcclusionEditor } from './ImageOcclusionEditor'
 
-export const imageOcclusionExtension: NeoAnkiExtension = {
+export const imageOcclusionExtension: NeoAnkiCoreModule = {
   manifest: {
     id: 'neo-anki.image-occlusion',
     name: 'Image Occlusion',
-    version: '1.0.0',
-    sdkVersion: 1,
-    publisher: 'Neo Anki contributors',
+    version: '1.1.0',
+    runtime: 'core',
+    publisher: 'Neo Anki',
     permissions: ['prompts:contribute', 'ui:create-panels'],
   },
   promptTypes: [{

@@ -1,12 +1,12 @@
-import type { NeoAnkiExtension } from '../sdk'
+import type { NeoAnkiCoreModule } from '../core-module'
 
-export const recoveryPoliciesExtension: NeoAnkiExtension = {
+export const recoveryPoliciesExtension: NeoAnkiCoreModule = {
   manifest: {
     id: 'neo-anki.recovery-policies',
     name: 'Recovery Policies',
-    version: '1.0.0',
-    sdkVersion: 1,
-    publisher: 'Neo Anki contributors',
+    version: '1.1.0',
+    runtime: 'core',
+    publisher: 'Neo Anki',
     permissions: ['planning:policies'],
   },
   queuePolicies: [

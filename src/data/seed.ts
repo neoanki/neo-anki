@@ -69,7 +69,7 @@ export const createSeedData = (): AppData => {
     } else {
       fsrs.due = addDays(now, index - 12).toISOString()
     }
-    cards.push({ id: uid(), itemId, variant, suspended: false, fsrs, estimatedSeconds: 12 + (index % 4) * 2, createdAt: timestamp, updatedAt: timestamp })
+    cards.push({ id: uid(), itemId, variant, promptData: variant === 'cloze' ? { clozeOrdinal: 1 } : undefined, suspended: false, fsrs, estimatedSeconds: 12 + (index % 4) * 2, createdAt: timestamp, updatedAt: timestamp })
 
     if (index === 4 || index === 5) {
       cards.push({ id: uid(), itemId, variant: 'reverse', suspended: false, fsrs: makeEmptyFSRSCard(now), estimatedSeconds: 14, createdAt: timestamp, updatedAt: timestamp })
@@ -113,6 +113,9 @@ export const createSeedData = (): AppData => {
       theme: 'light',
       onboardingComplete: false,
       recoveryStrategy: 'risk',
+      burySiblings: true,
+      leechThreshold: 8,
+      leechAction: 'flag',
     },
     updatedAt: timestamp,
   }

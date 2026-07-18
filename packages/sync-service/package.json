@@ -1,0 +1,22 @@
+{
+  "name": "@neo-anki/sync-service",
+  "version": "1.0.0-alpha.2",
+  "description": "Content-blind reference service for Neo Anki encrypted sync protocol v1.",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "private": true,
+  "scripts": {
+    "prebuild": "npm run build -w @neo-anki/sync-protocol",
+    "build": "tsc -p tsconfig.json",
+    "precheck": "npm run build -w @neo-anki/sync-protocol",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@neo-anki/sync-protocol": "1.0.0-alpha.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "~5.7.2"
+  }
+}

@@ -1,104 +1,105 @@
-# Neo Anki extension SDK v1
+# Neo Anki extension SDK 2
 
-`@neo-anki/extension-sdk` is the only public contract for bundled and independently distributed extensions. Publisher identity never changes registration, permissions, host props, failure isolation, or transaction rules.
+`@neo-anki/extension-sdk` 2.x is the only public contract for installable extensions. It separates non-UI logic from UI and gives neither direct renderer access nor a whole-workspace snapshot. Schema or SDK versions other than 2 are rejected before staging; there is no legacy compatibility runtime.
 
-For a complete extension project, see [extension-authoring.md](extension-authoring.md) and [`examples/study-pulse-extension`](../examples/study-pulse-extension).
+For a complete signed project, see [extension-authoring.md](extension-authoring.md) and [`examples/study-pulse-extension`](../examples/study-pulse-extension).
 
-## Runtime contract
-
-```ts
-import { defineExtension } from '@neo-anki/extension-sdk'
-
-export default defineExtension({
-  manifest: {
-    id: 'com.example.diagram-prompts',
-    name: 'Diagram Prompts',
-    version: '1.0.0',
-    sdkVersion: 1,
-    publisher: 'Example Studio',
-    permissions: ['prompts:contribute'],
-  },
-  promptTypes: [{
-    id: 'diagram-label',
-    label: 'Diagram label',
-    createCards: () => [{ promptType: 'diagram-label', estimatedSeconds: 18 }],
-    render: (item) => ({
-      prompt: item.prompt,
-      answer: item.answer,
-      context: item.context,
-      typed: false,
-      citations: item.citations,
-    }),
-  }],
-})
-```
-
-The default export is the same `NeoAnkiExtension` object passed to `ExtensionRegistry.register` for bundled extensions.
-
-## Contribution permissions
-
-| Permission | Contribution |
-| --- | --- |
-| `prompts:contribute` | Prompt creation, rendering, optional answer comparison |
-| `imports:files` | File importers selected by extension suffix |
-| `exports:files` | File exporters surfaced in Settings |
-| `planning:signals` | Bounded item-priority signals |
-| `planning:policies` | Recovery queue scoring policies |
-| `sync:transport` | A synchronization transport |
-| `content:transactions` | Named commands that propose content transactions |
-| `ui:pages` | Navigable React application pages |
-| `ui:workspace-panels` | React panels in the workspace extension host |
-| `ui:create-panels` | React authoring panels in Create |
-| `ui:library-presets` | Named query and collection presets in Library |
-| `ui:settings-panels` | React controls hosted in Settings |
-| `review:tools` | React review-session tools that can observe the current card and submit a core rating |
-| `network:fetch` | Host-mediated HTTPS requests limited to manifest-declared domains |
-| `storage:secrets` | Credentials encrypted through the operating system secret-storage service; Linux requires Secret Service or KWallet and rejects Electron's insecure `basic_text` fallback |
-
-Non-empty contributions without their declared permission are rejected. Contribution IDs are global within their kind and collisions are rejected. These declarations constrain SDK registration; SDK v1 extensions are explicitly installed full-trust code, so permissions are not a hostile-code sandbox.
-
-## UI host
-
-The package exports stable `ExtensionPage`, `ExtensionHeader`, `ExtensionMetricGrid`, `ExtensionMetric`, `ExtensionSection`, and `ExtensionNotice` components. The build CLI links `react`, `react/jsx-runtime`, and `react/jsx-dev-runtime` to Neo Anki’s host React instance, so hooks and context use one React runtime.
-
-Contributed pages and panels receive `ExtensionPageProps`:
-
-- `data` — read-only current workspace data.
-- `plan` — read-only current time-budget plan.
-- `runCommand(id, payload)` — invoke a registered command.
-- `extensionId` — the host contribution identifier.
-- `host` — publisher-neutral, permission-checked network and secret services.
-
-Settings panels receive `extensionId`, a read-only workspace snapshot, `host`, and `runCommand`. Review tools receive read-only `card`, `item`, and media snapshots, the current `revealed` state, `host`, and `submitRating(1 | 2 | 3)`. The host rejects stale or duplicate submissions, then records an accepted rating through the same atomic review transaction used by the standard grading controls. Review and Settings components are isolated behind host error boundaries.
-
-### Network and secrets
-
-An extension that requests the network declares exact hosts or leading-wildcard subdomains in both its package and runtime manifest:
+## Package manifest
 
 ```json
 {
-  "permissions": ["network:fetch", "storage:secrets"],
-  "networkDomains": ["api.example.com", "*.speech.example.com"]
+  "format": "neo-anki-extension",
+  "schemaVersion": 2,
+  "sdkVersion": 2,
+  "id": "com.example.study-signals",
+  "name": "Study Signals",
+  "version": "2.0.0",
+  "publisher": "Example Studio",
+  "publisherKey": "<base64 Ed25519 SPKI public key>",
+  "permissions": ["study:signals", "ui:page"],
+  "workerEntry": "dist/worker.js",
+  "uiEntries": [{ "id": "dashboard", "surface": "page", "entry": "dist/dashboard.js" }],
+  "provenance": {
+    "sourceCommit": "<40-character commit SHA>",
+    "coreCommit": "<40-character reviewed Neo Anki/SDK SHA>",
+    "buildSystem": "neo-anki-extension-cli"
+  }
 }
 ```
 
-`host.network.fetch` accepts HTTPS URLs, common HTTP methods, string/base64 bodies, bounded timeouts, and headers. The desktop host checks the permission and allowlist on every request, follows only revalidated redirects, removes ambient cookies, and enforces 4 MB request and 25 MB response limits. It returns status, headers, and a base64 body.
+The package builder uses canonical file ordering and fixed archive timestamps, then signs the canonical unsigned package digest. Desktop verifies the signature and manifest publisher key before staging installation.
 
-`host.secrets` exposes `has`, `get`, `set`, and `delete` within the calling extension’s namespace. Values are encrypted by Electron `safeStorage`; Neo Anki refuses to store a new secret when secure storage is unavailable.
+## Worker contract
 
-## Transactions and degradation
+Non-UI contributions export a v2 extension and expose it through the worker bootstrap:
 
-Commands receive a cloned snapshot and have no effect unless they call `replaceData`. The host preserves review history, scheduler settings, device identity, and schema version even if a command proposes replacements for them.
+```ts
+import { defineExtension, exposeExtensionWorker } from '@neo-anki/extension-sdk'
 
-- Missing or failing prompt renderer → basic question/answer fallback.
-- Failing answer comparator → manual grading.
-- Failing planning signal → omit that provider’s signals.
-- Invalid queue policy → kernel ordering.
-- Failing sync transport → local-only operation.
-- Failing Settings or Review component → omit that component and record a diagnostic.
-- Failing import, command, or module load → diagnostic plus unchanged existing data.
-- Extension blocks initial renderer readiness → main-process watchdog opens a fresh safe-mode window without local packages.
+const extension = defineExtension({
+  manifest,
+  async handle(request, host) {
+    if (request.type !== 'planning-signals') {
+      return { type: 'error', requestId: request.type === 'command' ? request.requestId : request.operationId, code: 'unsupported', message: 'Unsupported request.' }
+    }
+    return {
+      type: 'planning-signals',
+      requestId: request.request.requestId,
+      signals: request.request.items.map((item) => ({ itemId: item.noteId, score: 0, reason: 'No adjustment' })),
+    }
+  },
+})
 
-## Compatibility
+exposeExtensionWorker(extension)
+```
 
-SDK v1 follows semantic versioning. Additive types and optional fields may ship in `1.x`; breaking API or package-format changes require SDK v2. Neo Anki validates `schemaVersion`, `sdkVersion`, manifest identity, permissions, entry paths, archive size, and contribution collisions before activation.
+The worker receives bounded request DTOs. It has no ambient renderer DOM, workspace, cookies, IndexedDB or unrestricted network. Useful effects go through `ExtensionHostV2` RPC and are permission-checked again by core.
+
+## Sandboxed UI contract
+
+Settings, review and page contributions run in separate opaque-origin iframes. Use `createSandboxedUiClient()` to receive the initialization DTO and invoke the paired worker through the host:
+
+```ts
+import { createSandboxedUiClient } from '@neo-anki/extension-sdk'
+
+void createSandboxedUiClient().then(async (client) => {
+  const summary = client.init.dto
+  const result = await client.call('command', { commandId: 'refresh', payload: {} })
+  // Render only into this iframe's document.
+})
+```
+
+The frame has `sandbox="allow-scripts"` without `allow-same-origin`, an explicit no-network CSP and a transferred `MessagePort`. It cannot inspect or style the Neo Anki document. UI authors must implement semantic HTML, visible focus, keyboard operation, 16 px default text, AA contrast, reduced-motion behavior and responsive layout inside their frame.
+
+## Permissions and host methods
+
+| Permission | Reviewed capability |
+| --- | --- |
+| `study:read` | Minimal study projections for the declared contribution |
+| `study:signals` | Bounded planning-signal requests/responses |
+| `content:read` | Paginated, scoped note DTOs through `content.listNotes` |
+| `content:patch-own` | Owner-scoped, revision-checked `WorkspacePatchV2` changes |
+| `media:create` | Core-owned media decoding, hashing and atomic creation |
+| `network:fetch` | Cancellable, bounded HTTPS requests to reviewed destinations |
+| `secrets:device` | Atomic device-local secret reads/mutations in the extension namespace |
+| `config:sync` | Bounded non-secret extension configuration synchronized as Workspace v4 data |
+| `ui:settings` | A reviewed sandboxed Settings entry |
+| `ui:review` | A reviewed sandboxed Review entry |
+| `ui:page` | A reviewed sandboxed application page |
+
+`ExtensionHostV2` exposes `applyPatch`, `createMedia`, `fetch`, `cancel`, atomic `secrets` methods, synchronized `config` methods and paginated `content.listNotes`. The host rejects calls whose permission, owner, operation ID, destination, size or current workspace revision does not match the reviewed contract.
+
+## Resource and failure boundaries
+
+- Worker/UI messages are capped at 8 MiB.
+- A worker may have at most 100 pending requests.
+- Startup is bounded to 5 seconds; ordinary work defaults to 15 seconds and is capped at 180 seconds.
+- Planning DTOs are chunked to 2,000 items and malformed/non-finite signals are rejected.
+- Network responses are streamed and aborted at the reviewed cap; redirects are revalidated and cross-host authorization headers are removed.
+- Patch and media operations are atomic and invariant-checked by core.
+- Closing or timing out a worker cancels pending host work and rejects callers.
+- A failing frame or worker can be removed without sharing failure state with the main React tree.
+
+## Compatibility and trust
+
+SDK 2 schema or protocol changes require an intentional application-and-extension migration before release. Package signatures authenticate a key, not a human organization. Users still review the publisher label, public key fingerprint, permissions, network destinations, provenance, version and downgrade status before install. Marketplace discovery, verified real-world publisher identity, automatic updates and dependency resolution are not currently claimed.

@@ -13,6 +13,8 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] }, testIgnore: [/desktop\.spec\.ts/, /mobile\.spec\.ts/] },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] }, testIgnore: [/desktop\.spec\.ts/, /mobile\.spec\.ts/] },
     { name: 'mobile', use: { ...devices['iPhone 13'] }, testMatch: /mobile\.spec\.ts/ },
   ],
   webServer: {

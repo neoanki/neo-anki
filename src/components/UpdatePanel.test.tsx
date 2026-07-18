@@ -11,7 +11,7 @@ describe('UpdatePanel', () => {
     } as unknown as NeoAnkiDesktopBridge
     render(<UpdatePanel />)
     expect(await screen.findByText(/updates are installed manually/i)).toBeVisible()
-    expect(screen.getByText(/releases are intentionally unsigned/i)).toBeVisible()
+    expect(screen.getByText(/preview releases are unsigned/i)).toBeVisible()
     expect(screen.getByRole('link', { name: /view releases/i })).toHaveAttribute('href', 'https://github.com/neoanki/neo-anki/releases')
   })
 })
