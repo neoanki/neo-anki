@@ -55,7 +55,13 @@ const localDateKey = (date: Date) => [date.getFullYear(), String(date.getMonth()
 
 const sha256 = (value: Uint8Array) => createHash('sha256').update(value).digest('hex')
 
-const syncPath = (path: string) => {
+const syncFile = (path: string) => {
+  let descriptor: number | undefined
+  try { descriptor = openSync(path, 'r+'); fsyncSync(descriptor) }
+  finally { if (descriptor !== undefined) closeSync(descriptor) }
+}
+
+const syncDirectory = (path: string) => {
   let descriptor: number | undefined
   try { descriptor = openSync(path, 'r'); fsyncSync(descriptor) }
   finally { if (descriptor !== undefined) closeSync(descriptor) }
@@ -69,16 +75,16 @@ const retainVerifiedArchive = (destination: string, bytes: Uint8Array, expectedD
       if (stored.byteLength === bytes.byteLength && sha256(stored) === expectedDigest) return ''
     } catch { /* Quarantine unreadable rollback data below. */ }
     renameSync(destination, `${destination}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID()}`)
-    try { syncPath(parent) } catch { /* Directory fsync is unavailable on some platforms. */ }
+    try { syncDirectory(parent) } catch { /* Directory fsync is unavailable on some platforms. */ }
   }
 
   const temporary = `${destination}.tmp-${randomUUID()}`
   try {
     writeFileSync(temporary, bytes, { flag: 'wx' })
-    syncPath(temporary)
+    syncFile(temporary)
     if (sha256(readFileSync(temporary)) !== expectedDigest) throw new Error('The retained Anki rollback archive failed verification after writing.')
     renameSync(temporary, destination)
-    try { syncPath(parent) } catch { /* The file itself was durably flushed above. */ }
+    try { syncDirectory(parent) } catch { /* The file itself was durably flushed above. */ }
     return destination
   } catch (error) {
     rmSync(temporary, { force: true })
@@ -738,7 +744,7 @@ export class WorkspaceStore {
     const root = kind === 'source-package' ? this.importArchiveRoot : this.backupRoot
     const destination = join(root, name)
     rmSync(destination, { force: true })
-    try { syncPath(root) } catch { /* Directory fsync is unavailable on some platforms. */ }
+    try { syncDirectory(root) } catch { /* Directory fsync is unavailable on some platforms. */ }
   }
 
   async maybeCreateDailyBackup() {

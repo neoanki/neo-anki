@@ -48,6 +48,7 @@ These defects were not part of the original pre-fix audit. They were found by th
 | CI-002 — Desktop extension journey selected a stale versioned artifact | The journey derives the package ID and version from the built extension manifest, so a clean build and a developer tree select the same artifact. | Cross-platform desktop E2E |
 | SEC-002 — Plain-text rendering could decode nested entities more than once | Named entities are decoded through one combined replacement pass; encoded markup remains encoded after one text conversion. | Card-rendering regression and CodeQL |
 | SEC-003 — Worker lockdown JavaScript was assembled through interpolation | The network/global lockdown prelude is a fixed host-owned bootstrap prepended to the separately verified extension entry. | Desktop extension E2E and CodeQL |
+| DATA-006 — Retained Anki archives used a read-only handle for `fsync` | Archive files are flushed through a writable descriptor, while best-effort directory metadata flushing remains a separate operation. This preserves the rollback guarantee and avoids Windows `EPERM`. | Workspace-store integration and Windows desktop E2E |
 
 ## Release exit gate
 
