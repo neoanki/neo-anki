@@ -15,6 +15,8 @@
   "scripts": {
     "dev": "vite",
     "preview": "vite preview",
+    "workspace:build": "npm run build -w @neo-anki/compatibility-domain && npm run build -w @neo-anki/card-rendering && npm run build -w @neo-anki/sync-protocol && npm run build -w @neo-anki/sync-client && npm run build -w @neo-anki/extension-sdk",
+    "prebuild": "npm run workspace:build",
     "build": "tsc -b && vite build",
     "extension:sdk": "npm run build -w @neo-anki/extension-sdk",
     "domain:check": "npm run check -w @neo-anki/compatibility-domain",
@@ -31,7 +33,7 @@
     "desktop:pack": "npm run build && npm run desktop:prepare && electron-builder --dir",
     "desktop:build": "npm run build && npm run desktop:prepare && electron-builder",
     "test:desktop": "npm run build && npm run extension:example && npm run desktop:prepare && playwright test --config=playwright.desktop.config.ts",
-    "typecheck": "tsc -b && tsc --noEmit -p tsconfig.electron.json && tsc --noEmit -p tsconfig.electron-test.json && npm run check -w @neo-anki/extension-sdk && npm run domain:check && npm run rendering:check && npm run sync-protocol:check && npm run sync-client:check && npm run sync-service:check && npm run mobile:check",
+    "typecheck": "npm run workspace:build && tsc -b && tsc --noEmit -p tsconfig.electron.json && tsc --noEmit -p tsconfig.electron-test.json && npm run check -w @neo-anki/extension-sdk && npm run domain:check && npm run rendering:check && npm run sync-protocol:check && npm run sync-client:check && npm run sync-service:check && npm run mobile:check",
     "lint": "eslint .",
     "test": "vitest run",
     "test:unit": "vitest run",
