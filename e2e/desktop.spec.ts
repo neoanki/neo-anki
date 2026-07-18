@@ -59,7 +59,8 @@ test('desktop app persists the workspace to disk across restarts', async () => {
 
 test('installs, loads, and disables an SDK 2 extension package', async () => {
   const userData = await mkdtemp(join(tmpdir(), 'neo-anki-extension-'))
-  const extensionPackage = join(process.cwd(), 'examples/study-pulse-extension/build/org.neoanki.examples.study-pulse-2.0.0.neoanki-extension')
+  const manifest = JSON.parse(await readFile(join(process.cwd(), 'examples/study-pulse-extension/manifest.json'), 'utf8')) as { id: string; version: string }
+  const extensionPackage = join(process.cwd(), 'examples/study-pulse-extension/build', `${manifest.id}-${manifest.version}.neoanki-extension`)
   try {
     const desktop = await electron.launch({ args: ['.', `--install-extension=${extensionPackage}`], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData } })
     const window = await desktop.firstWindow()
