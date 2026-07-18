@@ -33,7 +33,6 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-          cache: pip
       - run: python3 -m pip install anki==25.9.4
       - run: npm ci
       - run: npm run lint && npm run typecheck && npm run test:coverage && npm run test:timezones && npm run benchmark:planner && npm run license:check && npm run build && npm run extension:check && npm run mobile:export
