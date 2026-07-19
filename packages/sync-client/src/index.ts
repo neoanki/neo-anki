@@ -90,6 +90,11 @@ export interface EncryptedMediaTransport {
 export interface SyncMediaInput { id: string; sha256: string; byteLength: number; bytes: Uint8Array }
 const SYNC_MEDIA_CHUNK_BYTES = 1024 * 1024
 const hex = (bytes: Uint8Array) => [...bytes].map((value) => value.toString(16).padStart(2, '0')).join('')
+const webCryptoBytes = (bytes: Uint8Array): ArrayBuffer => {
+  const copy = new Uint8Array(bytes.byteLength)
+  copy.set(bytes)
+  return copy.buffer
+}
 
 const collectionForKind = Object.fromEntries(entityCollections) as Record<WorkspaceEntityKind, EntityCollectionKey>
 
@@ -128,7 +133,7 @@ export const applySyncConflictResolution = (input: WorkspaceDocumentV4, conflict
 }
 
 export const uploadEncryptedMedia = async (key: CryptoKey, transport: EncryptedMediaTransport, media: SyncMediaInput) => {
-  if (media.bytes.byteLength !== media.byteLength || hex(new Uint8Array(await crypto.subtle.digest('SHA-256', media.bytes))) !== media.sha256) throw new Error(`Media ${media.id} failed its local integrity check before sync.`)
+  if (media.bytes.byteLength !== media.byteLength || hex(new Uint8Array(await crypto.subtle.digest('SHA-256', webCryptoBytes(media.bytes)))) !== media.sha256) throw new Error(`Media ${media.id} failed its local integrity check before sync.`)
   const chunks = Math.ceil(media.byteLength / SYNC_MEDIA_CHUNK_BYTES)
   const identity = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify({ mediaId: media.id, sha256: media.sha256, byteLength: media.byteLength, chunkBytes: SYNC_MEDIA_CHUNK_BYTES }))))
   let binary = ''; for (const byte of identity) binary += String.fromCharCode(byte)

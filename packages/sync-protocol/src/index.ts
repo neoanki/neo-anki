@@ -62,6 +62,11 @@ const bytesToBase64 = (bytes: Uint8Array) => {
   return btoa(binary)
 }
 const base64ToBytes = (value: string) => Uint8Array.from(atob(value), (character) => character.charCodeAt(0))
+const webCryptoBytes = (bytes: Uint8Array): ArrayBuffer => {
+  const copy = new Uint8Array(bytes.byteLength)
+  copy.set(bytes)
+  return copy.buffer
+}
 const additionalData = (header: Omit<EncryptedEntityOperation, 'nonce' | 'ciphertext' | 'signature'>) => new TextEncoder().encode(JSON.stringify(header))
 const operationSigningBytes = (operation: Omit<EncryptedEntityOperation, 'signature'>) => new TextEncoder().encode(JSON.stringify(operation))
 const snapshotAdditionalData = (snapshot: Pick<EncryptedSnapshot, 'protocol' | 'workspaceId' | 'through' | 'sha256'>) => new TextEncoder().encode(JSON.stringify(snapshot))
@@ -162,10 +167,10 @@ export const decryptOperation = async (key: CryptoKey, encrypted: EncryptedEntit
 
 export const encryptSnapshot = async (key: CryptoKey, workspaceId: string, through: Record<string, number>, plaintext: Uint8Array): Promise<EncryptedSnapshot> => {
   assertId(workspaceId, 'Workspace id')
-  const sha256 = bytesToBase64(new Uint8Array(await crypto.subtle.digest('SHA-256', plaintext)))
+  const sha256 = bytesToBase64(new Uint8Array(await crypto.subtle.digest('SHA-256', webCryptoBytes(plaintext))))
   const nonce = crypto.getRandomValues(new Uint8Array(12))
   const header = { protocol: 1 as const, workspaceId, through: Object.fromEntries(Object.entries(through).sort(([a], [b]) => a.localeCompare(b))), sha256 }
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce, additionalData: snapshotAdditionalData(header) }, key, plaintext)
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce, additionalData: snapshotAdditionalData(header) }, key, webCryptoBytes(plaintext))
   return { ...header, nonce: bytesToBase64(nonce), ciphertext: bytesToBase64(new Uint8Array(ciphertext)) }
 }
 
@@ -184,7 +189,7 @@ export const encryptSnapshotChunks = async (key: CryptoKey, workspaceId: string,
   assertId(workspaceId, 'Workspace id')
   if (plaintext.byteLength < 1 || plaintext.byteLength > 512 * 1024 * 1024) throw new Error('Encrypted snapshot plaintext must contain 1 byte–512 MiB.')
   if (!Number.isSafeInteger(chunkBytes) || chunkBytes < 64 * 1024 || chunkBytes > 4 * 1024 * 1024) throw new Error('Encrypted snapshot chunk size must be between 64 KiB and 4 MiB.')
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', plaintext))
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', webCryptoBytes(plaintext)))
   const sha256 = bytesToBase64(digest)
   const sortedThrough = Object.fromEntries(Object.entries(through).sort(([a], [b]) => a.localeCompare(b)))
   const identityDigest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify({ workspaceId, through: sortedThrough, sha256, plaintextBytes: plaintext.byteLength, chunkBytes }))))
@@ -240,7 +245,7 @@ export const encryptMediaChunk = async (key: CryptoKey, mediaId: string, index: 
   assertId(mediaId, 'Media id'); assertActorId(uploadId, 'Media upload id')
   if (!Number.isSafeInteger(index) || index < 0 || plaintext.byteLength > 4 * 1024 * 1024) throw new Error('Encrypted media chunks must be numbered and no larger than 4 MiB.')
   const nonce = crypto.getRandomValues(new Uint8Array(12))
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce, additionalData: mediaAdditionalData(mediaId, uploadId, index, plaintext.byteLength) }, key, plaintext)
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce, additionalData: mediaAdditionalData(mediaId, uploadId, index, plaintext.byteLength) }, key, webCryptoBytes(plaintext))
   return { protocol: 1, mediaId, uploadId, index, nonce: bytesToBase64(nonce), ciphertext: bytesToBase64(new Uint8Array(ciphertext)), plaintextBytes: plaintext.byteLength }
 }
 
