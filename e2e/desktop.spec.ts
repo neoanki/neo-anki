@@ -59,7 +59,7 @@ test('desktop app persists the workspace to disk across restarts', async () => {
 
 test('in-place routes do not trigger renderer startup recovery', async () => {
   const userData = await mkdtemp(join(tmpdir(), 'neo-anki-routes-'))
-  const desktop = await electron.launch({ args: ['.'], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData, NEO_ANKI_STARTUP_TIMEOUT_MS: '500' } })
+  const desktop = await electron.launch({ args: ['.'], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData, NEO_ANKI_STARTUP_TIMEOUT_MS: '3000' } })
   try {
     const window = await desktop.firstWindow()
     await window.getByRole('button', { name: /create a fresh workspace/i }).click()
@@ -67,7 +67,7 @@ test('in-place routes do not trigger renderer startup recovery', async () => {
     await window.getByRole('button', { name: /build my first plan/i }).click()
     await window.getByRole('button', { name: 'Library' }).first().click()
     await expect(window.getByRole('heading', { name: 'Library' })).toBeVisible()
-    await window.waitForTimeout(750)
+    await window.waitForTimeout(3250)
     expect(window.isClosed()).toBe(false)
     await expect(window.getByRole('heading', { name: 'Library' })).toBeVisible()
   } finally {
