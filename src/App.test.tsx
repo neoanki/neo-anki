@@ -64,6 +64,16 @@ describe('application workflows', () => {
     expect(screen.getByRole('button', { name: 'typed' })).toBeInTheDocument()
   })
 
+  it('enables editor save only after the controlled draft has changed', async () => {
+    renderApp()
+    await userEvent.click(screen.getAllByRole('button', { name: 'Library' })[0])
+    await userEvent.click((await screen.findAllByRole('button', { name: /^Edit / }))[0])
+    const save = screen.getByRole('button', { name: 'Save changes' })
+    expect(save).toBeDisabled()
+    await userEvent.type(screen.getByLabelText('Prompt'), ' updated')
+    expect(save).toBeEnabled()
+  })
+
   it('creates a learning goal from Plans', async () => {
     renderApp()
     await userEvent.click(screen.getAllByRole('button', { name: 'Plans' })[0])

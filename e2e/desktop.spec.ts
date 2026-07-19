@@ -191,7 +191,9 @@ test('imported named-field edits and bulk card states survive a desktop restart'
     await row.getByRole('button', { name: /^Edit / }).click()
     await expect(window.getByText('Named fields · Migration Custom')).toBeVisible()
     await window.getByLabel('Hint').fill('Persisted migration hint')
-    await window.getByRole('button', { name: /save changes/i }).click()
+    const saveChanges = window.getByRole('button', { name: /save changes/i })
+    await expect(saveChanges).toBeEnabled()
+    await saveChanges.click()
     await expect(window.getByRole('dialog')).toHaveCount(0)
     await expect.poll(() => window.evaluate(async () => {
       const payload = await window.neoAnkiDesktop!.loadWorkspaceV4ExportPayload()
