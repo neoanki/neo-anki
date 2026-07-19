@@ -1,13 +1,15 @@
 # Neo Anki core and extension boundary
 
-Neo Anki has two deliberately different trust tiers. Code compiled into the application is trusted core code. Installable SDK 2 packages run behind worker/iframe isolation and may use only reviewed, capability-scoped host calls. The UI must not imply that these tiers have identical authority.
+Neo Anki has two deliberately different trust tiers. Code compiled into the application is trusted core code. Installable SDK 2 packages are designed to run behind worker/iframe isolation and may use only reviewed, capability-scoped host calls. The UI must not imply that these tiers have identical authority.
+
+This page describes the intended boundary and implemented checks, not a proof that every lifecycle path is complete. The July 19 audit found that renderer reload and disable/re-enable can leave capability claims unusable until instance ownership and token revocation are repaired.
 
 ## Trusted core and bundled feature modules
 
-The kernel owns the invariants whose failure could corrupt a workspace or make the capture → schedule → review loop unavailable:
+The kernel is intended to own the invariants whose failure could corrupt a workspace or make the capture → schedule → review loop unavailable:
 
-- Workspace v4 entities, validation, migration, transactional persistence, media integrity, backup/restore and interoperable import/export.
-- Scheduling strategies, append-only review/reversal events, exact due eligibility, daily planning and the atomic review transaction.
+- Workspace v4 entities, validation, migration, persistence, media integrity, backup/restore and supported import/export.
+- Scheduling strategies, review/reversal events, due eligibility and daily planning.
 - The Today, Library, Create, Review, migration, sync, recovery and Settings surfaces.
 - Extension package review, signatures, lifecycle recovery, capability issuance, bounded host services and safe mode.
 - Encrypted sync protocol application, conflict presentation and explicit resolution.
@@ -16,26 +18,26 @@ Feature modules under `src/extensions/`—Prompt Types, Image Occlusion, Interop
 
 ## Installable SDK 2 packages
 
-SDK 2 is the only contract for package distribution:
+SDK 2 is the only accepted contract for package distribution:
 
 - Non-UI logic runs in a dedicated module worker. Desktop serves the exact reviewed worker entry through a same-origin gateway with `connect-src 'none'`; a lockdown prelude removes ambient network, storage, nested-worker and realtime browser APIs.
 - UI runs in an iframe with `sandbox="allow-scripts"` and without `allow-same-origin`. Its CSP denies ambient network, forms, base URLs and parent DOM/CSS access.
 - Workers and frames receive minimal DTO projections instead of an entire workspace or application context.
 - All useful effects cross typed message channels. The host rechecks the reviewed permission, extension identity, message size, queue size, timeout, cancellation and operation-specific limits.
-- Content changes use owner-scoped `WorkspacePatchV2` operations with expected revisions. Core validates the complete resulting Workspace v4 graph and commits atomically or rejects the whole patch.
+- Content changes use owner-scoped `WorkspacePatchV2` operations with expected revisions. Core validates the resulting Workspace v4 graph before accepting a patch; broader workspace persistence still has separately documented atomicity gaps.
 - Network requests are HTTPS-only, restricted to reviewed destinations, redirect-revalidated, streamed to a response cap and cancellable.
 - Media is decoded/hashed and created by core. Secret batches are serialized per extension and stored only when the operating-system backend is secure.
 
-SDK v2 packages are byte-reproducible and Ed25519-signed. Installation verifies that the signed digest, embedded publisher key and reviewed manifest agree. A signature proves possession of that key and package integrity; it does not by itself establish a publisher’s legal identity or trustworthiness. Marketplace identity, discovery and automatic update policy remain separate future work.
+SDK v2 packages are byte-reproducible and Ed25519-signed. Installation verifies that the signed digest, embedded publisher key and reviewed manifest agree. A signature proves possession of that key and package integrity; it does not by itself establish a publisher’s legal identity or trustworthiness. Marketplace discovery is implemented separately; real-world identity attestation and automatic updates remain postponed.
 
-## Enforced SDK v2 invariants
+## Implemented SDK v2 checks
 
 - Package paths, counts and compressed/expanded sizes are bounded before install; traversal and manifest/entry mismatches are rejected.
 - Same-digest reinstall is idempotent. Update/downgrade activation uses a recoverable state transition and retains provenance/rollback information during review.
 - Worker startup, messages, queues and contribution execution are bounded. Cancellation propagates to host operations.
 - UI frames cannot share the host origin, DOM, React tree, cookies or storage.
-- A capability token is bound to the enabled extension and exact reviewed permission.
-- Patch ownership, expected revisions, operation count/size and the full workspace invariant set are checked before one atomic commit.
+- A capability token is bound to the enabled extension and exact reviewed permission during a healthy renderer instance. Reload/re-enable continuity remains a known gap.
+- Patch ownership, expected revisions, operation count/size and the current workspace invariant set are checked before acceptance. The invariant set is not yet complete for every graph relationship.
 - Unknown or crashing prompt behavior still falls back to a basic reviewable card; extension failure is recorded without granting broader data access.
 - The startup watchdog opens a package-free safe-mode window if installed code prevents renderer readiness.
 
@@ -43,7 +45,7 @@ See [extension-sdk.md](extension-sdk.md), [extension-authoring.md](extension-aut
 
 ## Still postponed
 
-- Real-world publisher identity attestation, automatic extension updates and dependency resolution. Marketplace discovery verifies GitHub review provenance, pinned release metadata and publisher-key continuity, but does not claim legal identity verification.
+- Real-world publisher identity attestation, automatic extension updates and dependency resolution. Marketplace discovery verifies GitHub review provenance, pinned release metadata and publisher-key continuity, but does not claim legal identity verification. The public catalog's first production listing is NeoAnki TTS 2.0.1.
 - Executing Anki Python add-ons. Unknown add-on metadata may be retained inertly for round-trip safety but is never executed.
 - AI extraction/grading, OCR/PDF pipelines, web clipping and external knowledge connectors.
 - Collaboration, shared-account policy, decorative gamification and third-party scheduler strategies.

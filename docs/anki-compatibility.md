@@ -1,46 +1,64 @@
 # Anki compatibility contract
 
-Neo Anki treats Anki migration as a data-preservation operation, not a content scraper. Compatibility is implemented through the versioned Workspace v4 graph; the simpler Neo study model is a derived projection and is never the durable authority.
+Neo Anki treats Anki migration as a preflighted conversion, not a claim of complete compatibility. The current implementation has useful coverage for pinned fixtures, but it is not yet a general-purpose, lossless Anki round trip. Keep the original package and a separate Neo Anki backup until you have inspected both the migrated collection and an exit export in Anki.
 
-## Supported migration surface
+## Currently exercised surface
 
-Neo Anki preflights `.apkg` as an additive graph import and `.colpkg` as a profile replacement. A commit is refused when the package cannot be decoded safely or when an unsupported transformation has not been accepted explicitly.
+Neo Anki accepts `.apkg` and `.colpkg` files that pass archive, database, size, and semantic checks. The preflight classifies known transformations and warnings before the live workspace changes.
 
-For supported current and legacy packages, Neo Anki preserves:
+The pinned Anki 25.9.4 fixture corpus exercises current and legacy schemas across representative:
 
-- note IDs/GUID source identity, named fields, note types, templates, CSS, template ordinals, cloze ordinals and multiple cards per note;
-- deck hierarchy, card-level decks, presets, tags, marks, flags, suspension, user/sibling bury state and filtered-deck source state;
-- Anki scheduling state, exact due eligibility, native FSRS memory state where present, learning/relearning settings and immutable review history;
-- media bytes, names, MIME type, hashes and source-package mappings;
-- bounded unknown source metadata as inert data for rollback and round-trip export.
+- named fields, note types, templates, CSS, card ordinals, cloze identity, and several prompt variants;
+- decks, presets, tags, flags, suspension/bury state, due data, and review history;
+- media names, bytes, MIME information, and source-package retention;
+- Neo Anki `.apkg`/`.colpkg` export reopened by the pinned Anki oracle.
 
-Unknown metadata is never executed. Anki Python add-ons are not compatible and are not loaded by Neo Anki.
+This is the tested matrix, not a promise that every add-on, template expression, scheduler edge case, unknown row, protobuf field, or future Anki schema is preserved and re-emitted.
 
-## Import guarantees
+## Import behavior
 
-- The archive is incrementally decoded in a cancellable bounded worker. Compressed size, expanded size, entry count, per-file size, compression ratio, database size, total media and execution time are limited and rechecked while entry chunks arrive.
-- Every disposition is reported before commit as preserved, transformed, reset, unsupported or refused. Silent loss is a test and release failure.
-- All IDs are remapped as one graph, then semantic invariants are checked before the live workspace changes.
-- `.apkg` repeat imports use deterministic source identity. `.colpkg` never silently merges into an existing collection.
-- The source package is durably flushed to a verified temporary file and atomically activated; a partial/corrupt prior copy is quarantined and repaired. A separately verified pre-import checkpoint is retained outside rotating daily backups. Settings lists both file types and removes only the exact file the user explicitly confirms after migration and exit-export verification.
+- Import runs in a cancellable worker and enforces compressed, expanded, entry-count, database, media, and execution limits.
+- Known dispositions are reported before commit. A green preflight means the package passed the implemented checks; it is not proof of semantic equivalence with Anki.
+- IDs from an exact package are deterministic. A modified or repacked export of the same Anki collection can receive a different package-derived identity and duplicate existing notes/cards.
+- `.apkg` is additive. The current `.colpkg` replace path swaps the complete Workspace v4 document, so Neo Anki-only settings, goals, views, packs, Trash, and other workspace data may be replaced—not only the active profile.
+- Desktop retains the chosen source package and a pre-import checkpoint for rollback. Retention helps recovery but does not make the conversion lossless.
 
 ## Scheduling continuity
 
-Imported due eligibility remains authoritative until the first compatible transition. Native Anki FSRS memory state is used when available. Other supported histories are replayed through the pinned conversion routine, while the source due instant remains a continuity override. The migration preflight reports projected due workload before commit.
+The importer maps known due, interval, repetition, lapse, and FSRS state into Neo Anki scheduling fields. Source due data is retained where supported. Desktop, browser, and mobile do not yet have a completed differential suite proving identical transitions for every imported learning/relearning state, preset limit, timezone, and rating.
 
-Neo-native reviews use four ratings: Again, Hard, Good and Easy. Learning and relearning cards are never shown before their exact due instant unless the user starts an explicit custom-study session.
+Neo-native reviews use Again, Hard, Good, and Easy. Do not assume that a migrated collection will produce the same future schedule as the source Anki version without comparing it on representative cards.
 
-## Exit safety
+## Export and exit
 
-Neo Anki exports `.apkg` and `.colpkg` with supported content, templates, CSS, media, decks, scheduling state and review history. CI imports the generated package into pinned Anki 25.9.4 and compares graph counts, representative rendering, due state, review history and media hashes. A Neo-native backup remains available separately for complete recovery.
+Neo Anki can export supported content into `.apkg` and `.colpkg`, and CI reopens generated fixtures with pinned Anki 25.9.4. Export rebuilds a known Anki schema; unknown source metadata retained for rollback is not guaranteed to be re-emitted. Orphaned or unsupported records may be omitted or transformed.
 
-## Explicit limitations
+For a cautious migration:
 
-- Anki add-on executable code and add-on-specific workflows are not emulated. Bounded opaque metadata may round-trip, but it has no behavior inside Neo Anki.
-- A template feature that cannot be preserved inertly or rendered safely must be reported or refused; it must not be flattened silently.
-- Compatibility with a future Anki schema is not implied until its fixture and round-trip oracle are added.
-- Public replacement claims remain disabled until signed release artifacts, packaged cross-platform journeys, multi-device client runtime tests and the separate UX-superiority study pass.
+1. Keep the original Anki package outside Neo Anki.
+2. Export a Neo Anki backup before and after import.
+3. Inspect card variants, templates, media, due workload, flags/suspension, and representative review histories.
+4. Export back to Anki and open the result with the Anki version you depend on.
+5. Remove retained rollback files only after those checks pass.
 
-## Evidence
+## Resource limits
 
-The generated corpus and malformed-package fixtures live in `test-fixtures/anki/`. Import fidelity, scheduling, rendering, rollback-file durability and round-trip behavior are exercised by `src/lib/anki-corpus.test.ts`, `src/lib/anki.test.ts`, `electron/workspace-store.test.ts`, `src/lib/card-rendering.test.ts`, and `scripts/anki-oracle.py`. The current claim gate is tracked in `docs/claim-evidence.md`.
+The archive decoder applies hard limits, but the current importer can still materialize the compressed file, expanded entries, database rows, media data URLs, and Workspace v4 entities in memory. Inputs within the nominal 512 MB compressed / 2 GB expanded ceilings can exceed practical memory. ZIP64 is unsupported, and very large entry lists or opaque records can exceed Workspace v4 envelope limits.
+
+Treat large or mature collections as an unsupported stress case until bounded-memory benchmarks and rejection tests cover their actual shape.
+
+## Explicitly unsupported or unproven
+
+- Executing Anki Python add-ons or reproducing add-on workflows.
+- Fidelity for arbitrary custom templates, unknown normalized/protobuf data, or future Anki schemas.
+- Update-in-place behavior for modified, schedule-changed, media-changed, or repacked repeat imports.
+- Lossless `.colpkg` profile replacement that preserves unrelated Neo Anki workspace state.
+- Bounded-memory import at the published archive ceilings.
+- General scheduling parity across Anki versions and all Neo Anki clients.
+- A drop-in replacement or UX-superiority claim.
+
+## Evidence and status
+
+Fixtures and malformed packages live in `test-fixtures/anki/`. Relevant checks include `src/lib/anki-corpus.test.ts`, `src/lib/anki.test.ts`, `electron/workspace-store.test.ts`, `src/lib/card-rendering.test.ts`, and `scripts/anki-oracle.py`. CI installs pinned Anki 25.9.4; local runs can skip oracle work when Anki is unavailable.
+
+Known gaps and their release gates are tracked in `docs/claim-evidence.md` and `docs/audits/neo-anki-comprehensive-audit-2026-07-19.md`.
