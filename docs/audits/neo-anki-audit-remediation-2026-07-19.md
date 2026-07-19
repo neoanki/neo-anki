@@ -49,6 +49,7 @@ These defects were not part of the original pre-fix audit. They were found by th
 | SEC-002 — Plain-text rendering could decode nested entities more than once | Named entities are decoded through one combined replacement pass; encoded markup remains encoded after one text conversion. | Card-rendering regression and CodeQL |
 | SEC-003 — Worker lockdown JavaScript was assembled through interpolation | The network/global lockdown prelude is a fixed host-owned bootstrap prepended to the separately verified extension entry. | Desktop extension E2E and CodeQL |
 | DATA-006 — Retained Anki archives used a read-only handle for `fsync` | Archive files are flushed through a writable descriptor, while best-effort directory metadata flushing remains a separate operation. This preserves the rollback guarantee and avoids Windows `EPERM`. | Workspace-store integration and Windows desktop E2E |
+| UX-003 — Hash navigation rearmed the renderer startup watchdog | In-place main-frame navigation no longer resets renderer readiness; a routed window remains alive beyond a shortened watchdog threshold. | Desktop route-watchdog regression |
 
 ## Release exit gate
 

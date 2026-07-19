@@ -57,6 +57,25 @@ test('desktop app persists the workspace to disk across restarts', async () => {
   }
 })
 
+test('in-place routes do not trigger renderer startup recovery', async () => {
+  const userData = await mkdtemp(join(tmpdir(), 'neo-anki-routes-'))
+  const desktop = await electron.launch({ args: ['.'], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData, NEO_ANKI_STARTUP_TIMEOUT_MS: '500' } })
+  try {
+    const window = await desktop.firstWindow()
+    await window.getByRole('button', { name: /create a fresh workspace/i }).click()
+    await window.getByRole('button', { name: /30 minutes/i }).click()
+    await window.getByRole('button', { name: /build my first plan/i }).click()
+    await window.getByRole('button', { name: 'Library' }).first().click()
+    await expect(window.getByRole('heading', { name: 'Library' })).toBeVisible()
+    await window.waitForTimeout(750)
+    expect(window.isClosed()).toBe(false)
+    await expect(window.getByRole('heading', { name: 'Library' })).toBeVisible()
+  } finally {
+    await desktop.close().catch(() => undefined)
+    await rm(userData, { recursive: true, force: true })
+  }
+})
+
 test('installs, loads, and disables an SDK 2 extension package', async () => {
   const userData = await mkdtemp(join(tmpdir(), 'neo-anki-extension-'))
   const manifest = JSON.parse(await readFile(join(process.cwd(), 'examples/study-pulse-extension/manifest.json'), 'utf8')) as { id: string; version: string }

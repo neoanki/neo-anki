@@ -438,7 +438,7 @@ const createWindow = async (query = '') => {
   })
   window.once('ready-to-show', () => window.show())
   window.on('closed', () => { if (mainWindow === window) mainWindow = null })
-  window.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame) { rendererReady = false; armRendererStartupWatchdog() } })
+  window.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => { if (isMainFrame && !isInPlace) { rendererReady = false; armRendererStartupWatchdog() } })
   window.webContents.on('did-finish-load', armRendererStartupWatchdog)
 
   if (devServerUrl) await window.loadURL(`${devServerUrl}${query}`)
