@@ -9,6 +9,13 @@ updates:
         dependency-type: production
       development:
         dependency-type: development
+    ignore:
+      # These majors currently exceed peer ranges in the lint toolchain.
+      # Revisit them together once typescript-eslint and jsx-a11y support them.
+      - dependency-name: eslint
+        update-types: ['version-update:semver-major']
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
     open-pull-requests-limit: 10
   - package-ecosystem: github-actions
     directory: /
