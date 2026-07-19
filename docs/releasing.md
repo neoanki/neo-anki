@@ -4,17 +4,17 @@ Release artifacts are built only by `.github/workflows/release.yml`. Local packa
 
 ## Trust model
 
-Releases require no paid certificate and no release secret. They deliberately make the platform trust state visible:
+Tagged desktop releases require platform signing credentials. The release workflow fails closed when they are missing:
 
-- macOS DMG and ZIP builds are unsigned and unnotarized. CI confirms that Gatekeeper does not treat them as Developer ID software, then launches the packaged app directly for a smoke test. Users follow the included Open Anyway instructions once per installed release.
-- Windows EXE installers are unsigned. CI confirms the Authenticode state is `NotSigned`, then launches the packaged executable. Users follow the included SmartScreen instructions.
+- macOS DMG and ZIP releases require Developer ID signing, hardened runtime, notarization, stapling, Gatekeeper assessment, and a packaged launch smoke test. Missing credentials fail the release job.
+- Windows EXE releases require a valid Authenticode signature and a packaged launch smoke test. Missing credentials fail the release job.
 - Linux AppImages are extracted and structurally verified before a packaged-app smoke test.
 
 Every platform artifact is accompanied by platform-specific installation guidance, deterministic SHA-256 checksums, a CycloneDX SBOM, and GitHub build-provenance attestations. Only top-level distributable files are uploaded; unpacked staging directories and automatic-update metadata are excluded.
 
 Release filenames are normalized before hashing. After the draft is uploaded, CI downloads all expected assets again and fails unless every checksum, SBOM, and primary artifact attestation still verifies under its final GitHub filename.
 
-Automatic application updates are disabled. An unsigned application must not silently install unsigned remote code. Users download each release manually and verify its checksum or attestation.
+Automatic application updates remain disabled until signed update metadata and rollback validation ship. Users download releases manually and can verify checksums and provenance attestations.
 
 ## Release sequence
 
@@ -22,8 +22,10 @@ Automatic application updates are disabled. An unsigned application must not sil
 2. Create and push a signed `vX.Y.Z` tag matching `package.json`.
 3. Wait for the release workflow to finish on macOS universal, Windows x64, and Linux x64.
 4. Inspect the release notes, checksums, CycloneDX SBOMs, build attestations, installers, and included installation guidance in the generated draft GitHub Release.
-5. Install each artifact on a clean machine using the same documented override users will see. Verify onboarding, a review, restart persistence, backup export, and backup restore.
+5. Install each artifact on a clean machine without bypassing platform trust. Verify onboarding, a review, restart persistence, backup export, and backup restore.
 6. Verify an artifact with `gh attestation verify <artifact> --repo neoanki/neo-anki`, then publish the draft.
+
+Native app-store releases are separate from the desktop GitHub release. Complete `docs/mobile-release-checklist.md` on physical devices before publishing either store binary; an automated Expo export alone is not approval.
 
 ## Rollback
 

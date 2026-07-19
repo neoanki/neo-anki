@@ -1,0 +1,18 @@
+{
+  "generator": "scripts/anki-oracle.py",
+  "ankiVersion": "25.9.4",
+  "files": {
+    "current-stable.colpkg": {
+      "sha256": "f39edbc70f2c347fb87f32b7d41499bb3792463cd2e9c3d497707eb28d7497f7",
+      "bytes": 58025
+    },
+    "current-stable.apkg": {
+      "sha256": "04702706182b7debb4ada6d579a8e876aa056fa755ddfa9b29de1ac7f6078222",
+      "bytes": 58007
+    },
+    "legacy-schema.apkg": {
+      "sha256": "2cec9fb0bba27e65b7526bf38b25be1e5cce805ffc318f37cf4e67af07afa20e",
+      "bytes": 62867
+    }
+  }
+}

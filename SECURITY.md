@@ -4,7 +4,7 @@
 
 Neo Anki is pre-1.0. Security fixes are applied to the latest release and the `main` branch.
 
-Desktop releases are intentionally unsigned and updated manually. Verify downloaded artifacts against the release's SHA-256 file or GitHub provenance attestation. Neo Anki does not download or install application updates.
+Local developer builds are unsigned. Tagged desktop releases require platform signing and are updated manually; verify downloaded artifacts against the release's SHA-256 file or GitHub provenance attestation. Neo Anki does not download or install application updates.
 
 ## Reporting a vulnerability
 
@@ -16,4 +16,4 @@ We aim to acknowledge a report within three business days, provide an initial as
 
 The Electron main process, preload bridge, persistence and backup formats, importers, release distribution and provenance, extension package loader, and SDK capability boundary are all in scope.
 
-Locally installed SDK v1 extensions are an explicit full-trust code boundary. Installing a malicious extension is not itself a sandbox escape; bypassing the install review, package validation, publisher warning, safe-mode recovery, or the renderer’s Electron/OS sandbox is in scope. Contribution permission declarations restrict registry activation but are not advertised as isolation from deliberately malicious package code.
+Every locally installed extension must use schema/SDK 2. Non-UI code runs in a bounded worker and UI in an opaque-origin sandboxed iframe; bypassing package/signature validation, capability checks, worker/iframe containment, patch validation, safe-mode recovery, or the renderer’s Electron/OS sandbox is in scope. Bundled feature modules are trusted application code, not installable extensions.

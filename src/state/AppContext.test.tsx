@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { AppProvider, useApp } from './AppContext'
+import { createSeedData } from '../data/seed'
 
 const SafetyProbe = () => {
   const { data, reviewCard, undoLastReview, deleteItem, restoreItem } = useApp()
@@ -17,23 +18,111 @@ const SafetyProbe = () => {
   </div>
 }
 
+const PedagogyProbe = () => {
+  const { data, reviewCard, undoLastReview, setLearningSafeguards } = useApp()
+  const siblingItem = data.items.find((item) => data.cards.filter((card) => card.itemId === item.id).length > 1)!
+  const cards = data.cards.filter((card) => card.itemId === siblingItem.id)
+  return <div>
+    <output aria-label="safeguards">{`${cards[0].leech === true}:${cards[0].suspended}:${cards.slice(1).filter((card) => card.buriedUntil).length}`}</output>
+    <button onClick={() => setLearningSafeguards({ leechThreshold: 1, leechAction: 'flag', burySiblings: true })}>Configure</button>
+    <button onClick={() => reviewCard(cards[0].id, 1, 10)}>Lapse</button>
+    <button onClick={undoLastReview}>Undo lapse</button>
+  </div>
+}
+
+const SchedulerProbe = () => {
+  const { data, reviewCard, undoLastReview } = useApp()
+  const card = data.cards[0]
+  return <div>
+    <output aria-label="scheduler">{card.scheduling?.strategy || 'none'}</output>
+    <button onClick={() => reviewCard(card.id, 3, 8)}>Review imported card</button>
+    <button onClick={undoLastReview}>Undo imported review</button>
+  </div>
+}
+
+const LibraryStateProbe = () => {
+  const { data, setCardsBuried, setCardsFlag } = useApp()
+  const card = data.cards[0]
+  return <div>
+    <output aria-label="library card state">{`${card.flags || 0}:${card.buriedBy || 'none'}:${Boolean(card.buriedUntil)}`}</output>
+    <button onClick={() => { setCardsFlag([card.id], 4); setCardsBuried([card.id], true) }}>Flag and bury</button>
+    <button onClick={() => setCardsBuried([card.id], false)}>Unbury</button>
+  </div>
+}
+
+const CustomStudyProbe = () => {
+  const { data, activeSession, startCustomSession, reviewCard } = useApp()
+  const card = data.cards[0]
+  return <div>
+    <output aria-label="custom due">{card.fsrs.due}</output>
+    <output aria-label="custom reviews">{data.reviews.length}</output>
+    <output aria-label="custom mode">{activeSession?.request.reschedule === false ? 'preview' : 'normal'}</output>
+    <button onClick={() => startCustomSession([card.id], false)}>Start preview</button>
+    <button onClick={() => reviewCard(card.id, 3, 8)}>Grade preview</button>
+  </div>
+}
+
 describe('workspace safety actions', () => {
+  beforeEach(() => localStorage.clear())
   it('restores exact scheduling after review undo and preserves trashed content', async () => {
     render(<AppProvider><SafetyProbe /></AppProvider>)
-    const initialCounts = screen.getByLabelText('counts').textContent
     const initialDue = screen.getByLabelText('due').textContent
 
     await userEvent.click(screen.getByRole('button', { name: 'Review' }))
     expect(screen.getByLabelText('counts')).toHaveTextContent(/:1:0$/)
     expect(screen.getByLabelText('due').textContent).not.toBe(initialDue)
     await userEvent.click(screen.getByRole('button', { name: 'Undo review' }))
-    expect(screen.getByLabelText('counts')).toHaveTextContent(initialCounts!)
+    expect(screen.getByLabelText('counts')).toHaveTextContent(/:2:0$/)
     expect(screen.getByLabelText('due')).toHaveTextContent(initialDue!)
 
     await userEvent.click(screen.getByRole('button', { name: 'Trash' }))
-    expect(screen.getByLabelText('counts')).toHaveTextContent(/:0:1$/)
+    expect(screen.getByLabelText('counts')).toHaveTextContent(/:2:1$/)
     await userEvent.click(screen.getByRole('button', { name: 'Restore' }))
-    expect(screen.getByLabelText('counts')).toHaveTextContent(initialCounts!)
+    expect(screen.getByLabelText('counts')).toHaveTextContent(/:2:0$/)
     expect(screen.getByLabelText('due')).toHaveTextContent(initialDue!)
+  })
+
+  it('buries siblings, flags leeches without forced suspension, and reverses both on undo', async () => {
+    render(<AppProvider><PedagogyProbe /></AppProvider>)
+    await userEvent.click(screen.getByRole('button', { name: 'Configure' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Lapse' }))
+    expect(screen.getByLabelText('safeguards')).toHaveTextContent('true:false:1')
+    await userEvent.click(screen.getByRole('button', { name: 'Undo lapse' }))
+    expect(screen.getByLabelText('safeguards')).toHaveTextContent('false:false:0')
+  })
+
+  it('converts imported scheduling explicitly on review and restores it on undo', async () => {
+    const source = createSeedData()
+    source.cards[0].scheduling = {
+      strategy: 'anki', queue: 'review', due: 100, dueAt: source.cards[0].fsrs.due,
+      intervalDays: 10, easeFactor: 2500, repetitions: 4, lapses: 1,
+      remainingSteps: 0, mod: 1_700_000_000, stability: 12, difficulty: 4.5,
+      desiredRetention: .9, lastReviewAt: source.cards[0].fsrs.last_review,
+    }
+    localStorage.setItem('neo-anki:data:v1', JSON.stringify(source))
+    render(<AppProvider><SchedulerProbe /></AppProvider>)
+    expect(screen.getByLabelText('scheduler')).toHaveTextContent('anki')
+    await userEvent.click(screen.getByRole('button', { name: 'Review imported card' }))
+    expect(screen.getByLabelText('scheduler')).toHaveTextContent('neo-fsrs')
+    await userEvent.click(screen.getByRole('button', { name: 'Undo imported review' }))
+    expect(screen.getByLabelText('scheduler')).toHaveTextContent('anki')
+  })
+
+  it('applies explicit user-bury and flag state through Library actions', async () => {
+    render(<AppProvider><LibraryStateProbe /></AppProvider>)
+    await userEvent.click(screen.getByRole('button', { name: 'Flag and bury' }))
+    expect(screen.getByLabelText('library card state')).toHaveTextContent('4:user:true')
+    await userEvent.click(screen.getByRole('button', { name: 'Unbury' }))
+    expect(screen.getByLabelText('library card state')).toHaveTextContent('4:none:false')
+  })
+
+  it('records custom preview practice without changing scheduling', async () => {
+    render(<AppProvider><CustomStudyProbe /></AppProvider>)
+    const before = screen.getByLabelText('custom due').textContent
+    await userEvent.click(screen.getByRole('button', { name: 'Start preview' }))
+    expect(screen.getByLabelText('custom mode')).toHaveTextContent('preview')
+    await userEvent.click(screen.getByRole('button', { name: 'Grade preview' }))
+    expect(screen.getByLabelText('custom due')).toHaveTextContent(before!)
+    expect(screen.getByLabelText('custom reviews')).toHaveTextContent('1')
   })
 })

@@ -17,7 +17,7 @@ export const UpdatePanel = () => {
   return <div className="setting-block update-panel">
     <div className="update-heading"><span><PackageCheck size={18}/><strong>Current version</strong></span><code>v{info.currentVersion}</code></div>
     <p className="release-safety"><ShieldCheck size={16}/> Updates are installed manually.</p>
-    <p>Neo Anki releases are intentionally unsigned. Download new versions from GitHub, follow your operating system’s security prompt, and verify the checksum or build attestation before installing.</p>
+    <p>Current Neo Anki preview releases are unsigned and are not ready for a mainstream replacement claim. Download only from GitHub, follow your operating system’s security prompt, and verify the checksum and build attestation.</p>
     <div className="button-row">
       <a className="secondary-button" href={info.releasesUrl} target="_blank" rel="noreferrer">View releases <ExternalLink size={16}/></a>
     </div>

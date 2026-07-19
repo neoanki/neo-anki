@@ -1,1 +1,1 @@
-export * from '../packages/extension-sdk/src/model.js'
+export * from './model.js'

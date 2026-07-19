@@ -1,15 +1,15 @@
 import type { PackManifest, PackPatch } from '../../types'
 import { applyPackPatch, installPack, resolvePackConflict } from './service'
-import type { NeoAnkiExtension } from '../sdk'
+import type { NeoAnkiCoreModule } from '../core-module'
 import { PacksPanel } from './PacksPanel'
 
-export const sharedPacksExtension: NeoAnkiExtension = {
+export const sharedPacksExtension: NeoAnkiCoreModule = {
   manifest: {
     id: 'neo-anki.shared-packs',
     name: 'Shared Packs',
-    version: '1.0.0',
-    sdkVersion: 1,
-    publisher: 'Neo Anki contributors',
+    version: '1.1.0',
+    runtime: 'core',
+    publisher: 'Neo Anki',
     permissions: ['content:transactions', 'ui:workspace-panels'],
   },
   commands: [

@@ -1,6 +1,6 @@
 import { Image, Plus, Trash2, Upload } from 'lucide-react'
 import { useState } from 'react'
-import type { CreationPanelProps } from '../sdk'
+import type { CreationPanelProps } from '../core-module'
 import { fileToAsset } from '../../lib/media'
 import { rectFromPoints, rectStyle } from './geometry'
 

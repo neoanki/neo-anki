@@ -6,6 +6,7 @@ import { formatDuration } from '../lib/date'
 import { Brand } from './Brand'
 import { SettingsPanel } from './SettingsPanel'
 import { extensionRuntime } from '../extensions/runtime'
+import { extensionUiContributionsV2 } from '../extensions/v2/registry'
 
 const coreLinks: { route: Route; label: string; icon: typeof Clock3 }[] = [
   { route: 'today', label: 'Today', icon: Clock3 },
@@ -13,14 +14,18 @@ const coreLinks: { route: Route; label: string; icon: typeof Clock3 }[] = [
   { route: 'plans', label: 'Plans', icon: Flag },
 ]
 export const AppShell = ({ children }: { children: ReactNode }) => {
-  const { route, navigate, plan } = useApp()
+  const { route, navigate, plan, persistenceError, persistenceState, retryPersistence } = useApp()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const hiddenNav = route === 'review'
-  const extensionLinks = useMemo(() => extensionRuntime.pages().map((page) => ({ route: page.route, label: page.label, icon: Puzzle })), [])
+  const extensionLinks = useMemo(() => [...extensionRuntime.pages().map((page) => ({ route: page.route, label: page.label, icon: Puzzle })), ...extensionUiContributionsV2('page').map((page) => ({ route: page.route, label: page.label, icon: Puzzle }))], [])
   const links = useMemo(() => [...coreLinks, ...extensionLinks], [extensionLinks])
   const bottomLinks = links.length > 5 ? links.slice(0, 4) : links
   const overflowLinks = links.length > 5 ? links.slice(4) : []
   const routeTitle = ({ today: 'Today', library: 'Library', create: 'New knowledge', plans: 'Plans & sharing', ...Object.fromEntries(extensionLinks.map((link) => [link.route, link.label])) } as Partial<Record<Route, string>>)[route]
+
+  useEffect(() => {
+    if (!['today', 'library', 'create', 'plans', 'review'].includes(route) && !extensionLinks.some((link) => link.route === route)) navigate('today')
+  }, [extensionLinks, navigate, route])
 
   useEffect(() => window.neoAnkiDesktop?.onNavigate((destination) => {
     if (destination === 'settings') setSettingsOpen(true)
@@ -58,6 +63,10 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
   return (
     <div className={hiddenNav ? 'app-shell review-mode' : 'app-shell'}>
       <a className="skip-link" href="#main-content">Skip to content</a>
+      {persistenceState !== 'saved' && <div className={`persistence-status ${persistenceState}`} role={persistenceState === 'failed' ? 'alert' : 'status'} aria-live="polite">
+        {persistenceState === 'saving' && <span>Saving changes…</span>}
+        {persistenceState === 'failed' && <><span><strong>Changes are not saved.</strong> {persistenceError}</span><button type="button" onClick={() => void retryPersistence()}>Retry save</button></>}
+      </div>}
       {!hiddenNav && (
         <aside className="sidebar">
           <Brand />

@@ -1,6 +1,6 @@
 import { State } from 'ts-fsrs'
 import type { DailyPlan, KnowledgeItem, PlannedCard, PracticeCard, RecoveryStrategy, ReviewEvent, SessionBlock, SessionRequest, StudySession, UserSettings } from '../types'
-import type { PlanningSignal, QueuePolicyCandidate } from '../extensions/sdk'
+import type { PlanningSignal, QueuePolicyCandidate } from '../extensions/core-module'
 import { addDays, dayKey, endOfDay, startOfDay } from './date'
 
 const DEFAULT_REVIEW_SECONDS = 14
@@ -11,7 +11,7 @@ const FUTURE_NEW_COST = [0, 34, 22, 15, 11, 8, 7]
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
 export const averageReviewSeconds = (reviews: ReviewEvent[]) => {
-  const recent = reviews.slice(-100).filter((review) => review.durationSeconds >= 2 && review.durationSeconds <= 120)
+  const recent = [...reviews].filter((review) => review.kind === 'review' || !review.kind).sort((left, right) => Date.parse(left.reviewedAt) - Date.parse(right.reviewedAt) || left.id.localeCompare(right.id)).slice(-100).filter((review) => review.durationSeconds >= 2 && review.durationSeconds <= 120)
   if (!recent.length) return DEFAULT_REVIEW_SECONDS
   const weighted = recent.reduce((sum, review, index) => sum + review.durationSeconds * (index + 1), 0)
   const weights = recent.reduce((sum, _, index) => sum + index + 1, 0)
@@ -23,9 +23,8 @@ export interface PlannerExtensionHooks {
   scoreQueuePolicy?: (strategy: RecoveryStrategy, candidate: QueuePolicyCandidate) => number | null
 }
 
-const priority = (card: PracticeCard, now: Date, strategy: RecoveryStrategy, item?: KnowledgeItem, hooks: PlannerExtensionHooks = {}) => {
+const priority = (card: PracticeCard, now: Date, strategy: RecoveryStrategy, extensionBoost: number, hooks: PlannerExtensionHooks = {}) => {
   const overdueDays = Math.max(0, (now.getTime() - new Date(card.fsrs.due).getTime()) / 86_400_000)
-  const extensionBoost = item ? (hooks.signalsFor?.(item, now) || []).reduce((highest, signal) => Math.max(highest, signal.score), 0) : 0
   const extensionScore = strategy === 'risk' ? null : hooks.scoreQueuePolicy?.(strategy, { card, overdueDays, extensionBoost })
   if (extensionScore != null) return extensionScore
   return overdueDays / Math.max(0.25, card.fsrs.stability) + card.fsrs.lapses * 0.16 + 1 / Math.max(1, card.fsrs.stability) + extensionBoost
@@ -43,33 +42,60 @@ export const buildDailyPlan = (
   const todayStart = startOfDay(now).getTime()
   const todayEnd = endOfDay(now).getTime()
   const spentSeconds = reviews
-    .filter((review) => {
+    .filter((review) => (review.kind === 'review' || !review.kind) && (() => {
       const reviewedAt = new Date(review.reviewedAt).getTime()
       return reviewedAt >= todayStart && reviewedAt <= todayEnd
-    })
-    .reduce((sum, review) => sum + review.durationSeconds, 0)
+    })())
+    .reduce((sum, review) => sum + clamp(review.durationSeconds, 0, 120), 0)
   const remainingSeconds = Math.max(0, budgetSeconds - spentSeconds)
   const avgSeconds = averageReviewSeconds(reviews)
-  const active = cards.filter((card) => !card.suspended)
+  const active = cards.filter((card) => !card.suspended && (!card.buriedUntil || new Date(card.buriedUntil) <= now))
+  const cardById = new Map(cards.map((card) => [card.id, card]))
+  const studiedByPreset = new Map<string, { new: number; review: number }>()
+  for (const review of reviews) {
+    if ((review.kind && review.kind !== 'review') || new Date(review.reviewedAt).getTime() < todayStart || new Date(review.reviewedAt).getTime() > todayEnd) continue
+    const reviewedCard = cardById.get(review.cardId)
+    if (!reviewedCard?.presetId) continue
+    const count = studiedByPreset.get(reviewedCard.presetId) || { new: 0, review: 0 }
+    const queue = review.previousScheduling?.queue || reviewedCard.scheduling?.queue
+    if (queue === 'new') count.new += 1
+    else if (queue === 'review') count.review += 1
+    studiedByPreset.set(reviewedCard.presetId, count)
+  }
+  const plannedByPreset = new Map<string, { new: number; review: number }>()
+  const withinDailyLimit = (card: PracticeCard, kind: 'new' | 'review') => {
+    if (!card.presetId || !card.schedulerOptions || card.scheduling?.queue === 'learn' || card.scheduling?.queue === 'relearn') return true
+    const studied = studiedByPreset.get(card.presetId) || { new: 0, review: 0 }
+    const planned = plannedByPreset.get(card.presetId) || { new: 0, review: 0 }
+    const limit = kind === 'new' ? card.schedulerOptions.newCardsPerDay : card.schedulerOptions.reviewsPerDay
+    if (studied[kind] + planned[kind] >= limit) return false
+    planned[kind] += 1
+    plannedByPreset.set(card.presetId, planned)
+    return true
+  }
   const itemMap = new Map(items.map((item) => [item.id, item]))
+  const signalSnapshot = new Map(items.map((item) => [item.id, (hooks.signalsFor?.(item, now) || []).filter((signal) => Boolean(signal.id?.trim()) && Boolean(signal.label?.trim()) && Number.isFinite(signal.score))]))
+  const signalBoost = (itemId: string) => (signalSnapshot.get(itemId) || []).reduce((highest, signal) => Math.max(highest, signal.score), 0)
   const due = active
-    .filter((card) => card.fsrs.state !== State.New && new Date(card.fsrs.due) <= endOfDay(now))
-    .sort((a, b) => priority(b, now, settings.recoveryStrategy, itemMap.get(b.itemId), hooks) - priority(a, now, settings.recoveryStrategy, itemMap.get(a.itemId), hooks))
+    .filter((card) => card.fsrs.state !== State.New && new Date(card.fsrs.due) <= now)
+    .sort((a, b) => priority(b, now, settings.recoveryStrategy, signalBoost(b.itemId), hooks) - priority(a, now, settings.recoveryStrategy, signalBoost(a.itemId), hooks))
+    .filter((card) => withinDailyLimit(card, 'review'))
   const fresh = active
     .filter((card) => card.fsrs.state === State.New)
     .sort((a, b) => {
       const itemA = itemMap.get(a.itemId)
       const itemB = itemMap.get(b.itemId)
-      const urgencyA = itemA ? (hooks.signalsFor?.(itemA, now) || []).reduce((value, signal) => Math.max(value, signal.score), 0) : 0
-      const urgencyB = itemB ? (hooks.signalsFor?.(itemB, now) || []).reduce((value, signal) => Math.max(value, signal.score), 0) : 0
+      const urgencyA = itemA ? signalBoost(itemA.id) : 0
+      const urgencyB = itemB ? signalBoost(itemB.id) : 0
       return urgencyB - urgencyA || new Date(a.fsrs.due).getTime() - new Date(b.fsrs.due).getTime()
     })
+    .filter((card) => withinDailyLimit(card, 'new'))
 
   let used = 0
   const plannedDue: PracticeCard[] = []
   for (const card of due) {
     const cost = clamp(card.estimatedSeconds || avgSeconds, 7, 45)
-    if (used + cost > remainingSeconds) break
+    if (used + cost > remainingSeconds) continue
     plannedDue.push(card)
     used += cost
   }
@@ -100,7 +126,7 @@ export const buildDailyPlan = (
   used += newSeconds
   const toPlanned = (card: PracticeCard, reason: 'due' | 'new', estimatedSeconds: number) => {
     const item = itemMap.get(card.itemId)
-    return { card, reason, estimatedSeconds, signalIds: item ? (hooks.signalsFor?.(item, now) || []).map((signal) => signal.id) : [] }
+    return { card, reason, estimatedSeconds, signalIds: item ? (signalSnapshot.get(item.id) || []).map((signal) => signal.id) : [] }
   }
   const queue = [
     ...plannedDue.map((card) => toPlanned(card, 'due', clamp(card.estimatedSeconds || avgSeconds, 7, 45))),
@@ -108,7 +134,7 @@ export const buildDailyPlan = (
   ]
 
   const signals = new Map<string, string>()
-  items.forEach((item) => (hooks.signalsFor?.(item, now) || []).forEach((signal) => signals.set(signal.id, signal.label)))
+  items.forEach((item) => (signalSnapshot.get(item.id) || []).forEach((signal) => signals.set(signal.id, signal.label)))
   const signalBreakdown = [...signals].map(([signalId, name]) => ({ signalId, name, count: queue.filter((entry) => entry.signalIds.includes(signalId)).length })).filter((entry) => entry.count > 0)
 
   const forecast = baseForecast.map((seconds, index) => {
@@ -199,9 +225,9 @@ export const buildStudySession = (
     const targetSeconds = containsNew ? Math.max(targetReviewBlock, 240) : targetReviewBlock
 
     while (source.length && blockSeconds < targetSeconds) {
-      const next = source[0]
-      if (plannedSeconds + next.estimatedSeconds > budgetSeconds) break
-      source.shift()
+      const nextIndex = source.findIndex((candidate) => plannedSeconds + candidate.estimatedSeconds <= budgetSeconds)
+      if (nextIndex < 0) break
+      const [next] = source.splice(nextIndex, 1)
       blockCards.push({ ...next, blockId, blockIndex, contextKey: context })
       blockSeconds += next.estimatedSeconds
       plannedSeconds += next.estimatedSeconds
@@ -220,4 +246,22 @@ export const buildStudySession = (
     blocks,
     omitted: Math.max(0, eligible.length - queue.length),
   }
+}
+
+export const buildCustomStudySession = (cards: PracticeCard[], items: KnowledgeItem[], reschedule: boolean): StudySession => {
+  const queue = cards.filter((card) => !card.suspended).map((card): PlannedCard => ({
+    card,
+    reason: card.fsrs.state === State.New ? 'new' : 'due',
+    estimatedSeconds: clamp(card.estimatedSeconds || 14, 7, 45),
+    signalIds: [],
+  }))
+  const seconds = Math.max(60, queue.reduce((sum, entry) => sum + entry.estimatedSeconds, 0))
+  const plan: DailyPlan = {
+    budgetSeconds: seconds, spentSeconds: 0, remainingSeconds: seconds, reviewSeconds: seconds,
+    newSeconds: 0, bufferSeconds: 0, dueTotal: queue.length, duePlanned: queue.length,
+    newPlanned: queue.filter((entry) => entry.reason === 'new').length, deferred: 0,
+    averageReviewSeconds: queue.length ? seconds / queue.length : 14, queue, forecast: [], signalBreakdown: [],
+    status: 'comfortable', recoveryStrategy: 'protect-reviews',
+  }
+  return buildStudySession(plan, items, { minutes: Math.ceil(seconds / 60), intent: 'balanced', kind: 'custom', reschedule })
 }

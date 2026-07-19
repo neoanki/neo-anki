@@ -3,7 +3,7 @@ import { State } from 'ts-fsrs'
 import { createSeedData } from '../data/seed'
 import type { KnowledgeItem, PracticeCard, ReviewEvent, UserSettings } from '../types'
 import { makeEmptyFSRSCard } from './fsrs'
-import { buildDailyPlan, buildStudySession } from './planner'
+import { buildCustomStudySession, buildDailyPlan, buildStudySession } from './planner'
 import { addDays, dayKey } from './date'
 
 const now = new Date('2026-07-16T10:00:00.000Z')
@@ -13,6 +13,9 @@ const settings = (dailyMinutes: number): UserSettings => ({
   theme: 'light',
   onboardingComplete: true,
   recoveryStrategy: 'risk',
+  burySiblings: true,
+  leechThreshold: 8,
+  leechAction: 'flag',
 })
 
 const makeCard = (state: State, due: Date, id: string = crypto.randomUUID()): PracticeCard => {
@@ -96,9 +99,9 @@ describe('time-budget planner', () => {
     }]
     const plan = buildDailyPlan(cards, reviews, settings(10), now)
 
-    expect(plan.spentSeconds).toBe(180)
-    expect(plan.remainingSeconds).toBe(420)
-    expect(plan.reviewSeconds + plan.newSeconds).toBeLessThanOrEqual(420)
+    expect(plan.spentSeconds).toBe(120)
+    expect(plan.remainingSeconds).toBe(480)
+    expect(plan.reviewSeconds + plan.newSeconds).toBeLessThanOrEqual(480)
   })
 
   it('counts same-day events after a backward clock adjustment but not yesterday', () => {
@@ -154,5 +157,12 @@ describe('session composer', () => {
     expect(session.queue.length).toBeGreaterThan(0)
     expect(session.queue.every((entry) => entry.contextKey === 'Japanese')).toBe(true)
     expect(daily.queue.length).toBeGreaterThan(session.queue.length)
+  })
+
+  it('builds an explicit preview-only custom session from selected cards', () => {
+    const cards = [makeCard(State.Review, now, 'custom-a'), makeCard(State.New, now, 'custom-b')]
+    const session = buildCustomStudySession(cards, cards.map((card) => makeItem(card, 'Custom')), false)
+    expect(session.queue.map((entry) => entry.card.id)).toEqual(['custom-a', 'custom-b'])
+    expect(session.request).toMatchObject({ kind: 'custom', reschedule: false })
   })
 })

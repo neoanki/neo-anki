@@ -1,5 +1,5 @@
 import type { KnowledgeItem, MediaAsset, PracticeCard } from '../types'
-import type { PortableRenderedCard } from '../extensions/sdk'
+import type { PortableRenderedCard } from '../extensions/core-module'
 import { extensionRuntime } from '../extensions/runtime'
 
 export interface CardHealthFinding {
@@ -36,8 +36,7 @@ export const findDuplicateItems = (prompt: string, items: KnowledgeItem[]) => {
 }
 
 export const normalizeAnswer = (value: string) => value
-  .normalize('NFKD')
-  .replace(/[\u0300-\u036f]/g, '')
+  .normalize('NFKC')
   .toLocaleLowerCase()
   .replace(/[^\p{L}\p{N}]+/gu, ' ')
   .trim()

@@ -6,16 +6,26 @@
   "private": true,
   "workspaces": [
     "packages/*",
-    "examples/*-extension"
+    "examples/*-extension",
+    "apps/*"
   ],
-  "version": "0.1.5",
+  "version": "0.2.0",
   "type": "module",
   "main": "dist-electron/main.mjs",
   "scripts": {
     "dev": "vite",
     "preview": "vite preview",
+    "workspace:build": "npm run build -w @neo-anki/compatibility-domain && npm run build -w @neo-anki/card-rendering && npm run build -w @neo-anki/sync-protocol && npm run build -w @neo-anki/sync-client && npm run build -w @neo-anki/extension-sdk",
+    "prebuild": "npm run workspace:build",
     "build": "tsc -b && vite build",
     "extension:sdk": "npm run build -w @neo-anki/extension-sdk",
+    "domain:check": "npm run check -w @neo-anki/compatibility-domain",
+    "rendering:check": "npm run check -w @neo-anki/card-rendering",
+    "sync-protocol:check": "npm run check -w @neo-anki/sync-protocol",
+    "sync-service:check": "npm run check -w @neo-anki/sync-service",
+    "sync-client:check": "npm run check -w @neo-anki/sync-client",
+    "mobile:check": "npm run check -w @neo-anki/mobile",
+    "mobile:export": "npm run export -w @neo-anki/mobile",
     "extension:check": "npm run extension:sdk && npm run check -w @neo-anki-example/study-pulse",
     "extension:example": "npm run extension:sdk && npm run build -w @neo-anki-example/study-pulse",
     "desktop:prepare": "esbuild electron/main.ts --bundle --platform=node --format=esm --external:electron --outfile=dist-electron/main.mjs && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/preload.cjs && npm run license:check",
@@ -23,7 +33,7 @@
     "desktop:pack": "npm run build && npm run desktop:prepare && electron-builder --dir",
     "desktop:build": "npm run build && npm run desktop:prepare && electron-builder",
     "test:desktop": "npm run build && npm run extension:example && npm run desktop:prepare && playwright test --config=playwright.desktop.config.ts",
-    "typecheck": "tsc -b && tsc --noEmit -p tsconfig.electron.json && tsc --noEmit -p tsconfig.electron-test.json && npm run check -w @neo-anki/extension-sdk",
+    "typecheck": "npm run workspace:build && tsc -b && tsc --noEmit -p tsconfig.electron.json && tsc --noEmit -p tsconfig.electron-test.json && npm run check -w @neo-anki/extension-sdk && npm run domain:check && npm run rendering:check && npm run sync-protocol:check && npm run sync-client:check && npm run sync-service:check && npm run mobile:check",
     "lint": "eslint .",
     "test": "vitest run",
     "test:unit": "vitest run",
@@ -40,8 +50,8 @@
     "fflate": "^0.8.3",
     "fzstd": "^0.1.1",
     "lucide-react": "^1.24.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
     "sql.js": "^1.14.1",
     "ts-fsrs": "^5.2.0",
     "zod": "^4.4.3"
@@ -93,9 +103,8 @@
     "mac": {
       "category": "public.app-category.education",
       "icon": "build/icon.icns",
-      "identity": null,
-      "hardenedRuntime": false,
-      "notarize": false,
+      "hardenedRuntime": true,
+      "notarize": true,
       "target": [
         "dmg",
         "zip"

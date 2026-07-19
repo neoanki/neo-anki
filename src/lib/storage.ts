@@ -15,6 +15,13 @@ export interface StorageStatus {
 
 let storageStatus: StorageStatus = { mode: window.neoAnkiDesktop ? 'desktop' : 'browser', recoveredFromBackup: false }
 let lastPersisted: AppData | null = null
+let desktopSaveQueue: Promise<void> = Promise.resolve()
+
+/** Adopt state returned by a desktop transaction that has already committed. */
+export const adoptPersistedData = (data: AppData) => {
+  parseWorkspaceData(data)
+  lastPersisted = data
+}
 
 export const migrateData = migrateWorkspaceData
 
@@ -51,15 +58,21 @@ export const getStorageStatus = () => storageStatus
 
 export const saveData = async (data: AppData) => {
   if (window.neoAnkiDesktop) {
-    parseWorkspaceData(data)
-    const changes = createWorkspaceChangeSet(lastPersisted, data)
-    if (!hasWorkspaceChanges(changes)) return
-    await window.neoAnkiDesktop.saveData(changes)
-    lastPersisted = data
-    return
+    const snapshot = structuredClone(parseWorkspaceData(data))
+    const save = desktopSaveQueue.catch(() => undefined).then(async () => {
+      const changes = createWorkspaceChangeSet(lastPersisted, snapshot)
+      if (!hasWorkspaceChanges(changes)) return
+      await window.neoAnkiDesktop!.saveData(changes)
+      lastPersisted = snapshot
+    })
+    desktopSaveQueue = save
+    return save
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
 }
+
+/** Wait for every accepted desktop mutation before an out-of-band v4 command. */
+export const flushPendingSaves = () => desktopSaveQueue.catch(() => undefined)
 
 export const downloadBackup = async (data: AppData) => {
   if (window.neoAnkiDesktop) return window.neoAnkiDesktop.exportBackup()
@@ -74,6 +87,7 @@ export const downloadBackup = async (data: AppData) => {
 }
 
 export const clearStoredData = async () => {
+  await flushPendingSaves()
   if (window.neoAnkiDesktop) await window.neoAnkiDesktop.resetData()
   else localStorage.removeItem(STORAGE_KEY)
 }

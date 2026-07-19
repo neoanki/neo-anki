@@ -31,7 +31,10 @@ const changed = <T extends { id: string }>(previous: T[], current: T[]) => {
   const before = new Map(previous.map((value) => [value.id, value]))
   const afterIds = new Set(current.map((value) => value.id))
   return {
-    upsert: current.filter((value) => before.get(value.id) !== value),
+    upsert: current.filter((value) => {
+      const existing = before.get(value.id)
+      return !existing || (existing !== value && JSON.stringify(existing) !== JSON.stringify(value))
+    }),
     remove: previous.filter((value) => !afterIds.has(value.id)).map((value) => value.id),
   }
 }

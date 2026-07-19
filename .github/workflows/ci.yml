@@ -15,18 +15,26 @@ concurrency:
 
 env:
   FORCE_COLOR: 1
+  NEO_ANKI_EXTENSION_SOURCE_COMMIT: ${{ github.sha }}
+  NEO_ANKI_EXTENSION_CORE_COMMIT: ${{ github.sha }}
 
 jobs:
   quality:
     name: Quality and unit tests
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      ANKI_ORACLE_PYTHON: python3
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - run: python3 -m pip install anki==25.9.4
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
@@ -57,13 +65,33 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium webkit
+      - run: npx playwright install --with-deps chromium firefox webkit
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: browser-test-results
           path: test-results/
+          retention-days: 14
+
+  mobile:
+    name: Mobile production bundles
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run mobile:check
+      - run: npm run mobile:export
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mobile-production-bundles
+          path: apps/mobile/dist/
+          if-no-files-found: error
           retention-days: 14
 
   desktop:

@@ -28,6 +28,4 @@ export const mergeAppData = (local: AppData, remote: AppData): AppData => {
   }
 }
 
-// Compatibility export for callers that used the pre-extension module path.
-export { createTabSyncTransport } from '../extensions/tab-sync/transport'
-export type { SyncTransport } from '../extensions/sdk'
+export type { SyncTransport } from '../extensions/core-module'

@@ -1,9 +1,9 @@
 import { AlertTriangle, Layers3, Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
-import type { ExtensionPageProps } from '../sdk'
+import type { CoreModulePageProps } from '../core-module'
 import { validatePackManifest, validatePackPatch } from './service'
 
-export const PacksPanel = ({ data, runCommand }: ExtensionPageProps) => {
+export const PacksPanel = ({ data, runCommand }: CoreModulePageProps) => {
   const [message, setMessage] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const loadPack = async (file?: File) => {

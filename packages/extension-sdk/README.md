@@ -1,15 +1,13 @@
 # @neo-anki/extension-sdk
 
-Public TypeScript types, `defineExtension`, package validation, and the `neo-anki-extension` build CLI for Neo Anki SDK v1.
+The only public Neo Anki extension contract. Version 2 packages run non-UI logic in bounded workers and UI contributions in sandboxed iframes; effects cross typed, capability-scoped host calls.
 
 ```bash
-npm install @neo-anki/extension-sdk react
+npm install @neo-anki/extension-sdk
 npx neo-anki-extension check
 npx neo-anki-extension build
 ```
 
-An extension project contains `manifest.json`, `package.json`, and `src/index.ts` or `src/index.tsx`. The CLI bundles browser code, links React UI contributions to Neo Anki's host React instance, validates the manifest, and emits a bounded `.neoanki-extension` archive.
+An extension project contains `manifest.json`, `package.json`, a worker entry, and optional iframe UI entries. The CLI validates schema 2, bundles each entry, signs a deterministic `.neoanki-extension` archive, and rejects every older schema. React is not a peer dependency because iframe UI owns its document and framework choices.
 
-SDK v1 includes publisher-neutral UI/review contributions, bounded content transactions, manifest-declared HTTPS access, and OS-encrypted extension secrets. Bundled and separately installed extensions use the same types and capability host.
-
-See the Neo Anki repository's `docs/extension-authoring.md` and `examples/study-pulse-extension` for the complete contract.
+Bundled Neo Anki features are trusted core modules and do not use this installable-package API. See `docs/extension-authoring.md` and `examples/study-pulse-extension` for the complete contract.

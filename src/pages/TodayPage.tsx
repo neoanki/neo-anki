@@ -15,7 +15,7 @@ const recommendedSessionMinutes = (dailyMinutes: number, availableWorkSeconds: n
 }
 
 export const TodayPage = () => {
-  const { data, plan, startSession, setDailyMinutes, setRecoveryStrategy } = useApp()
+  const { data, plan, planning, startSession, setDailyMinutes, setRecoveryStrategy } = useApp()
   const availableWorkSeconds = plan.reviewSeconds + plan.newSeconds
   const [sessionMinutes, setSessionMinutes] = useState(() => recommendedSessionMinutes(data.settings.dailyMinutes, availableWorkSeconds))
   const [intent, setIntent] = useState<SessionIntent>('balanced')
@@ -53,13 +53,13 @@ export const TodayPage = () => {
       <section className="study-launcher" aria-labelledby="study-launcher-title">
         <div className="study-launcher-copy">
           <h2 id="study-launcher-title">{formatDuration(plan.remainingSeconds)} available</h2>
-          <p>{plan.duePlanned} reviews and {plan.newPlanned} new prompts are ready. Neo Anki will keep unrelated subjects in separate blocks.</p>
+          <p role={planning ? 'status' : undefined}>{planning ? 'Planning this large workspace in the background… Study controls will be ready without freezing this screen.' : `${plan.duePlanned} reviews and ${plan.newPlanned} new prompts are ready. Neo Anki will keep unrelated subjects in separate blocks.`}</p>
         </div>
         <div className="study-controls">
           <label htmlFor="session-length"><span>Study for</span><select id="session-length" value={effectiveSessionMinutes} onChange={(event) => setSessionMinutes(Number(event.target.value))}>{sessionOptions.map((minutes) => <option value={minutes} key={minutes}>{minutes === Math.ceil(availableWorkSeconds / 60) ? `Finish (${minutes} min)` : `${minutes} min`}</option>)}</select></label>
           <label htmlFor="session-mode"><span>Mode</span><select id="session-mode" value={intent} onChange={(event) => setIntent(event.target.value as SessionIntent)}><option value="balanced">Mixed by subject</option><option value="focus">One subject</option><option value="urgent">Reviews only</option></select></label>
           {intent === 'focus' && <label htmlFor="focus-collection"><span>Subject</span><select id="focus-collection" value={effectiveFocusCollection} onChange={(event) => setFocusCollection(event.target.value)}>{collections.map((collection) => <option key={collection}>{collection}</option>)}</select></label>}
-          <button className="primary-button study-button" disabled={!session.queue.length} onClick={() => startSession(request)}><Play size={15} fill="currentColor" />{session.queue.length ? `Study ${formatDuration(session.plannedSeconds)}` : plan.remainingSeconds === 0 ? 'Done for today' : 'Nothing to study'}</button>
+          <button className="primary-button study-button" disabled={planning || !session.queue.length} onClick={() => startSession(request)}><Play size={15} fill="currentColor" />{planning ? 'Planning…' : session.queue.length ? `Study ${formatDuration(session.plannedSeconds)}` : plan.remainingSeconds === 0 ? 'Done for today' : 'Nothing to study'}</button>
         </div>
       </section>
 

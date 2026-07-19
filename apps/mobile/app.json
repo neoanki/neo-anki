@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Neo Anki",
+    "slug": "neo-anki",
+    "version": "0.2.0",
+    "scheme": "neoanki",
+    "icon": "../../build/icon.png",
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "updates": { "enabled": false },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.neoanki.mobile",
+      "infoPlist": { "ITSAppUsesNonExemptEncryption": true }
+    },
+    "android": {
+      "package": "app.neoanki.mobile",
+      "allowBackup": false,
+      "adaptiveIcon": { "foregroundImage": "../../build/icon.png", "backgroundColor": "#f6f4ef" }
+    },
+    "plugins": [
+      ["expo-secure-store", { "configureAndroidBackup": true }],
+      ["expo-splash-screen", { "image": "../../build/icon.png", "imageWidth": 220, "resizeMode": "contain", "backgroundColor": "#f6f4ef", "dark": { "backgroundColor": "#0b1220" } }],
+      "expo-sqlite"
+    ],
+    "experiments": { "typedRoutes": false }
+  }
+}

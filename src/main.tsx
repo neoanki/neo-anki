@@ -4,9 +4,23 @@ import { App } from './App'
 import { AppProvider } from './state/AppContext'
 import { initializeExternalExtensions } from './extensions/runtime'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
+import { browserSync } from './lib/browser-sync'
+import { loadData, saveData } from './lib/storage'
+import { appDataToWorkspaceDocumentV4, workspaceDocumentV4ToAppData } from './lib/workspace-v4'
 import './styles.css'
 
-void initializeExternalExtensions().finally(() => {
+const resumeInterruptedBrowserSync = async () => {
+  if (window.neoAnkiDesktop || !(await browserSync.status()).pendingCommit) return
+  const root = document.getElementById('root')!
+  root.innerHTML = '<main class="onboarding-shell"><section class="onboarding-card" role="status" aria-live="polite"><p class="eyebrow">Encrypted sync recovery</p><h1>Finishing an interrupted local commit…</h1><p>Your verified sync result is safely journaled. Neo Anki is committing it before the workspace becomes editable.</p></section></main>'
+  const current = loadData()
+  await browserSync.synchronize(appDataToWorkspaceDocumentV4(current), current.assets, [], async ({ document, media }) => {
+    const projected = workspaceDocumentV4ToAppData(document); projected.assets = media
+    await saveData(projected)
+  })
+}
+
+void resumeInterruptedBrowserSync().catch(() => undefined).then(() => initializeExternalExtensions()).finally(() => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <AppErrorBoundary><AppProvider><App /></AppProvider></AppErrorBoundary>

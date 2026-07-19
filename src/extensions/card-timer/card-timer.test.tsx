@@ -10,9 +10,8 @@ import { useEffect, useRef } from 'react'
 const seed = createSeedData()
 const card = seed.cards[0]
 const item = seed.items.find((candidate) => candidate.id === card.itemId)!
-const host = { platform: 'web' as const, network: { fetch: vi.fn() }, secrets: { has: vi.fn(), get: vi.fn(), set: vi.fn(), delete: vi.fn() } }
-const settingsProps = { extensionId: 'org.neoanki.card-timer', data: seed, host, runCommand: vi.fn() }
-const reviewProps = { extensionId: 'org.neoanki.card-timer', card, item, assets: seed.assets, host }
+const settingsProps = { moduleId: 'org.neoanki.card-timer', data: seed, runCommand: vi.fn() }
+const reviewProps = { moduleId: 'org.neoanki.card-timer', card, item, assets: seed.assets }
 
 afterEach(() => vi.useRealTimers())
 
@@ -40,20 +39,20 @@ describe('Card Timer extension', () => {
     expect(JSON.parse(localStorage.getItem(CARD_TIMER_STORAGE_KEY)!)).toEqual({ enabled: true, seconds: 300 })
   })
 
-  it('submits Forgot exactly once when time expires', () => {
+  it('never infers a memory grade when time expires', () => {
     localStorage.setItem(CARD_TIMER_STORAGE_KEY, JSON.stringify({ enabled: true, seconds: 5 }))
     vi.useFakeTimers()
     const submitRating = vi.fn()
     render(<CardTimerReviewTool {...reviewProps} revealed={false} submitRating={submitRating} />)
     expect(screen.getByRole('timer')).toHaveTextContent('5s')
     act(() => vi.advanceTimersByTime(5_000))
-    expect(submitRating).toHaveBeenCalledTimes(1)
-    expect(submitRating).toHaveBeenCalledWith(1)
+    expect(screen.getByText(/target time elapsed/i)).toBeInTheDocument()
+    expect(submitRating).not.toHaveBeenCalled()
     act(() => vi.advanceTimersByTime(5_000))
-    expect(submitRating).toHaveBeenCalledTimes(1)
+    expect(submitRating).not.toHaveBeenCalled()
   })
 
-  it('records Forgot and advances through the guarded review host', () => {
+  it('keeps the current review open after the target time elapses', () => {
     localStorage.setItem(CARD_TIMER_STORAGE_KEY, JSON.stringify({ enabled: true, seconds: 5 }))
     vi.useFakeTimers()
 
@@ -71,7 +70,8 @@ describe('Card Timer extension', () => {
     render(<AppProvider><SessionHarness /></AppProvider>)
     expect(screen.getByRole('timer')).toHaveTextContent('5s')
     act(() => vi.advanceTimersByTime(5_000))
-    expect(screen.getByLabelText('review ratings')).toHaveTextContent('1')
-    expect(screen.getByRole('timer')).toHaveTextContent('5s')
+    expect(screen.getByLabelText('review ratings')).toBeEmptyDOMElement()
+    expect(screen.getByRole('timer')).toHaveTextContent('0s')
+    expect(screen.getByText(/target time elapsed/i)).toBeInTheDocument()
   })
 })
