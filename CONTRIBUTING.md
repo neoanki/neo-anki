@@ -14,4 +14,6 @@ Keep the kernel small, preserve review history and unknown content, and use the 
 
 Keep changes focused, include tests for behavioral changes, document schema or SDK compatibility effects, and attach screenshots for visible UI work. Never commit signing credentials, user data, imported decks, or private crash reports.
 
+Every applicable CI check must pass before merge or release. Treat a flaky test as a product or test defect: investigate and fix its synchronization, isolation, environment, timing, or data dependency at the root cause. Never rerun a failed test or workflow merely in the hope that it will pass, and never weaken, skip, or remove a check to obtain a green build.
+
 By contributing, you agree that your contribution is licensed under the repository's MIT License.
