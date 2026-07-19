@@ -1,0 +1,19 @@
+{
+  "name": "@neo-anki/extension-marketplace",
+  "version": "0.1.0",
+  "description": "Shared catalog contract and validation for the NeoAnki extension marketplace.",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "files": ["dist"],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "default": "./dist/index.js" }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": { "typescript": "~5.7.2" }
+}

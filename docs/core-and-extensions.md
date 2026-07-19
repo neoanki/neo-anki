@@ -43,7 +43,7 @@ See [extension-sdk.md](extension-sdk.md), [extension-authoring.md](extension-aut
 
 ## Still postponed
 
-- Marketplace discovery, publisher identity attestation, automatic extension updates and dependency resolution.
+- Real-world publisher identity attestation, automatic extension updates and dependency resolution. Marketplace discovery verifies GitHub review provenance, pinned release metadata and publisher-key continuity, but does not claim legal identity verification.
 - Executing Anki Python add-ons. Unknown add-on metadata may be retained inertly for round-trip safety but is never executed.
 - AI extraction/grading, OCR/PDF pipelines, web clipping and external knowledge connectors.
 - Collaboration, shared-account policy, decorative gamification and third-party scheduler strategies.

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { AnyExtensionPermission } from '../../packages/extension-sdk/src/index'
 import { bundledExtensionIds, extensionRuntime } from '../extensions/runtime'
 import { safeExternalUrl } from '../lib/urls'
+import { ExtensionMarketplace } from './ExtensionMarketplace'
 
 const permissionLabels: Record<string, string> = {
   'prompts:contribute': 'Provide built-in practice prompt types',
@@ -121,6 +122,8 @@ export const ExtensionManagerPanel = () => {
     <p>Bundled features are trusted application modules. Every installable package uses the signed, isolated SDK 2 worker/iframe runtime; older SDK packages are rejected before installation.</p>
 
     {safeMode && <div className="extension-reload" role="status"><span><ShieldCheck size={17}/><span><strong>Safe mode is active</strong><small>Locally installed extensions were skipped for this launch.</small></span></span><button className="secondary-button compact" onClick={() => { window.location.search = '' }}>Restart normally</button></div>}
+
+    <ExtensionMarketplace installed={installed} candidateActive={Boolean(candidate)} onCandidate={setCandidate}/>
 
     {bridge ? <button className="secondary-button extension-install-button" disabled={busy || Boolean(candidate)} onClick={choosePackage}><PackagePlus size={18} /> {busy ? 'Reading package…' : 'Install from file…'}</button> : <p className="extension-browser-note">Local extension installation is available in the desktop app.</p>}
 

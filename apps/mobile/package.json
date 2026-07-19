@@ -8,12 +8,13 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "export": "expo export --platform android --platform ios",
-    "precheck": "npm run build -w @neo-anki/card-rendering && npm run build -w @neo-anki/sync-client",
+    "precheck": "npm run build -w @neo-anki/card-rendering && npm run build -w @neo-anki/sync-client && npm run build -w @neo-anki/extension-marketplace",
     "check": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@neo-anki/card-rendering": "0.2.0",
     "@neo-anki/compatibility-domain": "0.2.0",
+    "@neo-anki/extension-marketplace": "0.1.0",
     "@neo-anki/sync-client": "1.0.0-alpha.2",
     "@neo-anki/sync-protocol": "1.0.0-alpha.2",
     "@noble/ed25519": "^3.1.0",

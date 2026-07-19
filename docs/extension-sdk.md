@@ -102,4 +102,4 @@ The frame has `sandbox="allow-scripts"` without `allow-same-origin`, an explicit
 
 ## Compatibility and trust
 
-SDK 2 schema or protocol changes require an intentional application-and-extension migration before release. Package signatures authenticate a key, not a human organization. Users still review the publisher label, public key fingerprint, permissions, network destinations, provenance, version and downgrade status before install. Marketplace discovery, verified real-world publisher identity, automatic updates and dependency resolution are not currently claimed.
+SDK 2 schema or protocol changes require an intentional application-and-extension migration before release. Package signatures authenticate a key, not a human organization. Users still review the publisher label, public key fingerprint, permissions, network destinations, provenance, version and downgrade status before install. Marketplace discovery adds public review history, immutable release/hash pinning and publisher-key continuity; verified real-world publisher identity, automatic updates and dependency resolution are not currently claimed.

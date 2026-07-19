@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ExtensionManager } from './extension-manager.js'
+import { MarketplaceClient } from './marketplace-client.js'
 import { ExtensionServices } from './extension-services.js'
 import { WorkspaceStore } from './workspace-store.js'
 import { DiagnosticsLog } from './diagnostics-log.js'
@@ -29,6 +30,7 @@ app.setName('Neo Anki')
 
 let mainWindow: BrowserWindow | null = null
 let extensionManager: ExtensionManager
+let marketplaceClient: MarketplaceClient
 let extensionServices: ExtensionServices
 let workspaceStore: WorkspaceStore
 let diagnosticsLog: DiagnosticsLog
@@ -254,6 +256,15 @@ const registerDesktopIpc = () => {
     assertTrustedSender(event)
     return extensionManager.list()
   })
+  ipcMain.handle('neo-anki:list-marketplace-extensions', async (event) => {
+    assertTrustedSender(event)
+    return marketplaceClient.list()
+  })
+  ipcMain.handle('neo-anki:stage-marketplace-extension', async (event, id: string, version: string) => {
+    assertTrustedSender(event)
+    if (typeof id !== 'string' || typeof version !== 'string') throw new Error('Marketplace extension identity is invalid.')
+    return marketplaceClient.stage(id, version)
+  })
   ipcMain.handle('neo-anki:choose-extension', async (event) => {
     assertTrustedSender(event)
     const options: Electron.OpenDialogOptions = { title: 'Choose Neo Anki Extension', properties: ['openFile'], filters: [{ name: 'Neo Anki extension', extensions: ['neoanki-extension'] }] }
@@ -456,6 +467,7 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
     open: (value) => safeStorage.decryptString(Buffer.from(value)),
   })
   extensionManager = new ExtensionManager(app.getPath('userData'))
+  marketplaceClient = new MarketplaceClient(extensionManager, (url, init) => net.fetch(url, init), app.getVersion())
   extensionServices = new ExtensionServices(app.getPath('userData'), extensionManager)
   const installPath = process.argv.find((value) => value.startsWith('--install-extension='))?.slice('--install-extension='.length)
   if (installPath) {
