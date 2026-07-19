@@ -178,18 +178,26 @@ test('imported named-field edits and bulk card states survive a desktop restart'
   let app = await electron.launch({ args: ['.'], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData } })
   try {
     let window = await app.firstWindow()
-    await window.getByRole('button', { name: /migrate from anki/i }).click()
-    await window.locator('input[type=file][accept=".apkg,.colpkg"]').setInputFiles(join(process.cwd(), 'test-fixtures/anki/25.9.4/current-stable.apkg'))
+    const migrationPackage = window.locator('input[type=file][accept=".apkg,.colpkg"]')
+    await expect(window.getByRole('button', { name: /migrate from anki/i })).toBeVisible()
+    await window.getByRole('button', { name: /migrate from anki/i }).dispatchEvent('click')
+    await migrationPackage.setInputFiles(join(process.cwd(), 'test-fixtures/anki/25.9.4/current-stable.apkg'))
     await window.getByRole('button', { name: /create checkpoint and migrate/i }).click()
     await window.getByRole('button', { name: 'Library' }).first().click()
     await window.getByPlaceholder(/Search questions/i).fill('note:"Migration Custom"')
     const row = window.locator('.library-row').filter({ hasText: 'Capital of' }).first()
     await expect(row).toBeVisible()
+    await row.getByRole('checkbox', { name: /Select Capital of/i }).check()
     await row.getByRole('button', { name: /^Edit / }).click()
     await expect(window.getByText('Named fields · Migration Custom')).toBeVisible()
     await window.getByLabel('Hint').fill('Persisted migration hint')
     await window.getByRole('button', { name: /save changes/i }).click()
-    await row.getByRole('checkbox', { name: /Select Capital of/i }).check()
+    await expect(window.getByRole('dialog')).toHaveCount(0)
+    await expect.poll(() => window.evaluate(async () => {
+      const payload = await window.neoAnkiDesktop!.loadWorkspaceV4ExportPayload()
+      const document = payload.document as { workspace: { notes: Array<{ fields: Record<string, string> }> } }
+      return document.workspace.notes.some((note) => Object.values(note.fields).includes('Persisted migration hint'))
+    }), { timeout: 15_000 }).toBe(true)
     await window.getByLabel('Set flag on selected cards').selectOption('5')
     await window.getByRole('button', { name: /bury until tomorrow/i }).click()
     await window.getByLabel('Tag for selected notes').fill('verified-migration')
@@ -203,7 +211,7 @@ test('imported named-field edits and bulk card states survive a desktop restart'
         hint: document.workspace.notes.some((note) => Object.values(note.fields).includes('Persisted migration hint') && note.tags.includes('verified-migration')),
         cardState: document.workspace.cards.some((card) => card.flags === 5 && card.buriedBy === 'user'),
       }
-    })).toEqual({ hint: true, cardState: true })
+    }), { timeout: 15_000 }).toEqual({ hint: true, cardState: true })
     await app.close()
 
     app = await electron.launch({ args: ['.'], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData } })
