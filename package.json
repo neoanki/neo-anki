@@ -15,7 +15,7 @@
   "scripts": {
     "dev": "vite",
     "preview": "vite preview",
-    "workspace:build": "npm run build -w @neo-anki/compatibility-domain && npm run build -w @neo-anki/card-rendering && npm run build -w @neo-anki/sync-protocol && npm run build -w @neo-anki/sync-client && npm run build -w @neo-anki/extension-sdk",
+    "workspace:build": "npm run build -w @neo-anki/compatibility-domain && npm run build -w @neo-anki/card-rendering && npm run build -w @neo-anki/sync-protocol && npm run build -w @neo-anki/sync-client && npm run build -w @neo-anki/extension-sdk && npm run build -w @neo-anki/extension-marketplace",
     "prebuild": "npm run workspace:build",
     "build": "tsc -b && vite build",
     "extension:sdk": "npm run build -w @neo-anki/extension-sdk",
@@ -47,6 +47,7 @@
     "test:all": "npm run lint && npm run typecheck && npm run test:coverage && npm run test:timezones && npm run benchmark:planner && npm run license:check && npm run build && npm run test:e2e && npm run test:desktop"
   },
   "dependencies": {
+    "@neo-anki/extension-marketplace": "0.1.0",
     "fflate": "^0.8.3",
     "fzstd": "^0.1.1",
     "lucide-react": "^1.24.0",

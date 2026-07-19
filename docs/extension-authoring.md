@@ -83,6 +83,12 @@ Release automation can stamp immutable checked-out inputs without editing the so
 
 The builder emits `build/<id>-<version>.neoanki-extension` with canonical ordering/fixed timestamps and an Ed25519 signature record. Rebuild from a clean checkout and compare SHA-256 digests before release.
 
+## Submit to the marketplace
+
+Publish the exact signed package as an immutable GitHub Release asset, then open a pull request against [`neoanki/extensions`](https://github.com/neoanki/extensions). Add its source repository, metadata, release URL, SHA-256, publisher key, minimum NeoAnki version, and exact permissions to `catalog.json`. Marketplace CI downloads and inspects the package; maintainers review publisher control, provenance, privacy/network behavior, permission scope, license, UX, and learning claims. The catalog repository's `CONTRIBUTING.md` is the normative submission and approval policy.
+
+Signing-key and source-repository continuity are enforced across ordinary updates. Contact maintainers through a private security report before a legitimate key rotation.
+
 ## 5. Review installation and lifecycle
 
 In desktop Settings → Extensions → Install from file, verify:

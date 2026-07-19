@@ -3,6 +3,7 @@ import type { WorkspaceChangeSet } from './lib/workspace-changes'
 import type { AppData, MediaAsset } from './types'
 import type { WorkspaceDocumentV4, WorkspacePatchV2 } from '../packages/compatibility-domain/src/index'
 import type { SyncFieldConflict } from '../packages/sync-protocol/src/index'
+import type { MarketplaceExtension } from '@neo-anki/extension-marketplace'
 
 declare global {
   interface ExtensionNetworkBridgeRequest { operationId?: string; url: string; method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; headers?: Record<string, string>; bodyBase64?: string; timeoutMs?: number; maximumResponseBytes?: number }
@@ -56,6 +57,8 @@ declare global {
     exportDiagnostics(): Promise<{ canceled: boolean; path?: string }>
     getReleaseInfo(): Promise<NeoAnkiReleaseInfo>
     listExtensions(): Promise<NeoAnkiInstalledExtension[]>
+    listMarketplaceExtensions(): Promise<MarketplaceExtension[]>
+    stageMarketplaceExtension(id: string, version: string): Promise<NeoAnkiExtensionCandidate>
     chooseExtensionPackage(): Promise<{ canceled: boolean; candidate?: NeoAnkiExtensionCandidate }>
     installExtension(token: string): Promise<NeoAnkiInstalledExtension>
     discardExtension(token: string): Promise<void>

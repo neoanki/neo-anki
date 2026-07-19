@@ -43,6 +43,8 @@ describe('extension manager', () => {
       exportDiagnostics: async () => ({ canceled: true }),
       getReleaseInfo: async () => ({ currentVersion: '0.1.0', automaticUpdates: false, releasesUrl: 'https://github.com/neoanki/neo-anki/releases' }),
       listExtensions: async () => [],
+      listMarketplaceExtensions: async () => [],
+      stageMarketplaceExtension: async () => { throw new Error('not used') },
       chooseExtensionPackage: async () => ({ canceled: false, candidate: { token: 'review-token', manifest, digest: 'a'.repeat(64), compressedBytes: 2048, unpackedBytes: 4096, isDowngrade: false, addedPermissions: ['ui:page'] } }),
       installExtension,
       discardExtension: async () => undefined,
@@ -82,7 +84,7 @@ describe('extension manager', () => {
     window.neoAnkiDesktop = {
       isDesktop: true, rendererReady: () => undefined, loadData: () => ({ data: null, storagePath: '', recoveredFromBackup: false }), saveData: async () => undefined,
       exportBackup: async () => ({ canceled: true }), restoreBackup: async () => ({ canceled: true }), resetData: async () => undefined, createImportCheckpoint: async () => '', commitWorkspaceV4Import: async () => createSeedData(), loadWorkspaceV4ExportPayload: async () => ({ document: {}, media: [] }), loadWorkspaceV4Document: async () => ({} as never), applyCoreWorkspacePatchV2: async () => ({ workspaceRevision: 1, data: createSeedData() }), extensionApplyPatchV2: async () => ({ workspaceRevision: 1, data: createSeedData() }), extensionCreateMediaV2: async () => ({ id: 'media', sha256: 'a'.repeat(64), byteLength: 1, workspaceRevision: 1 }), extensionSecretReadBatchV2: async () => ({}), extensionSecretMutateBatchV2: async () => undefined, extensionConfigReadV2: async () => null, extensionConfigWriteV2: async () => ({ workspaceRevision: 1, data: createSeedData() }), extensionContentListNotesV2: async () => ({ workspaceRevision: 1, notes: [], availableMediaIds: [] }), extensionCancelV2: async () => undefined, reportDiagnostic: async () => undefined,
-      exportDiagnostics: async () => ({ canceled: true }), getReleaseInfo: async () => ({ currentVersion: '0.1.0', automaticUpdates: false, releasesUrl: '' }), listExtensions: async () => [],
+      exportDiagnostics: async () => ({ canceled: true }), getReleaseInfo: async () => ({ currentVersion: '0.1.0', automaticUpdates: false, releasesUrl: '' }), listExtensions: async () => [], listMarketplaceExtensions: async () => [], stageMarketplaceExtension: async () => { throw new Error('not used') },
       chooseExtensionPackage: async () => ({ canceled: false, candidate: { token: 'network', manifest: networkManifest, digest: 'b'.repeat(64), compressedBytes: 100, unpackedBytes: 200, isDowngrade: false, addedPermissions: ['network:fetch'] } }),
       installExtension: async () => { throw new Error('not used') }, discardExtension: async () => undefined, setExtensionEnabled: async () => undefined, uninstallExtension: async () => undefined, reloadForExtensions: async () => undefined,
       claimExtensionCapability: async () => 'token', extensionNetworkFetch: async () => ({ status: 200, statusText: 'OK', headers: {}, bodyBase64: '' }), onNavigate: () => () => undefined,

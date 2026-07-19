@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeCardHealth, compareTypedAnswer, findDuplicateItems, normalizeAnswer, renderCard } from './content'
+import { analyzeCardHealth, cardHealth, compareTypedAnswer, findDuplicateItems, getAssetForCard, normalizeAnswer, renderCard } from './content'
 import { createSeedData } from '../data/seed'
 
 describe('content rendering and diagnostics', () => {
@@ -39,5 +39,17 @@ describe('content rendering and diagnostics', () => {
   it('reports actionable health findings and exact duplicates', () => {
     expect(analyzeCardHealth('x', 'x').map((finding) => finding.code)).toEqual(expect.arrayContaining(['vague-prompt', 'answer-leak']))
     expect(findDuplicateItems(item.prompt.toUpperCase(), data.items)).toContainEqual(item)
+    expect(findDuplicateItems('not present anywhere', data.items)).toEqual([])
+  })
+
+  it('reports long, compound, unsourced content and resolves card media', () => {
+    const prompt = 'Statement '.repeat(25)
+    const answer = `alpha and beta and ${'detail '.repeat(50)}`
+    expect(analyzeCardHealth(prompt, answer).map((finding) => finding.code)).toEqual(expect.arrayContaining(['long-prompt', 'long-answer', 'multi-fact', 'open-form', 'missing-source']))
+    expect(analyzeCardHealth(prompt, answer, [{ id: 'source-1', title: 'Source', url: 'https://example.com' }]).map((finding) => finding.code)).not.toContain('missing-source')
+    expect(cardHealth('What is this?', 'That')).toEqual([])
+    const itemWithMedia = { ...item, mediaIds: ['asset-1'] }
+    expect(getAssetForCard(itemWithMedia, [{ id: 'asset-1', filename: 'image.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==', byteLength: 1, hash: 'a'.repeat(64), altText: 'Fixture', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' }])).toMatchObject({ id: 'asset-1' })
+    expect(getAssetForCard(itemWithMedia, [])).toBeUndefined()
   })
 })

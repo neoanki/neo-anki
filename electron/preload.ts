@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('neoAnkiDesktop', {
   exportDiagnostics: () => ipcRenderer.invoke('neo-anki:export-diagnostics'),
   getReleaseInfo: () => ipcRenderer.invoke('neo-anki:get-release-info'),
   listExtensions: () => ipcRenderer.invoke('neo-anki:list-extensions'),
+  listMarketplaceExtensions: () => ipcRenderer.invoke('neo-anki:list-marketplace-extensions'),
+  stageMarketplaceExtension: (id: string, version: string) => ipcRenderer.invoke('neo-anki:stage-marketplace-extension', id, version),
   chooseExtensionPackage: () => ipcRenderer.invoke('neo-anki:choose-extension'),
   installExtension: (token: string) => ipcRenderer.invoke('neo-anki:install-extension', token),
   discardExtension: (token: string) => ipcRenderer.invoke('neo-anki:discard-extension', token),
