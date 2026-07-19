@@ -2,6 +2,8 @@
 
 NeoAnki apps discover extensions from the review-gated [`neoanki/extensions`](https://github.com/neoanki/extensions) repository. Its `main` branch is the approved catalog and the stable application endpoint is `https://raw.githubusercontent.com/neoanki/extensions/main/catalog.json`.
 
+As of July 19, 2026, [NeoAnki TTS 2.0.1](https://github.com/neoanki/neoanki-tts/releases/tag/v2.0.1) is the catalog's first production extension. The marketplace integration is present on Neo Anki's current `main` branch and is newer than the published v0.1.5 desktop binary. Browser and mobile discovery is browse-only; only desktop has an install runtime.
+
 ## Approval mechanism
 
 A publisher adds or updates one sorted `catalog.json` entry through a pull request. The repository requires the `validate` check, resolved conversations, and code-owner approval. Merge history is the approval log; removal or correction is another reviewed commit.
@@ -22,4 +24,4 @@ Web and mobile fetch and validate the same bounded catalog for discovery. Mobile
 
 Desktop installation stays in the Electron main process. The renderer submits only an approved id and version. The main process re-fetches the catalog, requires the exact current listing, enforces the minimum NeoAnki version, downloads only its immutable GitHub Release asset, caps the response, verifies SHA-256, verifies the existing Ed25519 package signature, and compares signed manifest metadata with the catalog. Only then is the package staged in the existing capability-review screen; the user must still confirm installation.
 
-The marketplace adds auditable discovery and supply-chain pinning. It does not provide real-world identity attestation, automatic updates, dependency resolution, or a warranty.
+The marketplace adds auditable discovery and supply-chain pinning. It does not provide real-world identity attestation, automatic updates, dependency resolution, a warranty, or evidence of learning effectiveness. A signature proves integrity relative to a publisher key, not that the publisher or package is trustworthy.
