@@ -18,5 +18,5 @@
     "@neo-anki/compatibility-domain": "0.2.0",
     "@neo-anki/sync-protocol": "1.0.0-alpha.2"
   },
-  "devDependencies": { "typescript": "~5.7.2" }
+  "devDependencies": { "typescript": "~5.9.3" }
 }
