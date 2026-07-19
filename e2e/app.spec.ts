@@ -13,6 +13,10 @@ const startWith = async (page: Parameters<typeof test>[0] extends never ? never 
   await page.goto('/')
 }
 
+const navigateWithVisiblePrimaryButton = async (page: Parameters<typeof test>[0] extends never ? never : any, label: string) => {
+  await page.locator('nav[aria-label="Primary navigation"] button:visible').filter({ hasText: label }).click()
+}
+
 test('onboarding establishes a daily time contract', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: /what are you bringing/i })).toBeVisible()
@@ -231,17 +235,17 @@ test('core workflows reflow across launch widths, text scaling, and reduced moti
   await startWith(page)
   for (const width of [375, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 })
-    await page.keyboard.press('Control+2')
+    await navigateWithVisiblePrimaryButton(page, 'Library')
     await expect(page.getByRole('heading', { name: 'Library' })).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
-    await page.keyboard.press('Control+1')
+    await navigateWithVisiblePrimaryButton(page, 'Today')
     await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
   }
 
   await page.setViewportSize({ width: 375, height: 900 })
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
-  await page.keyboard.press('Control+2')
+  await navigateWithVisiblePrimaryButton(page, 'Library')
   await expect(page.getByRole('heading', { name: 'Library' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
   const motionIsBounded = await page.locator('.page').evaluate((element) => {
