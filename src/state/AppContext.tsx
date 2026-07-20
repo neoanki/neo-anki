@@ -1,5 +1,5 @@
 // @refresh reset
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type SetStateAction } from 'react'
 import type { AppData, CreateKnowledgeInput, DailyPlan, KnowledgeItem, RecoveryStrategy, ReviewRating, Route, SessionRequest, StudySession } from '../types'
 import { makeEmptyFSRSCard, scheduleReview, serializeFSRSCard } from '../lib/fsrs'
 import { buildCustomStudySession, buildDailyPlan, buildStudySession } from '../lib/planner'
@@ -96,19 +96,27 @@ interface AppContextValue {
 const AppContext = createContext<AppContextValue | null>(null)
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
-  const [data, setData] = useState<AppData>(() => loadData())
+  const [data, setRenderedData] = useState<AppData>(() => loadData())
+  const dataRef = useRef(data)
+  const setData = useCallback((update: SetStateAction<AppData>) => {
+    const next = typeof update === 'function' ? update(dataRef.current) : update
+    dataRef.current = next
+    setRenderedData(next)
+  }, [])
   const [route, setRoute] = useState<Route>(() => safeRouteFromLocation())
   const [activeSession, setActiveSession] = useState<StudySession | null>(null)
   const [persistenceError, setPersistenceError] = useState('')
   const [persistenceState, setPersistenceState] = useState<'saving' | 'saved' | 'failed'>('saved')
   const [extensionSignalRevision, setExtensionSignalRevision] = useState(0)
   const [backgroundPlan, setBackgroundPlan] = useState<{ key: string; plan: DailyPlan } | null>(null)
-  const dataRef = useRef(data)
   const extensionCommandQueue = useRef<Promise<void>>(Promise.resolve())
   const corePatchQueue = useRef<Promise<void>>(Promise.resolve())
 
   useEffect(() => {
-    dataRef.current = data
+    // An explicitly awaited mutation can advance dataRef before React runs an
+    // older render's passive effect. Never let that stale render enqueue a
+    // regressive desktop snapshot after the newer mutation has committed.
+    if (dataRef.current !== data) return
     let current = true
     queueMicrotask(() => { if (current) setPersistenceState('saving') })
     void saveData(data).then(() => { if (current) { setPersistenceError(''); setPersistenceState('saved') } }).catch((error) => {
@@ -142,7 +150,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     window.addEventListener('neo-anki:workspace-updated-v4', update)
     window.addEventListener('neo-anki:workspace-reload-requested', reload)
     return () => { window.removeEventListener('neo-anki:workspace-updated-v4', update); window.removeEventListener('neo-anki:workspace-reload-requested', reload) }
-  }, [])
+  }, [setData])
 
   useEffect(() => {
     document.documentElement.dataset.theme = data.settings.theme
@@ -289,7 +297,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       items: dataRef.current.items.map((item) => item.id === id ? { ...item, ...changes, updatedAt } : item),
       updatedAt,
     }
-    dataRef.current = next
     setData(next)
     setPersistenceState('saving')
     try {
@@ -497,12 +504,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const runExtensionCommand = useCallback((id: string, payload: unknown) => {
     const task = extensionCommandQueue.current.catch(() => undefined).then(async () => {
       const next = await extensionRuntime.runCommand(id, dataRef.current, payload)
-      dataRef.current = next
       setData(next)
     })
     extensionCommandQueue.current = task
     return task
-  }, [])
+  }, [setData])
 
   const loadWorkspaceDocument = useCallback(async () => {
     if (window.neoAnkiDesktop) {
@@ -518,7 +524,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         await flushPendingSaves()
         const result = await window.neoAnkiDesktop.applyCoreWorkspacePatchV2(patch)
         adoptPersistedData(result.data)
-        dataRef.current = result.data
         setData(result.data)
         return
       }
@@ -527,12 +532,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const projected = workspaceDocumentV4ToAppData(document)
       const urls = new Map(dataRef.current.assets.map((asset) => [asset.id, asset.dataUrl]))
       projected.assets = projected.assets.map((asset) => ({ ...asset, dataUrl: urls.get(asset.id) || asset.dataUrl }))
-      dataRef.current = projected
       setData(projected)
     })
     corePatchQueue.current = task
     return task
-  }, [])
+  }, [setData])
 
   const setCardsDeck = useCallback(async (cardIds: string[], deckName: string) => {
     const document = await loadWorkspaceDocument()
@@ -574,7 +578,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const operation = imported.workspaceV4Operation || ((imported.workspaceDocumentV4 as { workspace?: { sourceEnvelopes?: Array<{ format?: string }> } }).workspace?.sourceEnvelopes?.some((value) => value.format === 'anki-colpkg') ? 'replace-profile' : 'additive')
       const next = await window.neoAnkiDesktop.commitWorkspaceV4Import({ document: imported.workspaceDocumentV4, media: imported.workspaceV4Media || [], sourceArchive: imported.workspaceV4SourceArchive, operation })
       adoptPersistedData(next)
-      dataRef.current = next
       setData(next)
       return
     }
