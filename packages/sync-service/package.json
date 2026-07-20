@@ -16,7 +16,7 @@
     "@neo-anki/sync-protocol": "1.0.0-alpha.2"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
-    "typescript": "~5.7.2"
+    "@types/node": "^26.1.1",
+    "typescript": "~5.9.3"
   }
 }
