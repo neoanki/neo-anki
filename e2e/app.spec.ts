@@ -125,11 +125,23 @@ test('large-workspace planning completes off the UI thread', async ({ page }) =>
   data.cards = Array.from({ length: 5_001 }, (_, index) => ({ ...card, id: `background-card-${index}`, itemId: item.id }))
   data.reviews = []
   await page.addInitScript(() => {
-    ;(window as unknown as { plannerHeartbeats: number }).plannerHeartbeats = 0
-    window.setInterval(() => { (window as unknown as { plannerHeartbeats: number }).plannerHeartbeats += 1 }, 10)
+    const target = window as unknown as { plannerHeartbeats: number; plannerWorkerProbe: { starts: number; completions: number } }
+    const NativeWorker = window.Worker
+    target.plannerHeartbeats = 0
+    target.plannerWorkerProbe = { starts: 0, completions: 0 }
+    window.Worker = class extends NativeWorker {
+      constructor(scriptURL: string | URL, options?: WorkerOptions) {
+        super(scriptURL, options)
+        if (!String(scriptURL).includes('planner.worker')) return
+        target.plannerWorkerProbe.starts += 1
+        this.addEventListener('message', () => { target.plannerWorkerProbe.completions += 1 }, { once: true })
+      }
+    }
+    window.setInterval(() => { target.plannerHeartbeats += 1 }, 10)
   })
   await startWith(page, data)
-  await expect(page.getByRole('status')).toContainText(/planning this large workspace/i)
+  await expect.poll(() => page.evaluate(() => (window as unknown as { plannerWorkerProbe: { starts: number } }).plannerWorkerProbe.starts)).toBeGreaterThan(0)
+  await expect.poll(() => page.evaluate(() => (window as unknown as { plannerWorkerProbe: { completions: number } }).plannerWorkerProbe.completions), { timeout: 15_000 }).toBeGreaterThan(0)
   await expect(page.locator('button.study-button')).not.toHaveText('Planning…', { timeout: 15_000 })
   expect(await page.evaluate(() => (window as unknown as { plannerHeartbeats: number }).plannerHeartbeats)).toBeGreaterThan(0)
 })

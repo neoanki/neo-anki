@@ -71,7 +71,7 @@ interface AppContextValue {
   toggleTheme: () => void
   completeOnboarding: (minutes: number) => void
   addItem: (input: CreateKnowledgeInput) => string
-  updateItem: (id: string, changes: Partial<Pick<KnowledgeItem, 'prompt' | 'answer' | 'context' | 'collection' | 'tags' | 'source' | 'citations' | 'mediaIds' | 'occlusions' | 'noteModel'>>) => void
+  updateItem: (id: string, changes: Partial<Pick<KnowledgeItem, 'prompt' | 'answer' | 'context' | 'collection' | 'tags' | 'source' | 'citations' | 'mediaIds' | 'occlusions' | 'noteModel'>>) => Promise<void>
   updateItemsBulk: (ids: string[], changes: { collection?: string; addTags?: string[]; removeTags?: string[] }) => void
   deleteItem: (id: string) => void
   deleteItems: (ids: string[]) => void
@@ -282,12 +282,25 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return itemId
   }
 
-  const updateItem: AppContextValue['updateItem'] = (id, changes) => {
-    setData((current) => ({
-      ...current,
-      items: current.items.map((item) => item.id === id ? { ...item, ...changes, updatedAt: new Date().toISOString() } : item),
-      updatedAt: new Date().toISOString(),
-    }))
+  const updateItem: AppContextValue['updateItem'] = async (id, changes) => {
+    const updatedAt = new Date().toISOString()
+    const next = {
+      ...dataRef.current,
+      items: dataRef.current.items.map((item) => item.id === id ? { ...item, ...changes, updatedAt } : item),
+      updatedAt,
+    }
+    dataRef.current = next
+    setData(next)
+    setPersistenceState('saving')
+    try {
+      await saveData(next)
+      setPersistenceError('')
+      setPersistenceState('saved')
+    } catch (error) {
+      setPersistenceError(error instanceof Error ? error.message : 'Neo Anki could not save your latest changes.')
+      setPersistenceState('failed')
+      throw error
+    }
   }
 
   const updateItemsBulk: AppContextValue['updateItemsBulk'] = (ids, changes) => {
