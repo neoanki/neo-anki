@@ -574,6 +574,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const operation = imported.workspaceV4Operation || ((imported.workspaceDocumentV4 as { workspace?: { sourceEnvelopes?: Array<{ format?: string }> } }).workspace?.sourceEnvelopes?.some((value) => value.format === 'anki-colpkg') ? 'replace-profile' : 'additive')
       const next = await window.neoAnkiDesktop.commitWorkspaceV4Import({ document: imported.workspaceDocumentV4, media: imported.workspaceV4Media || [], sourceArchive: imported.workspaceV4SourceArchive, operation })
       adoptPersistedData(next)
+      dataRef.current = next
       setData(next)
       return
     }
