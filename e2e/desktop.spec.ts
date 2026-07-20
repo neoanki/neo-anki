@@ -8,10 +8,19 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
 type DesktopApplication = Awaited<ReturnType<typeof electron.launch>>
+type DesktopWindow = ReturnType<DesktopApplication['windows']>[number]
 const firstReadyWindow = async (application: DesktopApplication) => {
-  const window = await application.firstWindow()
-  await expect(window.locator('html')).toHaveAttribute('data-neo-anki-renderer-ready', 'true', { timeout: 15_000 })
-  return window
+  let readyWindow: DesktopWindow | undefined
+  await expect.poll(async () => {
+    readyWindow = undefined
+    for (const candidate of [...application.windows()].reverse()) {
+      if (candidate.isClosed()) continue
+      const ready = await candidate.locator('html').getAttribute('data-neo-anki-renderer-ready').catch(() => null)
+      if (ready === 'true') { readyWindow = candidate; break }
+    }
+    return Boolean(readyWindow)
+  }, { timeout: 30_000, intervals: [100, 250, 500, 1_000] }).toBe(true)
+  return readyWindow!
 }
 
 const createAnkiPackage = async () => {

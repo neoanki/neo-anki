@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { AppProvider, useApp } from './AppContext'
 import { createSeedData } from '../data/seed'
 
@@ -50,6 +50,18 @@ const LibraryStateProbe = () => {
   </div>
 }
 
+const ImportedEditProbe = ({ imported }: { imported: ReturnType<typeof createSeedData> }) => {
+  const { data, mergeImport, updateItem } = useApp()
+  const importedItem = imported.items[0]
+  return <div>
+    <output aria-label="imported prompt">{data.items.find((item) => item.id === importedItem.id)?.prompt || 'missing'}</output>
+    <button onClick={async () => {
+      await mergeImport({ items: imported.items, cards: imported.cards, assets: imported.assets, workspaceDocumentV4: {}, workspaceV4Operation: 'additive' })
+      await updateItem(importedItem.id, { prompt: 'Edited immediately after import' })
+    }}>Import and edit</button>
+  </div>
+}
+
 const CustomStudyProbe = () => {
   const { data, activeSession, startCustomSession, reviewCard } = useApp()
   const card = data.cards[0]
@@ -64,6 +76,7 @@ const CustomStudyProbe = () => {
 
 describe('workspace safety actions', () => {
   beforeEach(() => localStorage.clear())
+  afterEach(() => { window.neoAnkiDesktop = undefined })
   it('restores exact scheduling after review undo and preserves trashed content', async () => {
     render(<AppProvider><SafetyProbe /></AppProvider>)
     const initialDue = screen.getByLabelText('due').textContent
@@ -114,6 +127,28 @@ describe('workspace safety actions', () => {
     expect(screen.getByLabelText('library card state')).toHaveTextContent('4:user:true')
     await userEvent.click(screen.getByRole('button', { name: 'Unbury' }))
     expect(screen.getByLabelText('library card state')).toHaveTextContent('4:none:false')
+  })
+
+  it('saves an edit against the newly committed desktop import before another render', async () => {
+    const initial = createSeedData()
+    const imported = createSeedData()
+    const originalItemId = imported.items[0].id
+    imported.items[0] = { ...imported.items[0], id: 'imported-item', prompt: 'Imported prompt' }
+    imported.cards = imported.cards.map((card) => card.itemId === originalItemId ? { ...card, itemId: imported.items[0].id } : card)
+    const saved: Array<Parameters<NeoAnkiDesktopBridge['saveData']>[0]> = []
+    window.neoAnkiDesktop = {
+      isDesktop: true,
+      loadData: () => ({ data: initial, storagePath: '/tmp/neo-anki-data.json', recoveredFromBackup: false }),
+      saveData: async (changes: Parameters<NeoAnkiDesktopBridge['saveData']>[0]) => { saved.push(changes) },
+      commitWorkspaceV4Import: async () => imported,
+      onNavigate: () => () => undefined,
+    } as unknown as NeoAnkiDesktopBridge
+
+    render(<AppProvider><ImportedEditProbe imported={imported} /></AppProvider>)
+    await userEvent.click(screen.getByRole('button', { name: 'Import and edit' }))
+
+    await waitFor(() => expect(screen.getByLabelText('imported prompt')).toHaveTextContent('Edited immediately after import'))
+    expect(saved.flatMap((changes) => changes.upsert.items)).toContainEqual(expect.objectContaining({ id: imported.items[0].id, prompt: 'Edited immediately after import' }))
   })
 
   it('records custom preview practice without changing scheduling', async () => {

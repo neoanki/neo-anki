@@ -17,6 +17,7 @@ const EXTENSION_SCHEME = 'neoanki-extension'
 const MEDIA_SCHEME = 'neoanki-media'
 const EXTENSION_WORKER_LOCKDOWN = ';(()=>{for(const name of ["fetch","XMLHttpRequest","WebSocket","EventSource","WebTransport","RTCPeerConnection","Worker","SharedWorker","BroadcastChannel","indexedDB","caches","importScripts"]){try{Object.defineProperty(globalThis,name,{value:undefined,writable:false,configurable:false})}catch{try{globalThis[name]=undefined}catch{}}}})();\n'
 const devServerUrl = process.env.VITE_DEV_SERVER_URL
+const hideWindowForE2E = process.env.NEO_ANKI_E2E_HEADLESS === '1'
 const rendererStartupTimeoutMs = process.env.NEO_ANKI_STARTUP_TIMEOUT_MS ? Math.max(500, Number(process.env.NEO_ANKI_STARTUP_TIMEOUT_MS) || 12_000) : 12_000
 
 protocol.registerSchemesAsPrivileged([
@@ -447,7 +448,7 @@ const createWindow = async (query = '') => {
   window.webContents.on('will-navigate', (event, url) => {
     if (!isTrustedUrl(url)) event.preventDefault()
   })
-  window.once('ready-to-show', () => window.show())
+  window.once('ready-to-show', () => { if (!hideWindowForE2E) window.show() })
   window.on('closed', () => { if (mainWindow === window) mainWindow = null })
   window.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => { if (isMainFrame && !isInPlace) { rendererReady = false; armRendererStartupWatchdog() } })
   window.webContents.on('did-finish-load', armRendererStartupWatchdog)
