@@ -1,25 +1,11 @@
 import { AlertTriangle, Check, ExternalLink, PackagePlus, Puzzle, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { AnyExtensionPermission } from '../../packages/extension-sdk/src/index'
-import { bundledExtensionIds, extensionRuntime } from '../extensions/runtime'
+import { extensionRuntime } from '../extensions/runtime'
 import { safeExternalUrl } from '../lib/urls'
 import { ExtensionMarketplace } from './ExtensionMarketplace'
 
 const permissionLabels: Record<string, string> = {
-  'prompts:contribute': 'Provide built-in practice prompt types',
-  'imports:files': 'Read files you choose for import',
-  'exports:files': 'Create export files',
-  'planning:signals': 'Influence item priority',
-  'planning:policies': 'Add recovery queue policies',
-  'sync:transport': 'Provide a sync transport',
-  'ui:pages': 'Add application pages',
-  'ui:workspace-panels': 'Add workspace panels',
-  'ui:create-panels': 'Add authoring controls',
-  'ui:library-presets': 'Add Library filter presets',
-  'ui:settings-panels': 'Add controls to Settings',
-  'review:tools': 'Observe reviews and submit ratings',
-  'network:fetch': 'Connect to declared HTTPS services',
-  'content:transactions': 'Propose content changes',
   'study:read': 'Read a scoped study projection',
   'study:signals': 'Return bounded study priority signals',
   'content:read': 'Read declared content projections',
@@ -51,7 +37,6 @@ export const ExtensionManagerPanel = () => {
   const [message, setMessage] = useState('')
   const [reloadRequired, setReloadRequired] = useState(false)
   const diagnostics = extensionRuntime.getDiagnostics()
-  const bundled = useMemo(() => extensionRuntime.list().filter((manifest) => bundledExtensionIds.has(manifest.id)), [])
 
   const refresh = async () => {
     if (!bridge) return
@@ -118,8 +103,8 @@ export const ExtensionManagerPanel = () => {
   }
 
   return <div className="setting-block extension-manager">
-    <div className="extensions-heading"><span><Puzzle size={18} /><strong>Extensions</strong></span><small>{bundled.length + installed.filter((record) => record.enabled).length} loaded</small></div>
-    <p>Bundled features are trusted application modules. Every installable package uses the signed, isolated SDK 2 worker/iframe runtime; older SDK packages are rejected before installation.</p>
+    <div className="extensions-heading"><span><Puzzle size={18} /><strong>Extensions</strong></span><small>{installed.filter((record) => record.enabled).length} active</small></div>
+    <p>Every extension shown here is a signed, installable package running in the isolated SDK 2 worker/iframe runtime. Core application features are not presented as extensions.</p>
 
     {safeMode && <div className="extension-reload" role="status"><span><ShieldCheck size={17}/><span><strong>Safe mode is active</strong><small>Locally installed extensions were skipped for this launch.</small></span></span><button className="secondary-button compact" onClick={() => { window.location.search = '' }}>Restart normally</button></div>}
 
@@ -148,12 +133,6 @@ export const ExtensionManagerPanel = () => {
         const homepage = safeExternalUrl(record.manifest.homepage)
         return <details className="extension-row" key={record.manifest.id}><summary><span><strong>{record.manifest.name}</strong><small>Signed isolated SDK 2 package · {record.manifest.publisher}</small></span><span className="extension-state"><i className={record.enabled && !failure ? '' : 'inactive'}>{failure ? 'Error' : record.enabled ? 'Active' : 'Disabled'}</i><code>v{record.manifest.version}</code></span></summary><p className="extension-description">{record.manifest.description}</p>{failure && <p className="extension-error" role="status">{failure.message}</p>}<ManifestSummary manifest={record.manifest}/><div className="extension-record-meta"><span>SHA-256 <code>{record.digest.slice(0, 12)}</code></span><span>Key <code>{record.manifest.publisherKey.slice(0, 12)}</code></span><span>Source <code>{record.manifest.provenance.sourceCommit.slice(0, 12)}</code></span>{homepage && <a href={homepage} target="_blank" rel="noopener noreferrer">Homepage <ExternalLink size={13}/></a>}</div><div className="extension-actions"><button className="secondary-button compact" disabled={busy} onClick={() => void toggle(record)}>{record.enabled ? 'Disable' : 'Enable'}</button><button className="text-button danger" disabled={busy} onClick={() => void uninstall(record)}><Trash2 size={15}/> Uninstall</button></div></details>
       })}
-      <details className="bundled-extension-group">
-        <summary><span>Built-in modules</span><small>{bundled.length}</small></summary>
-        <div className="bundled-extension-list">
-          {bundled.map((manifest) => <details className="extension-row" key={manifest.id}><summary><span><strong>{manifest.name}</strong><small>Trusted app module · {manifest.publisher}</small></span><span className="extension-state"><i>Loaded</i><code>v{manifest.version}</code></span></summary><p className="extension-description">{manifest.description}</p><ManifestSummary manifest={manifest}/></details>)}
-        </div>
-      </details>
     </div>
     {diagnostics.filter((diagnostic) => !installed.some((record) => record.manifest.id === diagnostic.extensionId)).length > 0 && <p className="extension-warning" role="status"><AlertTriangle size={15} /> An extension error was isolated. Your study data remains available.</p>}
   </div>

@@ -123,16 +123,6 @@ describe('application workflows', () => {
     expect(result.violations.filter((violation) => ['critical', 'serious'].includes(violation.impact || ''))).toEqual([])
   })
 
-  it('provides exact, accessible review and deck statistics alongside heuristic forecasts', async () => {
-    renderApp()
-    await userEvent.click(screen.getAllByRole('button', { name: 'Insights' })[0])
-    expect(await screen.findByRole('heading', { name: 'Daily activity · last 30 days' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Workload and observed recall' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'Due now' })).toBeInTheDocument()
-    const result = await axe.run(document)
-    expect(result.violations.filter((violation) => ['critical', 'serious'].includes(violation.impact || ''))).toEqual([])
-  })
-
   it('finds duplicate prompts and broken media references from Library checks', async () => {
     const data = createSeedData()
     data.settings.onboardingComplete = true

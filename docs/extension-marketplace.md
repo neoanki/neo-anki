@@ -2,7 +2,7 @@
 
 NeoAnki apps discover extensions from the review-gated [`neoanki/extensions`](https://github.com/neoanki/extensions) repository. Its `main` branch is the approved catalog and the stable application endpoint is `https://raw.githubusercontent.com/neoanki/extensions/main/catalog.json`.
 
-As of July 20, 2026, [NeoAnki TTS 2.0.2](https://github.com/neoanki/neoanki-tts/releases/tag/v2.0.2) is the catalog's first production extension. Neo Anki desktop v0.2.2 includes marketplace discovery and the install runtime. Browser and mobile discovery is browse-only.
+As of July 21, 2026, the catalog includes [Card Timer 2.0.0](https://github.com/neoanki/neoanki-card-timer/releases/tag/v2.0.0), [Memory Insights 2.0.0](https://github.com/neoanki/neoanki-insights/releases/tag/v2.0.0), and [NeoAnki TTS 2.0.2](https://github.com/neoanki/neoanki-tts/releases/tag/v2.0.2). Neo Anki desktop v0.2.2 includes marketplace discovery and the install runtime. Browser and mobile discovery is browse-only.
 
 ## Approval mechanism
 

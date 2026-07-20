@@ -14,6 +14,20 @@ const manifest: ExtensionPackageManifest = {
 const files = { 'dist/worker.js': 'export {}', 'dist/settings.js': 'export {}' }
 
 describe('installable extension package format', () => {
+  it('is byte-reproducible across host timezones', () => {
+    const previous = process.env.TZ
+    try {
+      process.env.TZ = 'UTC'
+      const utc = createExtensionPackage(manifest, files)
+      process.env.TZ = 'Europe/Kyiv'
+      const kyiv = createExtensionPackage(manifest, files)
+      expect(kyiv).toEqual(utc)
+    } finally {
+      if (previous === undefined) delete process.env.TZ
+      else process.env.TZ = previous
+    }
+  })
+
   it('round-trips SDK 2 entries reproducibly', () => {
     const archive = createExtensionPackage(manifest, files)
     const reordered = createExtensionPackage(manifest, { 'z.txt': 'last', ...files, 'a.txt': 'first' })
