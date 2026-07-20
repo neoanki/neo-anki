@@ -55,9 +55,10 @@ describe('generated Anki 25.9.4 migration corpus', () => {
     const directory = mkdtempSync(join(tmpdir(), 'neo-anki-anki-oracle-'))
     try {
       const packagePath = join(directory, `neo-roundtrip.${target}`)
+      const oraclePath = join(directory, 'oracle.json')
       writeFileSync(packagePath, exported.bytes)
-      const output = execFileSync(oraclePython, [join(process.cwd(), 'scripts/anki-oracle.py'), 'inspect', packagePath], { encoding: 'utf8', timeout: 60_000 })
-      const oracle = JSON.parse(output) as { notes: number; cards: number; reviews: number; media: Array<{ filename: string }>; sample: Array<{ question: string; answer: string; queue: number; flags: number }> }
+      execFileSync(oraclePython, [join(process.cwd(), 'scripts/anki-oracle.py'), 'inspect', packagePath, '--json-output', oraclePath], { timeout: 60_000 })
+      const oracle = JSON.parse(readFileSync(oraclePath, 'utf8')) as { notes: number; cards: number; reviews: number; media: Array<{ filename: string }>; sample: Array<{ question: string; answer: string; queue: number; flags: number }> }
       expect(oracle).toMatchObject({ notes: 4, cards: 7, reviews: 1, media: [{ filename: 'migration-pixel.png' }] })
       expect(oracle.sample.some((card) => card.question.includes('Capital of <b>France</b>?') && card.answer.includes('Paris'))).toBe(true)
       expect(oracle.sample.some((card) => card.question.includes('data-ordinal="1"'))).toBe(true)
