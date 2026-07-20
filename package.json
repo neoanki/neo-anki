@@ -41,11 +41,12 @@
     "test:timezones": "cross-env TZ=America/New_York vitest run src/lib/date.test.ts src/lib/planner.test.ts && cross-env TZ=Europe/Kyiv vitest run src/lib/date.test.ts src/lib/planner.test.ts",
     "benchmark:planner": "tsx scripts/benchmark-planner.ts",
     "license:check": "node scripts/check-licenses.mjs",
+    "release:policy": "node scripts/check-release-policy.mjs",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
-    "test:all": "npm run lint && npm run typecheck && npm run test:coverage && npm run test:timezones && npm run benchmark:planner && npm run license:check && npm run build && npm run test:e2e && npm run test:desktop"
+    "test:all": "npm run lint && npm run typecheck && npm run test:coverage && npm run test:timezones && npm run benchmark:planner && npm run license:check && npm run release:policy && npm run build && npm run test:e2e && npm run test:desktop"
   },
   "dependencies": {
     "@neo-anki/extension-marketplace": "0.1.0",
@@ -112,7 +113,7 @@
       "category": "public.app-category.education",
       "icon": "build/icon.icns",
       "hardenedRuntime": true,
-      "notarize": true,
+      "notarize": false,
       "target": [
         "dmg",
         "zip"
