@@ -13,11 +13,13 @@ if (!target) throw new Error(`Unknown release target: ${targetName || '(missing)
 
 const sourceDirectory = resolve('release')
 const destinationDirectory = resolve('release-artifacts', targetName)
+const packageJson = JSON.parse(await readFile(resolve('package.json'), 'utf8'))
+const artifactPrefix = `${packageJson.productName}-${packageJson.version}-`
 await rm(destinationDirectory, { recursive: true, force: true })
 await mkdir(destinationDirectory, { recursive: true })
 
 const sourceFiles = (await readdir(sourceDirectory, { withFileTypes: true }))
-  .filter((entry) => entry.isFile() && target.extensions.some((extension) => entry.name.endsWith(extension)))
+  .filter((entry) => entry.isFile() && entry.name.startsWith(artifactPrefix) && target.extensions.some((extension) => entry.name.endsWith(extension)))
   .map((entry) => entry.name)
   .sort()
 
@@ -28,7 +30,6 @@ const stagedFiles = sourceFiles.map((file) => ({ source: file, destination: file
 if (new Set(stagedFiles.map(({ destination }) => destination)).size !== stagedFiles.length) throw new Error(`Normalized artifact names collide for ${targetName}.`)
 for (const file of stagedFiles) await copyFile(join(sourceDirectory, file.source), join(destinationDirectory, file.destination))
 await copyFile(resolve(target.instructions), join(destinationDirectory, `INSTALL-${targetName}.md`))
-const packageJson = JSON.parse(await readFile(resolve('package.json'), 'utf8'))
 const evidence = {
   schemaVersion: 1,
   version: `v${packageJson.version}`,

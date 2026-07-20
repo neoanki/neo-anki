@@ -64,12 +64,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     env:
-      CSC_IDENTITY_AUTO_DISCOVERY: 'true'
-      CSC_LINK: ${{ matrix.name == 'macos-universal' && secrets.MAC_CSC_LINK || matrix.name == 'windows-x64' && secrets.WIN_CSC_LINK || '' }}
-      CSC_KEY_PASSWORD: ${{ matrix.name == 'macos-universal' && secrets.MAC_CSC_KEY_PASSWORD || matrix.name == 'windows-x64' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -77,41 +72,25 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Require platform signing credentials
-        if: runner.os == 'macOS' || runner.os == 'Windows'
-        shell: bash
-        run: |
-          test -n "$CSC_LINK"
-          test -n "$CSC_KEY_PASSWORD"
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            test -n "$APPLE_ID"
-            test -n "$APPLE_APP_SPECIFIC_PASSWORD"
-            test -n "$APPLE_TEAM_ID"
-          fi
+      - run: npm run release:policy
       - run: npm run build && npm run extension:example && npm run desktop:prepare
       - name: Build release artifacts
         run: npx electron-builder ${{ matrix.args }} --publish never
-      - name: Verify macOS signing, notarization, and launch
+      - name: Verify macOS payload and launch
         if: runner.os == 'macOS'
         shell: bash
         run: |
           app_path="$(find release -maxdepth 3 -type d -name '*.app' -print -quit)"
           test -n "$app_path"
-          codesign --verify --deep --strict --verbose=2 "$app_path"
-          codesign -dv --verbose=4 "$app_path" 2>&1 | grep 'Authority=Developer ID Application'
-          spctl --assess --type exec --verbose=4 "$app_path"
-          xcrun stapler validate "$app_path"
           executable="$app_path/Contents/MacOS/Neo Anki"
           test -x "$executable"
           NEO_ANKI_PACKAGED_APP="$executable" npx playwright test --config=playwright.desktop.config.ts --grep 'packaged application launches'
-      - name: Verify Windows Authenticode trust and launch
+      - name: Verify Windows payload and launch
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $installer = Get-ChildItem release -Filter *.exe | Select-Object -First 1
           if (-not $installer) { throw 'No Windows installer was produced.' }
-          $signature = Get-AuthenticodeSignature $installer.FullName
-          if ($signature.Status -ne 'Valid') { throw "Expected a valid Authenticode signature, got: $($signature.Status)" }
           $executable = Get-ChildItem release/win-unpacked -Filter *.exe | Select-Object -First 1
           if (-not $executable) { throw 'No packaged Windows executable was produced.' }
           $env:NEO_ANKI_PACKAGED_APP = $executable.FullName

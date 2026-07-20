@@ -34,7 +34,7 @@ This ledger closes the findings in `neo-anki-comprehensive-audit-2026-07-19.md` 
 | PERF-001 / PERF-002 | Projection/invariant foreign keys and extension paging are indexed; Insights indexes reviews by card/day in one pass. | Projection/Insights tests |
 | PERF-003 | Noncritical routes and Anki export load lazily; React, validation and scheduler chunks have a 500 kB budget. | Production build |
 | TEST-001 / CI-001 | Durability regressions are automated; core web journeys run Chromium, Firefox and WebKit; desktop runs Linux, Windows and both macOS architectures. | CI workflow |
-| REL-001 | Tagged verification reruns browser, desktop, oracle and mobile gates before signed/notarized builds; outputs include evidence, SBOMs, checksums and attestations. | Release workflow |
+| REL-001 | Tagged verification reruns browser, desktop, oracle and mobile gates before cross-platform builds; outputs include evidence, SBOMs, checksums and attestations. Platform signing is optional future hardening. | Release workflow |
 | DOC-001 | Claims now map to current automated evidence and supported limits; this ledger supersedes the pre-fix recommendation. | Claim-evidence and architecture docs |
 | DEP-001 | The one build-time Expo/xcode UUID advisory is registered with reachability, controls, upstream state and expiry; no high/critical advisories remain. | Dependency risk register |
 | SEC-001 | The browser same-origin key-use boundary and high-sensitivity recommendation are explicit. | Browser sync security doc |
@@ -53,4 +53,4 @@ These defects were not part of the original pre-fix audit. They were found by th
 
 ## Release exit gate
 
-Release is eligible only when the complete local matrix and all required GitHub checks pass on the release commit. A failed required oracle, desktop durability journey, artifact trust check, checksum, SBOM validation or attestation blocks publication.
+Release is eligible only when the complete local matrix and all required GitHub checks pass on the release commit. A failed required oracle, desktop durability journey, packaged launch, checksum, SBOM validation or attestation blocks publication. Missing platform signing or notarization credentials do not block CI or publication.

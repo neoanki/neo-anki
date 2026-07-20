@@ -1,11 +1,11 @@
 # Install Neo Anki on macOS
 
-Tagged Neo Anki releases require Developer ID signing and Apple notarization. Local developer builds are not release artifacts and may be unsigned.
+Neo Anki's macOS release artifacts are currently unsigned and not notarized. Developer ID signing and notarization are optional future improvements, not release or CI requirements.
 
 1. Download the DMG and `SHA256SUMS-macos-universal.txt` from the same GitHub Release.
 2. In Terminal, run `shasum -a 256 "Neo-Anki-…dmg"` and compare the result with the matching line in the checksum file.
-3. Open the DMG and drag Neo Anki to Applications.
-4. Open Neo Anki normally. A tagged release must pass Gatekeeper without **Open Anyway** or an unidentified-developer warning.
-5. If macOS reports that the developer cannot be verified, do not bypass the warning. Verify the download and report the release artifact.
+3. For stronger provenance verification, run `gh attestation verify <artifact> --repo neoanki/neo-anki`.
+4. Open the DMG and drag Neo Anki to Applications.
+5. After verifying the checksum and attestation, Control-click Neo Anki, choose **Open**, then confirm **Open** when macOS shows the unidentified-developer warning.
 
-For stronger provenance verification, use `gh attestation verify <artifact> --repo neoanki/neo-anki`.
+Do not continue if either the checksum or GitHub attestation fails.
