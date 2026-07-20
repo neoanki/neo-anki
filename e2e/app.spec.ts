@@ -183,22 +183,13 @@ test('goals, saved views, and pack updates are manageable', async ({ page }) => 
   await expect(page.getByRole('status')).toContainText('scheduling was preserved')
 })
 
-test('settings distinguishes trusted built-in modules from isolated SDK 2 packages', async ({ page }) => {
+test('settings presents only isolated SDK 2 packages as extensions', async ({ page }) => {
   await startWith(page)
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await expect(page.getByText('Extensions', { exact: true })).toBeVisible()
-  await expect(page.getByText(/every installable package uses the signed, isolated SDK 2/i)).toBeVisible()
-  const timerToggle = page.getByRole('checkbox', { name: 'Disabled' })
-  await expect(timerToggle).not.toBeChecked()
-  await timerToggle.check()
-  await expect(page.getByLabel('Seconds per card')).toHaveValue('20')
-  await expect(page.locator('.extension-row')).toHaveCount(8)
-  await page.getByText('Built-in modules', { exact: true }).click()
-  await expect(page.getByText(/trusted app module/i).first()).toBeVisible()
-  await page.getByText('Card Timer', { exact: true }).click()
-  await expect(page.getByText('Observe reviews and submit ratings', { exact: true })).toBeVisible()
-  await page.getByText('Image Occlusion', { exact: true }).click()
-  await expect(page.getByText('Add authoring controls', { exact: true })).toBeVisible()
+  await expect(page.getByText(/every extension shown here is a signed, installable package/i)).toBeVisible()
+  await expect(page.locator('.extension-row')).toHaveCount(0)
+  await expect(page.getByText('Built-in modules', { exact: true })).toHaveCount(0)
 })
 
 test('malformed migration failures are announced as errors without changing the workspace', async ({ page }) => {

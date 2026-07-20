@@ -125,7 +125,11 @@ export const createExtensionPackage = (manifest: ExtensionPackageManifest, files
   for (const [path, value] of Object.entries(files)) raw[normalizeExtensionPath(path)] = typeof value === 'string' ? strToU8(value) : value
   const entries = [validated.workerEntry, ...(validated.uiEntries || []).map((value) => value.entry)].filter((value): value is string => Boolean(value))
   for (const entry of entries) if (!raw[entry]) throw new Error(`Extension entry ${entry} is missing.`)
-  const epoch = new Date('1980-01-01T00:00:00.000Z')
+  // ZIP stores DOS wall-clock fields without a timezone. Construct midnight in
+  // the active timezone so every builder/runtime writes the same fields. A UTC
+  // instant here shifts the stored hour by the local offset and makes signed
+  // packages unverifiable when build and install happen in different zones.
+  const epoch = new Date(1980, 0, 1, 0, 0, 0, 0)
   const contents: Zippable = Object.fromEntries(Object.keys(raw).sort().map((path) => [path, [raw[path], { level: 9, mtime: epoch }]]))
   const archive = zipSync(contents, { level: 9, mtime: epoch })
   parseExtensionPackage(archive)

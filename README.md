@@ -10,12 +10,13 @@ A TypeScript-first, device-first desktop spaced-repetition app that plans learni
 - Adaptive session composition: a balanced mix, one-area focus, or urgent reviews, sequenced as coherent context blocks instead of random category switching.
 - Basic, reverse, cloze, typed-answer, image-occlusion, and audio prompts over a canonical knowledge model.
 - Visual authoring with media, multiple citations, duplicate detection, and actionable prompt-health diagnostics.
-- Today, focused Review, searchable Library, Goals, Saved Views, Shared Packs, and Insights.
+- Today, focused Review, searchable Library, Goals, Saved Views, and Shared Packs.
 - Learning goals feed urgency into the daily planner rather than becoming a separate task list.
 - Preflighted `.apkg`/`.colpkg` migration for the fixtures and transformations listed in the [compatibility contract](docs/anki-compatibility.md). Compatibility is bounded: modified repeat imports, large archives, whole-workspace replacement, and export fidelity have known gaps that are disclosed there.
 - Patch-based shared packs with three-way merging, explicit conflict resolution, and preserved review history.
 - Electron desktop application with integrated macOS window chrome, native menus and shortcuts, a study queue and card browser, canonical Workspace v4 SQLite persistence, content-addressed media, serialized saves, recovery backups, native backup restore/export, and light/dark themes. See the [claim evidence register](docs/claim-evidence.md) for the tested durability boundary.
-- Trusted, compiled feature modules for prompt types, image occlusion, Anki/CSV interoperability, recovery policies, goals/views, shared packs, Insights and the optional card timer; these modules are architectural boundaries, not third-party security sandboxes.
+- Trusted, compiled feature modules remain only where the public SDK does not yet provide an equivalent invariant-preserving seam: prompt types, image occlusion, Anki/CSV interoperability, recovery policies, goals/views, and shared packs.
+- Card Timer and Memory Insights are independently released, signed SDK 2 extensions discovered through the marketplace; they no longer ship inside the renderer bundle.
 - Installable `.neoanki-extension` packages use SDK 2 exclusively. Packages are signed, logic runs in workers, UI runs in sandboxed iframes, and schema/SDK 1 packages are rejected before installation. Lifecycle tests cover reload, disable/re-enable, update, rollback, uninstall, cancellation, and recovery.
 - Desktop v0.2.2 includes the public review-gated [extension marketplace](docs/extension-marketplace.md), where [NeoAnki TTS 2.0.2](https://github.com/neoanki/neoanki-tts/releases/tag/v2.0.2) is the first production listing. Web and mobile can browse the same catalog; only desktop has an install runtime.
 - An offline-capable browser client and an Expo/React Native iOS and Android client share Workspace v4, FSRS, and encrypted-sync packages. These are source capabilities, not claims of hosted-service readiness, real-device validation, or application-store availability.

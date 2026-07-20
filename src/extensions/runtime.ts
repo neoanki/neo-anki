@@ -5,8 +5,6 @@ import { promptTypesExtension } from './prompts'
 import { recoveryPoliciesExtension } from './recovery-policies'
 import { workspaceExtension } from './workspace'
 import { sharedPacksExtension } from './shared-packs'
-import { insightsExtension } from './insights'
-import { cardTimerExtension } from './card-timer'
 import type { NeoAnkiCoreModule } from './core-module'
 import { prepareExtensionHost } from './host'
 import { initializeExtensionRegistryV2 } from './v2/registry'
@@ -18,12 +16,9 @@ const bundledModules: NeoAnkiCoreModule[] = [
   recoveryPoliciesExtension,
   workspaceExtension,
   sharedPacksExtension,
-  insightsExtension,
-  cardTimerExtension,
 ]
 
 export const extensionRuntime = new ExtensionRegistry(bundledModules)
-export const bundledExtensionIds = new Set(bundledModules.map((module) => module.manifest.id))
 
 export const initializeExternalExtensions = async () => {
   if (!window.neoAnkiDesktop || new URLSearchParams(window.location.search).get('safe-mode') === '1') return

@@ -14,7 +14,7 @@ The kernel is intended to own the invariants whose failure could corrupt a works
 - Extension package review, signatures, lifecycle recovery, capability issuance, bounded host services and safe mode.
 - Encrypted sync protocol application, conflict presentation and explicit resolution.
 
-Feature modules under `src/extensions/`—Prompt Types, Image Occlusion, Interoperability, Recovery Policies, Goals & Saved Views, Shared Packs, Insights and Card Timer—are compiled with the app and are therefore trusted. Their internal `CoreModuleManifest`/`NeoAnkiCoreModule` registry supports modularity and failure fallbacks, but it is not an extension SDK or a security boundary. The former Browser Tab Sync experiment was removed because whole-document last-writer merging could not preserve Workspace v4 deletion and graph invariants.
+Feature modules under `src/extensions/`—Prompt Types, Image Occlusion, Interoperability, Recovery Policies, Goals & Saved Views, and Shared Packs—are compiled with the app and are therefore trusted. Their internal `CoreModuleManifest`/`NeoAnkiCoreModule` registry supports modularity and failure fallbacks, but it is not an extension SDK or a security boundary. Memory Insights and Card Timer were removed from this registry in July 2026 and now ship only as independently released, signed SDK 2 packages. The former Browser Tab Sync experiment was removed because whole-document last-writer merging could not preserve Workspace v4 deletion and graph invariants.
 
 ## Installable SDK 2 packages
 
@@ -45,7 +45,7 @@ See [extension-sdk.md](extension-sdk.md), [extension-authoring.md](extension-aut
 
 ## Still postponed
 
-- Real-world publisher identity attestation, automatic extension updates and dependency resolution. Marketplace discovery verifies GitHub review provenance, pinned release metadata and publisher-key continuity, but does not claim legal identity verification. The public catalog's first production listing is NeoAnki TTS 2.0.2.
+- Real-world publisher identity attestation, automatic extension updates and dependency resolution. Marketplace discovery verifies GitHub review provenance, pinned release metadata and publisher-key continuity, but does not claim legal identity verification. The public catalog includes Card Timer, Memory Insights, and NeoAnki TTS.
 - Executing Anki Python add-ons. Unknown add-on metadata may be retained inertly for round-trip safety but is never executed.
 - AI extraction/grading, OCR/PDF pipelines, web clipping and external knowledge connectors.
 - Collaboration, shared-account policy, decorative gamification and third-party scheduler strategies.
