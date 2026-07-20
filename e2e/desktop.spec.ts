@@ -7,6 +7,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
+type DesktopApplication = Awaited<ReturnType<typeof electron.launch>>
+const firstReadyWindow = async (application: DesktopApplication) => {
+  const window = await application.firstWindow()
+  await expect(window.locator('html')).toHaveAttribute('data-neo-anki-renderer-ready', 'true', { timeout: 15_000 })
+  return window
+}
+
 const createAnkiPackage = async () => {
   const SQL = await initSqlJs({ locateFile: () => join(process.cwd(), 'node_modules/sql.js/dist/sql-wasm.wasm') })
   const database = new SQL.Database()
@@ -30,7 +37,7 @@ test('desktop app persists the workspace to disk across restarts', async () => {
 
   try {
     const firstRun = await launch()
-    const firstWindow = await firstRun.firstWindow()
+    const firstWindow = await firstReadyWindow(firstRun)
     expect(firstWindow.url()).toBe('neoanki://app/index.html')
     expect(await firstWindow.evaluate(() => window.neoAnkiDesktop?.isDesktop)).toBe(true)
     await expect(firstWindow.getByRole('heading', { name: /what are you bringing/i })).toBeVisible()
@@ -48,7 +55,7 @@ test('desktop app persists the workspace to disk across restarts', async () => {
     expect(stored.onboardingComplete).toBe(true)
 
     const secondRun = await launch()
-    const secondWindow = await secondRun.firstWindow()
+    const secondWindow = await firstReadyWindow(secondRun)
     await expect(secondWindow.getByRole('heading', { name: 'Today' })).toBeVisible()
     await expect(secondWindow.getByRole('heading', { name: /45 min available/i })).toBeVisible()
     await secondRun.close()
@@ -61,7 +68,7 @@ test('in-place routes do not trigger renderer startup recovery', async () => {
   const userData = await mkdtemp(join(tmpdir(), 'neo-anki-routes-'))
   const desktop = await electron.launch({ args: ['.'], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData, NEO_ANKI_STARTUP_TIMEOUT_MS: '3000' } })
   try {
-    const window = await desktop.firstWindow()
+    const window = await firstReadyWindow(desktop)
     await window.getByRole('button', { name: /create a fresh workspace/i }).click()
     await window.getByRole('button', { name: /30 minutes/i }).click()
     await window.getByRole('button', { name: /build my first plan/i }).click()
@@ -82,7 +89,7 @@ test('installs, loads, and disables an SDK 2 extension package', async () => {
   const extensionPackage = join(process.cwd(), 'examples/study-pulse-extension/build', `${manifest.id}-${manifest.version}.neoanki-extension`)
   try {
     const desktop = await electron.launch({ args: ['.', `--install-extension=${extensionPackage}`], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData } })
-    const window = await desktop.firstWindow()
+    const window = await firstReadyWindow(desktop)
     await window.getByRole('button', { name: /create a fresh workspace/i }).click()
     await window.getByRole('button', { name: /30 minutes/i }).click()
     await window.getByRole('button', { name: /build my first plan/i }).click()
@@ -115,7 +122,7 @@ test('packaged application launches without a development server', async () => {
   const userData = await mkdtemp(join(tmpdir(), 'neo-anki-packaged-'))
   try {
     const packagedApp = await electron.launch({ executablePath, env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData, NEO_ANKI_TEST_ALLOW_MULTIPLE_INSTANCES: '1' } })
-    const window = await packagedApp.firstWindow()
+    const window = await firstReadyWindow(packagedApp)
     expect(window.url()).toBe('neoanki://app/index.html')
     await expect(window.getByRole('heading', { name: /what are you bringing/i })).toBeVisible()
     await packagedApp.close()
@@ -128,7 +135,7 @@ test('desktop security policy permits the WebAssembly Anki importer', async () =
   const userData = await mkdtemp(join(tmpdir(), 'neo-anki-wasm-'))
   const app = await electron.launch({ args: ['.'], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData } })
   try {
-    const window = await app.firstWindow()
+    const window = await firstReadyWindow(app)
     await window.getByRole('button', { name: /create a fresh workspace/i }).click()
     await window.getByRole('button', { name: /30 minutes/i }).click()
     await window.getByRole('button', { name: /build my first plan/i }).click()
@@ -148,7 +155,7 @@ test('current Anki migration renders custom CSS, typed fields, and media in a sa
   const userData = await mkdtemp(join(tmpdir(), 'neo-anki-current-migration-'))
   const app = await electron.launch({ args: ['.'], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData } })
   try {
-    const window = await app.firstWindow()
+    const window = await firstReadyWindow(app)
     await window.getByRole('button', { name: /migrate from anki/i }).click()
     await window.locator('input[type=file][accept=".apkg,.colpkg"]').setInputFiles(join(process.cwd(), 'test-fixtures/anki/25.9.4/current-stable.apkg'))
     await expect(window.getByRole('heading', { name: /review exactly what will migrate/i })).toBeVisible()
@@ -177,7 +184,7 @@ test('imported named-field edits and bulk card states survive a desktop restart'
   const userData = await mkdtemp(join(tmpdir(), 'neo-anki-library-migration-'))
   let app = await electron.launch({ args: ['.'], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData } })
   try {
-    let window = await app.firstWindow()
+    let window = await firstReadyWindow(app)
     const migrationPackage = window.locator('input[type=file][accept=".apkg,.colpkg"]')
     await expect(window.getByRole('button', { name: /migrate from anki/i })).toBeVisible()
     await window.getByRole('button', { name: /migrate from anki/i }).dispatchEvent('click')
@@ -217,7 +224,7 @@ test('imported named-field edits and bulk card states survive a desktop restart'
     await app.close()
 
     app = await electron.launch({ args: ['.'], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData } })
-    window = await app.firstWindow()
+    window = await firstReadyWindow(app)
     await window.getByRole('button', { name: 'Library' }).first().click()
     await window.getByPlaceholder(/Search questions/i).fill('flag:5 is:buried tag:verified-migration note:"Migration Custom"')
     const restored = window.locator('.library-row').filter({ hasText: 'Capital of' }).first()
@@ -234,7 +241,7 @@ test('imported templates, CSS, fields, and deck presets are editable without fla
   const userData = await mkdtemp(join(tmpdir(), 'neo-anki-compatibility-editor-'))
   let app = await electron.launch({ args: ['.'], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData } })
   try {
-    let window = await app.firstWindow()
+    let window = await firstReadyWindow(app)
     await window.getByRole('button', { name: /migrate from anki/i }).click()
     await window.locator('input[type=file][accept=".apkg,.colpkg"]').setInputFiles(join(process.cwd(), 'test-fixtures/anki/25.9.4/current-stable.apkg'))
     await window.getByRole('button', { name: /create checkpoint and migrate/i }).click()
@@ -267,7 +274,7 @@ test('imported templates, CSS, fields, and deck presets are editable without fla
     await app.close()
 
     app = await electron.launch({ args: ['.'], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData } })
-    window = await app.firstWindow()
+    window = await firstReadyWindow(app)
     await window.getByRole('button', { name: 'Settings', exact: true }).click()
     const restored = window.locator('details').filter({ hasText: 'Note types, fields, templates, and CSS' })
     await restored.locator('summary').click()
@@ -285,7 +292,7 @@ test('card browser preserves per-card deck ownership and explicit Anki due-date 
   const userData = await mkdtemp(join(tmpdir(), 'neo-anki-card-browser-'))
   let app = await electron.launch({ args: ['.'], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData } })
   try {
-    let window = await app.firstWindow()
+    let window = await firstReadyWindow(app)
     await window.getByRole('button', { name: /migrate from anki/i }).click()
     await window.locator('input[type=file][accept=".apkg,.colpkg"]').setInputFiles(join(process.cwd(), 'test-fixtures/anki/25.9.4/current-stable.apkg'))
     await window.getByRole('button', { name: /create checkpoint and migrate/i }).click()
@@ -309,7 +316,7 @@ test('card browser preserves per-card deck ownership and explicit Anki due-date 
     await app.close()
 
     app = await electron.launch({ args: ['.'], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData } })
-    window = await app.firstWindow()
+    window = await firstReadyWindow(app)
     await window.getByRole('button', { name: 'Library' }).first().click()
     await window.getByRole('button', { name: 'Cards', exact: true }).click()
     await window.getByPlaceholder(/Search questions/i).fill('is:learn deck:"Migration Corpus::Core"')
@@ -324,7 +331,7 @@ test('custom preview records retrieval practice without changing the selected ca
   const userData = await mkdtemp(join(tmpdir(), 'neo-anki-custom-preview-'))
   const app = await electron.launch({ args: ['.'], env: { ...process.env, NEO_ANKI_USER_DATA_DIR: userData } })
   try {
-    const window = await app.firstWindow()
+    const window = await firstReadyWindow(app)
     await window.getByRole('button', { name: /create a fresh workspace/i }).click()
     await window.getByRole('button', { name: /30 minutes/i }).click()
     await window.getByRole('button', { name: /build my first plan/i }).click()

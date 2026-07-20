@@ -1,4 +1,4 @@
-import { StrictMode } from 'react'
+import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { AppProvider } from './state/AppContext'
@@ -20,13 +20,21 @@ const resumeInterruptedBrowserSync = async () => {
   })
 }
 
+const RendererReady = () => {
+  useEffect(() => {
+    document.documentElement.dataset.neoAnkiRendererReady = 'true'
+    window.neoAnkiDesktop?.rendererReady()
+  }, [])
+  return null
+}
+
 void resumeInterruptedBrowserSync().catch(() => undefined).then(() => initializeExternalExtensions()).finally(() => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
+      <RendererReady />
       <AppErrorBoundary><AppProvider><App /></AppProvider></AppErrorBoundary>
     </StrictMode>,
   )
-  queueMicrotask(() => window.neoAnkiDesktop?.rendererReady())
 })
 
 window.addEventListener('error', (event) => {
