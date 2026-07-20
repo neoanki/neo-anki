@@ -2,7 +2,7 @@
 
 Neo Anki has two deliberately different trust tiers. Code compiled into the application is trusted core code. Installable SDK 2 packages are designed to run behind worker/iframe isolation and may use only reviewed, capability-scoped host calls. The UI must not imply that these tiers have identical authority.
 
-This page describes the intended boundary and implemented checks, not a proof that every lifecycle path is complete. The July 19 audit found that renderer reload and disable/re-enable can leave capability claims unusable until instance ownership and token revocation are repaired.
+This page describes the intended boundary and implemented checks, not a proof that every lifecycle path is complete. The July 19 audit's renderer reload and disable/re-enable findings were remediated with instance-bound ownership, revocation, and lifecycle regressions before v0.2.1.
 
 ## Trusted core and bundled feature modules
 
@@ -36,7 +36,7 @@ SDK v2 packages are byte-reproducible and Ed25519-signed. Installation verifies 
 - Same-digest reinstall is idempotent. Update/downgrade activation uses a recoverable state transition and retains provenance/rollback information during review.
 - Worker startup, messages, queues and contribution execution are bounded. Cancellation propagates to host operations.
 - UI frames cannot share the host origin, DOM, React tree, cookies or storage.
-- A capability token is bound to the enabled extension and exact reviewed permission during a healthy renderer instance. Reload/re-enable continuity remains a known gap.
+- A capability token is bound to the enabled extension instance and exact reviewed permission; reload, disable/re-enable, update, rollback, uninstall, and renderer teardown revoke prior claims and token-owned network work.
 - Patch ownership, expected revisions, operation count/size and the current workspace invariant set are checked before acceptance. The invariant set is not yet complete for every graph relationship.
 - Unknown or crashing prompt behavior still falls back to a basic reviewable card; extension failure is recorded without granting broader data access.
 - The startup watchdog opens a package-free safe-mode window if installed code prevents renderer readiness.
@@ -45,7 +45,7 @@ See [extension-sdk.md](extension-sdk.md), [extension-authoring.md](extension-aut
 
 ## Still postponed
 
-- Real-world publisher identity attestation, automatic extension updates and dependency resolution. Marketplace discovery verifies GitHub review provenance, pinned release metadata and publisher-key continuity, but does not claim legal identity verification. The public catalog's first production listing is NeoAnki TTS 2.0.1.
+- Real-world publisher identity attestation, automatic extension updates and dependency resolution. Marketplace discovery verifies GitHub review provenance, pinned release metadata and publisher-key continuity, but does not claim legal identity verification. The public catalog's first production listing is NeoAnki TTS 2.0.2.
 - Executing Anki Python add-ons. Unknown add-on metadata may be retained inertly for round-trip safety but is never executed.
 - AI extraction/grading, OCR/PDF pipelines, web clipping and external knowledge connectors.
 - Collaboration, shared-account policy, decorative gamification and third-party scheduler strategies.
