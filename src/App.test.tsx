@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import axe from 'axe-core'
@@ -28,7 +28,7 @@ const renderApp = (onboarded = true) => {
 
 describe('application workflows', () => {
   beforeEach(() => localStorage.clear())
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => { vi.unstubAllGlobals(); window.neoAnkiDesktop = undefined })
   it('onboards around time instead of a fixed new-card count', async () => {
     renderApp(false)
     expect(screen.getByRole('heading', { name: /what are you bringing/i })).toBeInTheDocument()
@@ -72,6 +72,39 @@ describe('application workflows', () => {
     expect(save).toBeDisabled()
     await userEvent.type(screen.getByLabelText('Prompt'), ' updated')
     expect(save).toBeEnabled()
+  })
+
+  it('keeps desktop edits open until their exact snapshot is durably saved', async () => {
+    const data = createSeedData()
+    data.settings.onboardingComplete = true
+    const saved: Array<{ upsert: { items: Array<{ prompt: string }> } }> = []
+    let releaseSave!: () => void
+    const blockedSave = new Promise<void>((resolve) => { releaseSave = resolve })
+    window.neoAnkiDesktop = {
+      isDesktop: true,
+      loadData: () => ({ data, storagePath: '/tmp/neo-anki-data.json', recoveredFromBackup: false }),
+      saveData: async (changes: Parameters<NeoAnkiDesktopBridge['saveData']>[0]) => {
+        const captured = changes as typeof saved[number]
+        saved.push(captured)
+        if (captured.upsert.items.length) await blockedSave
+      },
+      onNavigate: () => () => undefined,
+    } as unknown as NeoAnkiDesktopBridge
+
+    render(<AppProvider><App /></AppProvider>)
+    await userEvent.click(screen.getAllByRole('button', { name: 'Library' })[0])
+    await userEvent.click((await screen.findAllByRole('button', { name: /^Edit / }))[0])
+    await userEvent.type(screen.getByLabelText('Prompt'), ' persisted')
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    expect(screen.getByRole('dialog', { name: 'Edit content' })).toHaveAttribute('aria-busy', 'true')
+    expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Close editor' })).toBeDisabled()
+    await waitFor(() => expect(saved.some((changes) => changes.upsert.items.length > 0)).toBe(true))
+
+    releaseSave()
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit content' })).not.toBeInTheDocument())
+    expect(saved.flatMap((changes) => changes.upsert.items)).toContainEqual(expect.objectContaining({ prompt: expect.stringContaining(' persisted') }))
   })
 
   it('creates a learning goal from Plans', async () => {
