@@ -90,6 +90,7 @@
     "xcode": "^3.0.1"
   },
   "overrides": {
+    "shell-quote": "1.10.0",
     "xcode": {
       "uuid": "11.1.1"
     }
