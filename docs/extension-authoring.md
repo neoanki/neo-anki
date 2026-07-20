@@ -115,6 +115,6 @@ Neo\ Anki --install-extension=/absolute/path/example.neoanki-extension
 - Reviewed worker/UI entries must be packaged `.js`/`.mjs` files and match the manifest exactly.
 - Every package must contain a valid signature whose public key matches the manifest.
 
-Workers and iframes materially contain third-party code, but isolation is not a reason to install arbitrary packages. A signature proves continuity with a key, not benevolence or verified legal identity. Marketplace discovery, identity attestation, dependency resolution and automatic updates are not currently provided.
+Workers and iframes materially contain third-party code, but isolation is not a reason to install arbitrary packages. A signature proves continuity with a key, not benevolence or verified legal identity. Marketplace discovery is review-gated, but real-world identity attestation, dependency resolution and automatic updates are not currently provided.
 
 Schema/SDK 1 packages are unsupported and rejected. There is no compatibility release or full-trust renderer loading path.
