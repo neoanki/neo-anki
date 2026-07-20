@@ -2,7 +2,7 @@
 
 Every public claim must remain weaker than its current evidence. A passing unit test proves only its exercised case; presentation quality, an implemented primitive, or a planned release gate is not evidence that an end-to-end property holds.
 
-Status below is aligned with the July 19 comprehensive audit, its remediation ledger, and the v0.2.1 release gates completed July 20, 2026. Re-run the audit and update this register before broadening public wording.
+Status below is aligned with the July 19 comprehensive audit, its remediation ledger, and the v0.2.2 release gates completed July 20, 2026. Re-run the audit and update this register before broadening public wording.
 
 | Area | Allowed public wording | Known limit that must remain disclosed | Gate for stronger wording |
 | --- | --- | --- | --- |

@@ -136,11 +136,16 @@ describe('workspace safety actions', () => {
     imported.items[0] = { ...imported.items[0], id: 'imported-item', prompt: 'Imported prompt' }
     imported.cards = imported.cards.map((card) => card.itemId === originalItemId ? { ...card, itemId: imported.items[0].id } : card)
     const saved: Array<Parameters<NeoAnkiDesktopBridge['saveData']>[0]> = []
+    let persisted = initial
     window.neoAnkiDesktop = {
       isDesktop: true,
       loadData: () => ({ data: initial, storagePath: '/tmp/neo-anki-data.json', recoveredFromBackup: false }),
-      saveData: async (changes: Parameters<NeoAnkiDesktopBridge['saveData']>[0]) => { saved.push(changes) },
-      commitWorkspaceV4Import: async () => imported,
+      saveData: async (changes: Parameters<NeoAnkiDesktopBridge['saveData']>[0]) => {
+        saved.push(changes)
+        const upserted = new Map(changes.upsert.items.map((item) => [item.id, item]))
+        persisted = { ...persisted, items: persisted.items.map((item) => upserted.get(item.id) || item) }
+      },
+      commitWorkspaceV4Import: async () => { persisted = imported; return imported },
       onNavigate: () => () => undefined,
     } as unknown as NeoAnkiDesktopBridge
 
@@ -149,6 +154,7 @@ describe('workspace safety actions', () => {
 
     await waitFor(() => expect(screen.getByLabelText('imported prompt')).toHaveTextContent('Edited immediately after import'))
     expect(saved.flatMap((changes) => changes.upsert.items)).toContainEqual(expect.objectContaining({ id: imported.items[0].id, prompt: 'Edited immediately after import' }))
+    await waitFor(() => expect(persisted.items.find((item) => item.id === imported.items[0].id)?.prompt).toBe('Edited immediately after import'))
   })
 
   it('records custom preview practice without changing scheduling', async () => {
