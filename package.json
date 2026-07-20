@@ -52,9 +52,9 @@
     "@neo-anki/extension-marketplace": "0.1.0",
     "fflate": "^0.8.3",
     "fzstd": "^0.1.1",
-    "lucide-react": "^1.24.0",
-    "react": "19.2.3",
-    "react-dom": "19.2.3",
+    "lucide-react": "^1.25.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
     "sql.js": "^1.14.1",
     "ts-fsrs": "^5.2.0",
     "zod": "^4.4.3"
