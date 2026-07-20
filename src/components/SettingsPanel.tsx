@@ -103,7 +103,8 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
   const exportWith = async (id: string) => {
     const exporter = extensionRuntime.exporters().find((candidate) => candidate.id === id)
     if (!exporter) return
-    const url = URL.createObjectURL(new Blob([await exporter.export(data)], { type: exporter.mimeType }))
+    const exported = await exporter.export(data)
+    const url = URL.createObjectURL(new Blob([typeof exported === 'string' ? exported : new Uint8Array(exported)], { type: exporter.mimeType }))
     const anchor = document.createElement('a'); anchor.href = url; anchor.download = exporter.filename; anchor.click(); URL.revokeObjectURL(url)
   }
 
