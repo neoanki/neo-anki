@@ -186,13 +186,20 @@ def main() -> None:
     large_parser.add_argument("package", type=Path)
     inspect_parser = subparsers.add_parser("inspect")
     inspect_parser.add_argument("package", type=Path)
+    inspect_parser.add_argument("--json-output", type=Path)
     args = parser.parse_args()
     if args.command == "generate":
         generate(args.output)
     elif args.command == "generate-large":
         generate_large(args.package)
     else:
-        print(json.dumps(inspect_package(args.package), ensure_ascii=False))
+        output = json.dumps(inspect_package(args.package), ensure_ascii=False)
+        if args.json_output:
+            temporary_output = args.json_output.with_suffix(args.json_output.suffix + ".tmp")
+            temporary_output.write_text(output + "\n", encoding="utf-8")
+            os.replace(temporary_output, args.json_output)
+        else:
+            print(output)
 
 
 if __name__ == "__main__":
