@@ -128,7 +128,7 @@ export const applySyncConflictResolution = (input: WorkspaceDocumentV4, conflict
 }
 
 export const uploadEncryptedMedia = async (key: CryptoKey, transport: EncryptedMediaTransport, media: SyncMediaInput) => {
-  if (media.bytes.byteLength !== media.byteLength || hex(new Uint8Array(await crypto.subtle.digest('SHA-256', media.bytes))) !== media.sha256) throw new Error(`Media ${media.id} failed its local integrity check before sync.`)
+  if (media.bytes.byteLength !== media.byteLength || hex(new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(media.bytes)))) !== media.sha256) throw new Error(`Media ${media.id} failed its local integrity check before sync.`)
   const chunks = Math.ceil(media.byteLength / SYNC_MEDIA_CHUNK_BYTES)
   const identity = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify({ mediaId: media.id, sha256: media.sha256, byteLength: media.byteLength, chunkBytes: SYNC_MEDIA_CHUNK_BYTES }))))
   let binary = ''; for (const byte of identity) binary += String.fromCharCode(byte)
