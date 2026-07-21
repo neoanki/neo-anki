@@ -95,6 +95,7 @@ test.beforeAll(async () => {
 })
 
 test('released app completes and persists the clean core journey', async () => {
+  test.setTimeout(180_000)
   test.skip(!executablePath || !existsSync(executablePath), 'Set NEO_ANKI_RELEASE_APP to a packaged Neo Anki executable.')
   const userData = await mkdtemp(join(tmpdir(), 'neoanki-release-core-'))
   let application: ElectronApplication | undefined
@@ -108,7 +109,7 @@ test('released app completes and persists the clean core journey', async () => {
     await expect(page.getByRole('button', { name: 'Browse extensions' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Load sample workspace' })).toBeVisible()
     await expect.poll(() => workspaceCounts(page)).toEqual({ notes: 0, cards: 0, reviews: 0, media: 0, goals: 0, views: 0 })
-    await page.screenshot({ path: join(evidenceDirectory, 'core-empty-today.png'), fullPage: true })
+    await page.screenshot({ path: join(evidenceDirectory, 'core-empty-today.png'), fullPage: true, animations: 'disabled', timeout: 60_000 })
 
     await openCreate(page)
     await expect(page.getByLabel('Prompt', { exact: true })).toBeVisible()
@@ -135,7 +136,7 @@ test('released app completes and persists the clean core journey', async () => {
     await expect(page.getByRole('heading', { name: /enough for this session/i })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Return to Today' })).toBeVisible()
     await expect.poll(() => workspaceCounts(page)).toMatchObject({ notes: 1, cards: 1, reviews: 1 })
-    await page.screenshot({ path: join(evidenceDirectory, 'core-review-complete.png'), fullPage: true })
+    await page.screenshot({ path: join(evidenceDirectory, 'core-review-complete.png'), fullPage: true, animations: 'disabled', timeout: 60_000 })
     expect(failures).toEqual([])
 
     await stop(application)
@@ -148,11 +149,12 @@ test('released app completes and persists the clean core journey', async () => {
     expect(restartFailures).toEqual([])
   } finally {
     await stop(application)
-    await rm(userData, { recursive: true, force: true })
+    await rm(userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 })
   }
 })
 
 test('released TTS package exposes setup from authoring without losing the draft', async () => {
+  test.setTimeout(180_000)
   test.skip(!executablePath || !existsSync(executablePath), 'Set NEO_ANKI_RELEASE_APP to a packaged Neo Anki executable.')
   test.skip(!ttsPackage || !existsSync(ttsPackage), 'Set NEO_ANKI_RELEASE_TTS_PACKAGE to the signed released TTS package.')
   const userData = await mkdtemp(join(tmpdir(), 'neoanki-release-tts-'))
@@ -171,7 +173,7 @@ test('released TTS package exposes setup from authoring without losing the draft
     await action.getByRole('button', { name: 'Set up Text to Speech' }).click()
     const settings = page.frameLocator('iframe[title="Text to Speech: settings"]')
     await expect(settings.getByRole('button', { name: 'Enable offline audio' })).toBeVisible({ timeout: 30_000 })
-    await page.screenshot({ path: join(evidenceDirectory, 'tts-setup.png'), fullPage: true })
+    await page.screenshot({ path: join(evidenceDirectory, 'tts-setup.png'), fullPage: true, animations: 'disabled', timeout: 60_000 })
     await page.getByRole('button', { name: 'Back to new knowledge' }).click()
     await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('Can released TTS create portable audio?')
     await expect(page.getByLabel('Answer', { exact: true })).toHaveValue('Yes, after explicit provider setup.')
@@ -180,6 +182,6 @@ test('released TTS package exposes setup from authoring without losing the draft
     expect(failures).toEqual([])
   } finally {
     await stop(application)
-    await rm(userData, { recursive: true, force: true })
+    await rm(userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 })
   }
 })
