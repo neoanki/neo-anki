@@ -1,7 +1,7 @@
 import type { KnowledgeItemProjection, WorkspacePatchV2 } from '@neo-anki/compatibility-domain'
 
-export type ExtensionPermissionV2 = 'study:read' | 'study:signals' | 'study:prompt-types' | 'study:queue-policies' | 'content:read' | 'content:patch-own' | 'content:migrate' | 'media:create' | 'files:save' | 'ui:open-external' | 'network:fetch' | 'secrets:device' | 'config:sync' | 'ui:settings' | 'ui:review' | 'ui:page' | 'ui:create' | 'ui:workspace' | 'ui:migration'
-export type ExtensionUiSurfaceV2 = 'settings' | 'review' | 'page' | 'create' | 'workspace' | 'migration'
+export type ExtensionPermissionV2 = 'study:read' | 'study:signals' | 'study:prompt-types' | 'study:queue-policies' | 'content:read' | 'content:patch-own' | 'content:migrate' | 'media:create' | 'files:save' | 'ui:open-external' | 'network:fetch' | 'secrets:device' | 'config:sync' | 'ui:review' | 'ui:page' | 'ui:create' | 'ui:workspace' | 'ui:migration'
+export type ExtensionUiSurfaceV2 = 'review' | 'page' | 'create' | 'workspace' | 'migration'
 export type ExtensionPromptRequiredFieldV2 = 'prompt' | 'answer' | 'audio' | 'image' | 'occlusions'
 export interface ExtensionPromptTypeContributionV2 { id: string; label: string; description?: string; authoringHint?: string; requiredFields?: ExtensionPromptRequiredFieldV2[] }
 export interface ExtensionQueuePolicyContributionV2 { id: string; label: string }
@@ -13,6 +13,94 @@ export interface ExtensionAuthoringActionContributionV2 {
   defaultSelected?: boolean
   availability?: 'always' | 'status-required'
   configurationDestination?: string
+}
+
+export type ExtensionSettingsScalarV1 = string | number | boolean | null
+export type ExtensionSettingsConditionOperatorV1 = 'equals' | 'not-equals' | 'includes' | 'truthy' | 'falsy' | 'greater-than' | 'greater-than-or-equal' | 'less-than' | 'less-than-or-equal'
+export interface ExtensionSettingsConditionV1 {
+  path: string
+  scope?: 'current' | 'root'
+  operator: ExtensionSettingsConditionOperatorV1
+  value?: ExtensionSettingsScalarV1
+}
+export interface ExtensionSettingsControlBaseV1 {
+  id: string
+  label?: string
+  description?: string
+  visibleWhen?: ExtensionSettingsConditionV1
+  enabledWhen?: ExtensionSettingsConditionV1
+}
+export interface ExtensionSettingsStoredControlBaseV1 extends ExtensionSettingsControlBaseV1 {
+  path: string
+  required?: boolean
+  requiredWhen?: ExtensionSettingsConditionV1
+}
+export interface ExtensionSettingsToggleV1 extends ExtensionSettingsStoredControlBaseV1 { kind: 'toggle'; defaultValue?: boolean }
+export interface ExtensionSettingsTextV1 extends ExtensionSettingsStoredControlBaseV1 {
+  kind: 'text' | 'textarea'
+  defaultValue?: string
+  placeholder?: string
+  minLength?: number
+  maxLength?: number
+  pattern?: string
+}
+export interface ExtensionSettingsNumberV1 extends ExtensionSettingsStoredControlBaseV1 {
+  kind: 'number' | 'range'
+  defaultValue?: number
+  min?: number
+  max?: number
+  step?: number
+}
+export interface ExtensionSettingsSelectV1 extends ExtensionSettingsStoredControlBaseV1 {
+  kind: 'select'
+  defaultValue?: string
+  options: Array<{ value: string; label: string }>
+}
+export interface ExtensionSettingsStringListV1 extends ExtensionSettingsStoredControlBaseV1 {
+  kind: 'string-list'
+  defaultValue?: string[]
+  placeholder?: string
+  minItems?: number
+  maxItems?: number
+  itemMinLength?: number
+  itemMaxLength?: number
+  unique?: boolean
+}
+export interface ExtensionSettingsNoticeV1 extends ExtensionSettingsControlBaseV1 {
+  kind: 'notice'
+  text: string
+  tone?: 'neutral' | 'info' | 'warning' | 'privacy'
+}
+export interface ExtensionSettingsSecretV1 extends ExtensionSettingsControlBaseV1 {
+  kind: 'secret'
+  secretKey: string
+  placeholder?: string
+}
+export interface ExtensionSettingsGroupV1 extends ExtensionSettingsStoredControlBaseV1 {
+  kind: 'group'
+  addLabel?: string
+  itemLabelPath?: string
+  itemIdPath?: string
+  minItems?: number
+  maxItems?: number
+  defaultItems?: Array<Record<string, unknown>>
+  newItem?: Record<string, unknown>
+  fields: ExtensionSettingsControlV1[]
+}
+export type ExtensionSettingsControlV1 = ExtensionSettingsToggleV1 | ExtensionSettingsTextV1 | ExtensionSettingsNumberV1 | ExtensionSettingsSelectV1 | ExtensionSettingsStringListV1 | ExtensionSettingsNoticeV1 | ExtensionSettingsSecretV1 | ExtensionSettingsGroupV1
+export interface ExtensionSettingsSectionV1 {
+  id: string
+  title: string
+  description?: string
+  controls: ExtensionSettingsControlV1[]
+}
+export interface ExtensionSettingsContributionV1 {
+  schemaVersion: 1
+  label?: string
+  description?: string
+  helpText?: string
+  icon?: string
+  sections: ExtensionSettingsSectionV1[]
 }
 
 export interface ExtensionUiEntryV2 {
@@ -31,6 +119,7 @@ export interface ExtensionManifestV2 {
   format: 'neo-anki-extension'; schemaVersion: 2; sdkVersion: 2; id: string; name: string; version: string; publisher: string; publisherKey: string
   description?: string; homepage?: string; minimumNeoAnkiVersion?: string; permissions: ExtensionPermissionV2[]; networkDomains?: string[]; workerEntry?: string
   uiEntries?: ExtensionUiEntryV2[]
+  settings?: ExtensionSettingsContributionV1
   contributions?: { promptTypes?: ExtensionPromptTypeContributionV2[]; queuePolicies?: ExtensionQueuePolicyContributionV2[]; libraryPresets?: ExtensionLibraryPresetContributionV2[]; authoringActions?: ExtensionAuthoringActionContributionV2[] }
   provenance: { sourceCommit: string; coreCommit?: string; buildSystem: string }
 }

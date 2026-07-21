@@ -1,5 +1,5 @@
 import type { AppData, CreateKnowledgeInput, KnowledgeItem, PracticeCard } from '../../types.js'
-import type { ExtensionAuthoringActionContributionV2, ExtensionAuthoringActionStatusV1, ExtensionCardInputV2, ExtensionManifestV2, ExtensionPromptInputV2, ExtensionPromptValidationV2, ExtensionRenderedCardV2, ExtensionUiSurfaceV2, KnowledgeDraftV1 } from '../../../packages/extension-sdk/src/index.js'
+import type { ExtensionAuthoringActionContributionV2, ExtensionAuthoringActionStatusV1, ExtensionCardInputV2, ExtensionManifestV2, ExtensionPromptInputV2, ExtensionPromptValidationV2, ExtensionRenderedCardV2, ExtensionSettingsContributionV1, ExtensionUiSurfaceV2, KnowledgeDraftV1 } from '../../../packages/extension-sdk/src/index.js'
 import type { KnowledgeItemProjection } from '../../../packages/compatibility-domain/src/index.js'
 import { createExtensionHostV2 } from './host.js'
 import { ExtensionWorkerRuntimeV2 } from './runtime.js'
@@ -17,8 +17,18 @@ export interface ExtensionUiContributionV2 {
   icon?: string
   launchDestination?: string
 }
+export interface ExtensionSettingsContributionV2 {
+  extensionId: string
+  manifest: ExtensionManifestV2
+  id: 'settings'
+  surface: 'settings'
+  settings: ExtensionSettingsContributionV1
+  label: string
+  description?: string
+}
 const workers = new Map<string, ExtensionWorkerRuntimeV2>()
 let uiContributions: ExtensionUiContributionV2[] = []
+let settingsContributions: ExtensionSettingsContributionV2[] = []
 let planningSignals = new Map<string, Array<{ id: string; label: string; score: number }>>()
 let queueScores = new Map<string, number>()
 let libraryPresets: Array<{ id: string; label: string; query: string; collection?: string }> = []
@@ -28,7 +38,7 @@ let uiActivationReadiness = new Map<string, { expected: Set<string>; ready: Set<
 export const initializeExtensionRegistryV2 = async (records: NeoAnkiInstalledExtension[]) => {
   planningGeneration += 1
   for (const runtime of workers.values()) runtime.close()
-  workers.clear(); uiContributions = []; planningSignals = new Map(); queueScores = new Map(); libraryPresets = []; uiActivationReadiness = new Map()
+  workers.clear(); uiContributions = []; settingsContributions = []; planningSignals = new Map(); queueScores = new Map(); libraryPresets = []; uiActivationReadiness = new Map()
   let reloadAfterRollback = false
   for (const record of records) {
     if (record.manifest.sdkVersion !== 2) continue
@@ -48,12 +58,14 @@ export const initializeExtensionRegistryV2 = async (records: NeoAnkiInstalledExt
         if (!reviewed || reviewed.surface !== ui.surface) throw new Error(`Reviewed UI entry ${ui.id} is missing.`)
         uiContributions.push({ extensionId: manifest.id, manifest, id: ui.id, surface: ui.surface, url: reviewed.url, route: `extension-v2:${manifest.id}:${ui.id}`, label: ui.label || manifest.name, description: ui.description, helpText: ui.helpText, icon: ui.icon, launchDestination: ui.launchDestination })
       }
+      if (manifest.settings) settingsContributions.push({ extensionId: manifest.id, manifest, id: 'settings', surface: 'settings', settings: manifest.settings, label: manifest.settings.label || manifest.name, description: manifest.settings.description || manifest.description })
       if (manifest.uiEntries?.length) uiActivationReadiness.set(manifest.id, { expected: new Set(manifest.uiEntries.map((entry) => entry.id)), ready: new Set() })
       else await bridge.confirmExtensionActivation?.(manifest.id)
     } catch (error) {
       workerRuntime?.close()
       workers.delete(manifest.id)
       uiContributions = uiContributions.filter((entry) => entry.extensionId !== manifest.id)
+      settingsContributions = settingsContributions.filter((entry) => entry.extensionId !== manifest.id)
       const message = error instanceof Error ? error.message : 'SDK v2 entry loading failed.'
       void window.neoAnkiDesktop?.reportDiagnostic({ source: 'extension-host', level: 'error', code: 'extension-v2-load', message: `${manifest.id}: ${message}` })
       try {
@@ -89,6 +101,7 @@ export const rollbackPendingExtensionActivationV2 = async (extensionId: string, 
 }
 
 export const extensionUiContributionsV2 = (surface?: ExtensionUiContributionV2['surface']) => uiContributions.filter((value) => !surface || value.surface === surface)
+export const extensionSettingsContributionsV2 = () => [...settingsContributions]
 export const extensionPageV2 = (route: string) => uiContributions.find((value) => value.surface === 'page' && value.route === route)
 export const extensionPromptTypesV2 = () => [...workers.values()].flatMap((runtime) => (runtime.manifest.contributions?.promptTypes || []).map((value) => ({ ...value, extensionId: runtime.manifest.id })))
 export const extensionAuthoringActionsV2 = (): Array<ExtensionAuthoringActionContributionV2 & { extensionId: string; extensionName: string }> => [...workers.values()].flatMap((runtime) => (runtime.manifest.contributions?.authoringActions || []).map((value) => ({ ...value, extensionId: runtime.manifest.id, extensionName: runtime.manifest.name })))

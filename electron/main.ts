@@ -377,6 +377,7 @@ const registerDesktopIpc = () => {
     await shell.openExternal(url.toString())
   })
   ipcMain.handle('neo-anki:extension-secret-read-batch-v2', (event, token: string, keys: string[]) => { assertTrustedSender(event); return extensionServices.readSecretBatch(token, keys) })
+  ipcMain.handle('neo-anki:extension-secret-status-batch-v2', (event, token: string, keys: string[]) => { assertTrustedSender(event); return extensionServices.secretStatusBatch(token, keys) })
   ipcMain.handle('neo-anki:extension-secret-mutate-batch-v2', (event, token: string, changes) => { assertTrustedSender(event); return extensionServices.mutateSecretBatch(token, changes) })
   ipcMain.handle('neo-anki:extension-config-read-v2', async (event, token: string) => {
     assertTrustedSender(event); const extensionId = await extensionServices.authorize(token, 'config:sync')

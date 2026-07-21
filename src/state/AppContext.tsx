@@ -213,6 +213,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [data, directPlan, planKey])
 
   const navigate = (next: Route) => {
+    if (!window.dispatchEvent(new CustomEvent('neo-anki:before-navigate', { cancelable: true, detail: { route: next } }))) return
     setRoute(next)
     const hash = `#/${encodeURIComponent(next)}`
     if (window.location.hash !== hash) window.history.pushState({ route: next }, '', hash)

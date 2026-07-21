@@ -142,6 +142,16 @@ export class ExtensionServices {
     })
   }
 
+  async secretStatusBatch(token: string, keys: string[]) {
+    const id = this.extensionId(token); await this.requireSecrets(id); this.assertSecretSupport()
+    if (!Array.isArray(keys) || keys.length > 100) throw new Error('An extension may inspect at most 100 secret statuses at once.')
+    keys.forEach((key) => this.assertKey(key))
+    return this.withSecretLock(id, async () => {
+      const state = await this.readSecrets(id)
+      return Object.fromEntries(keys.map((key) => [key, Boolean(state.values[key])]))
+    })
+  }
+
   async mutateSecretBatch(token: string, changes: Array<{ op: 'set'; key: string; value: string } | { op: 'delete'; key: string }>) {
     const id = this.extensionId(token); await this.requireSecrets(id); this.assertSecretSupport()
     if (!Array.isArray(changes) || changes.length > 100) throw new Error('An extension may change at most 100 secrets at once.')

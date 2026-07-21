@@ -1,5 +1,5 @@
 import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate'
-import type { ExtensionPackageManifest, ExtensionPermissionV2 } from './index.js'
+import type { ExtensionPackageManifest, ExtensionPermissionV2, ExtensionSettingsConditionV1, ExtensionSettingsContributionV1, ExtensionSettingsControlV1 } from './index.js'
 
 export const EXTENSION_PACKAGE_SUFFIX = '.neoanki-extension'
 export const EXTENSION_SIGNATURE_PATH = 'signature.json'
@@ -7,13 +7,18 @@ export const MAX_EXTENSION_PACKAGE_BYTES = 12 * 1024 * 1024
 export const MAX_EXTENSION_UNPACKED_BYTES = 32 * 1024 * 1024
 export const MAX_EXTENSION_FILES = 128
 
-export const extensionPermissions: ExtensionPermissionV2[] = ['study:read', 'study:signals', 'study:prompt-types', 'study:queue-policies', 'content:read', 'content:patch-own', 'content:migrate', 'media:create', 'files:save', 'ui:open-external', 'network:fetch', 'secrets:device', 'config:sync', 'ui:settings', 'ui:review', 'ui:page', 'ui:create', 'ui:workspace', 'ui:migration']
+export const extensionPermissions: ExtensionPermissionV2[] = ['study:read', 'study:signals', 'study:prompt-types', 'study:queue-policies', 'content:read', 'content:patch-own', 'content:migrate', 'media:create', 'files:save', 'ui:open-external', 'network:fetch', 'secrets:device', 'config:sync', 'ui:review', 'ui:page', 'ui:create', 'ui:workspace', 'ui:migration']
 
 const permissionSet = new Set<string>(extensionPermissions)
 const extensionIdPattern = /^[a-z0-9]+(?:[.-][a-z0-9]+)+$/
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 const commitPattern = /^(?:[a-f\d]{40}|[a-f\d]{64})$/i
 const networkDomainPattern = /^(?:\*\.)?(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i
+const secretKeyPattern = /^[a-z0-9][a-z0-9._-]{0,119}$/i
+const unsafeSettingsKeys = new Set(['__proto__', 'prototype', 'constructor'])
+const settingsPointerPattern = /^\/(?:[^~/]|~[01])+(?:\/(?:[^~/]|~[01])+)*$/
+const settingsKinds = new Set(['toggle', 'text', 'textarea', 'number', 'range', 'select', 'string-list', 'notice', 'secret', 'group'])
+const conditionOperators = new Set(['equals', 'not-equals', 'includes', 'truthy', 'falsy', 'greater-than', 'greater-than-or-equal', 'less-than', 'less-than-or-equal'])
 
 export interface ParsedExtensionPackage {
   manifest: ExtensionPackageManifest
@@ -49,6 +54,182 @@ export const normalizeExtensionPath = (value: string) => {
 const requireText = (value: unknown, field: string, maximum: number) => {
   if (typeof value !== 'string' || !value.trim() || value.length > maximum) throw new Error(`Extension manifest field ${field} is invalid.`)
   return value.trim()
+}
+
+const settingsRecord = (value: unknown, field: string): Record<string, unknown> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${field} must be an object.`)
+  return value as Record<string, unknown>
+}
+const rejectUnknownSettingsKeys = (value: Record<string, unknown>, allowed: readonly string[], field: string) => {
+  const unexpected = Object.keys(value).find((key) => !allowed.includes(key))
+  if (unexpected) throw new Error(`${field}.${unexpected} is not supported.`)
+}
+const optionalSettingsText = (value: unknown, field: string, maximum: number) => value === undefined ? undefined : requireText(value, field, maximum)
+const optionalSettingsDefaultText = (value: unknown, field: string, maximum: number) => {
+  if (value !== undefined && (typeof value !== 'string' || value.length > maximum)) throw new Error(`Extension manifest field ${field} is invalid.`)
+  return value as string | undefined
+}
+const optionalSettingsBoolean = (value: unknown, field: string) => {
+  if (value !== undefined && typeof value !== 'boolean') throw new Error(`${field} must be a boolean.`)
+  return value as boolean | undefined
+}
+const optionalSettingsNumber = (value: unknown, field: string, integer = false) => {
+  if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || (integer && !Number.isInteger(value)))) throw new Error(`${field} must be ${integer ? 'an integer' : 'a finite number'}.`)
+  return value as number | undefined
+}
+const settingsPointer = (value: unknown, field: string) => {
+  const pointer = requireText(value, field, 240)
+  if (!settingsPointerPattern.test(pointer)) throw new Error(`${field} must be a JSON Pointer.`)
+  const segments = pointer.slice(1).split('/').map((segment) => segment.replace(/~1/g, '/').replace(/~0/g, '~'))
+  if (segments.length > 8 || segments.some((segment) => unsafeSettingsKeys.has(segment))) throw new Error(`${field} contains an unsafe or excessively deep path.`)
+  return pointer
+}
+const safeSettingsJson = (value: unknown, field: string): unknown => {
+  let encoded: string | undefined
+  try { encoded = JSON.stringify(value) }
+  catch { throw new Error(`${field} must be serializable JSON.`) }
+  if (encoded === undefined || new TextEncoder().encode(encoded).byteLength > 256 * 1024) throw new Error(`${field} is too large.`)
+  const visit = (entry: unknown, depth: number): void => {
+    if (depth > 12) throw new Error(`${field} is too deeply nested.`)
+    if (!entry || typeof entry !== 'object') return
+    if (Array.isArray(entry)) { entry.forEach((item) => visit(item, depth + 1)); return }
+    for (const [key, item] of Object.entries(entry as Record<string, unknown>)) {
+      if (unsafeSettingsKeys.has(key)) throw new Error(`${field} contains an unsafe key.`)
+      visit(item, depth + 1)
+    }
+  }
+  const parsed = JSON.parse(encoded) as unknown
+  visit(parsed, 0)
+  return parsed
+}
+const parseSettingsCondition = (value: unknown, field: string): ExtensionSettingsConditionV1 | undefined => {
+  if (value === undefined) return undefined
+  const candidate = settingsRecord(value, field)
+  rejectUnknownSettingsKeys(candidate, ['path', 'scope', 'operator', 'value'], field)
+  const operator = requireText(candidate.operator, `${field}.operator`, 40)
+  if (!conditionOperators.has(operator)) throw new Error(`${field}.operator is unsupported.`)
+  const scope = candidate.scope === undefined ? undefined : candidate.scope
+  if (scope !== undefined && scope !== 'current' && scope !== 'root') throw new Error(`${field}.scope is invalid.`)
+  const hasValue = Object.prototype.hasOwnProperty.call(candidate, 'value')
+  if (['truthy', 'falsy'].includes(operator) ? hasValue : !hasValue) throw new Error(`${field}.value does not match its operator.`)
+  const conditionValue = candidate.value
+  if (hasValue && !['string', 'number', 'boolean'].includes(typeof conditionValue) && conditionValue !== null) throw new Error(`${field}.value must be a scalar.`)
+  if (operator.startsWith('greater-') || operator.startsWith('less-')) if (typeof conditionValue !== 'number' || !Number.isFinite(conditionValue)) throw new Error(`${field}.value must be numeric.`)
+  return { path: settingsPointer(candidate.path, `${field}.path`), ...(scope ? { scope } : {}), operator: operator as ExtensionSettingsConditionV1['operator'], ...(hasValue ? { value: conditionValue as ExtensionSettingsConditionV1['value'] } : {}) }
+}
+
+const parseExtensionSettings = (value: unknown, permissions: ExtensionPermissionV2[]): ExtensionSettingsContributionV1 | undefined => {
+  if (value === undefined) return undefined
+  const candidate = settingsRecord(value, 'settings')
+  rejectUnknownSettingsKeys(candidate, ['schemaVersion', 'label', 'description', 'helpText', 'icon', 'sections'], 'settings')
+  if (candidate.schemaVersion !== 1) throw new Error('Extension settings schemaVersion must be 1.')
+  if (!Array.isArray(candidate.sections) || !candidate.sections.length || candidate.sections.length > 32) throw new Error('Extension settings must contain between 1 and 32 sections.')
+  const ids = new Set<string>()
+  let controlCount = 0
+  let usesConfig = false
+  let usesSecrets = false
+  const uniqueId = (value: unknown, field: string) => {
+    const id = requireText(value, field, 80)
+    if (ids.has(id)) throw new Error(`Extension settings id ${id} is duplicated.`)
+    ids.add(id)
+    return id
+  }
+  const parseControl = (value: unknown, field: string, groupDepth: number): ExtensionSettingsControlV1 => {
+    const control = settingsRecord(value, field)
+    const kind = requireText(control.kind, `${field}.kind`, 24)
+    if (!settingsKinds.has(kind)) throw new Error(`${field}.kind is unsupported; settings cannot declare actions or dynamic providers.`)
+    const commonAllowed = ['kind', 'id', 'label', 'description', 'visibleWhen', 'enabledWhen']
+    const storedAllowed = [...commonAllowed, 'path', 'required', 'requiredWhen']
+    const common = {
+      id: uniqueId(control.id, `${field}.id`),
+      label: optionalSettingsText(control.label, `${field}.label`, 100),
+      description: optionalSettingsText(control.description, `${field}.description`, 400),
+      visibleWhen: parseSettingsCondition(control.visibleWhen, `${field}.visibleWhen`),
+      enabledWhen: parseSettingsCondition(control.enabledWhen, `${field}.enabledWhen`),
+    }
+    controlCount += 1
+    if (controlCount > 128) throw new Error('Extension settings may contain at most 128 controls.')
+    if (kind === 'notice') {
+      rejectUnknownSettingsKeys(control, [...commonAllowed, 'text', 'tone'], field)
+      const tone = control.tone === undefined ? undefined : control.tone
+      if (tone !== undefined && !['neutral', 'info', 'warning', 'privacy'].includes(String(tone))) throw new Error(`${field}.tone is invalid.`)
+      return { ...common, kind, text: requireText(control.text, `${field}.text`, 1000), ...(tone ? { tone: tone as 'neutral' | 'info' | 'warning' | 'privacy' } : {}) }
+    }
+    if (kind === 'secret') {
+      if (groupDepth > 0) throw new Error('Extension secret controls cannot be repeated.')
+      rejectUnknownSettingsKeys(control, [...commonAllowed, 'secretKey', 'placeholder'], field)
+      const secretKey = requireText(control.secretKey, `${field}.secretKey`, 120)
+      if (!secretKeyPattern.test(secretKey)) throw new Error(`${field}.secretKey is invalid.`)
+      usesSecrets = true
+      return { ...common, kind, secretKey, placeholder: optionalSettingsText(control.placeholder, `${field}.placeholder`, 160) }
+    }
+    usesConfig = true
+    const stored = { ...common, path: settingsPointer(control.path, `${field}.path`), required: optionalSettingsBoolean(control.required, `${field}.required`), requiredWhen: parseSettingsCondition(control.requiredWhen, `${field}.requiredWhen`) }
+    if (kind === 'toggle') {
+      rejectUnknownSettingsKeys(control, [...storedAllowed, 'defaultValue'], field)
+      const defaultValue = control.defaultValue === undefined ? undefined : optionalSettingsBoolean(control.defaultValue, `${field}.defaultValue`)
+      return { ...stored, kind, defaultValue }
+    }
+    if (kind === 'text' || kind === 'textarea') {
+      rejectUnknownSettingsKeys(control, [...storedAllowed, 'defaultValue', 'placeholder', 'minLength', 'maxLength', 'pattern'], field)
+      const defaultValue = optionalSettingsDefaultText(control.defaultValue, `${field}.defaultValue`, 65_536)
+      const minLength = optionalSettingsNumber(control.minLength, `${field}.minLength`, true)
+      const maxLength = optionalSettingsNumber(control.maxLength, `${field}.maxLength`, true)
+      if ((minLength ?? 0) < 0 || (maxLength ?? 65_536) > 65_536 || minLength !== undefined && maxLength !== undefined && minLength > maxLength) throw new Error(`${field} text bounds are invalid.`)
+      const pattern = optionalSettingsText(control.pattern, `${field}.pattern`, 500)
+      if (pattern) try { new RegExp(pattern) } catch { throw new Error(`${field}.pattern is invalid.`) }
+      return { ...stored, kind, defaultValue, placeholder: optionalSettingsText(control.placeholder, `${field}.placeholder`, 160), minLength, maxLength, pattern }
+    }
+    if (kind === 'number' || kind === 'range') {
+      rejectUnknownSettingsKeys(control, [...storedAllowed, 'defaultValue', 'min', 'max', 'step'], field)
+      const defaultValue = optionalSettingsNumber(control.defaultValue, `${field}.defaultValue`)
+      const min = optionalSettingsNumber(control.min, `${field}.min`); const max = optionalSettingsNumber(control.max, `${field}.max`); const step = optionalSettingsNumber(control.step, `${field}.step`)
+      if (min !== undefined && max !== undefined && min > max || step !== undefined && step <= 0 || defaultValue !== undefined && (min !== undefined && defaultValue < min || max !== undefined && defaultValue > max)) throw new Error(`${field} numeric bounds are invalid.`)
+      return { ...stored, kind, defaultValue, min, max, step }
+    }
+    if (kind === 'select') {
+      rejectUnknownSettingsKeys(control, [...storedAllowed, 'defaultValue', 'options'], field)
+      if (!Array.isArray(control.options) || !control.options.length || control.options.length > 100) throw new Error(`${field}.options must contain between 1 and 100 static options.`)
+      const values = new Set<string>()
+      const options = control.options.map((option, index) => {
+        const entry = settingsRecord(option, `${field}.options[${index}]`); rejectUnknownSettingsKeys(entry, ['value', 'label'], `${field}.options[${index}]`)
+        const optionValue = requireText(entry.value, `${field}.options[${index}].value`, 200)
+        if (values.has(optionValue)) throw new Error(`${field}.options contains duplicate values.`); values.add(optionValue)
+        return { value: optionValue, label: requireText(entry.label, `${field}.options[${index}].label`, 100) }
+      })
+      const defaultValue = control.defaultValue === undefined ? undefined : requireText(control.defaultValue, `${field}.defaultValue`, 200)
+      if (defaultValue !== undefined && !values.has(defaultValue)) throw new Error(`${field}.defaultValue must match an option.`)
+      return { ...stored, kind, defaultValue, options }
+    }
+    if (kind === 'string-list') {
+      rejectUnknownSettingsKeys(control, [...storedAllowed, 'defaultValue', 'placeholder', 'minItems', 'maxItems', 'itemMinLength', 'itemMaxLength', 'unique'], field)
+      const minItems = optionalSettingsNumber(control.minItems, `${field}.minItems`, true); const maxItems = optionalSettingsNumber(control.maxItems, `${field}.maxItems`, true)
+      const itemMinLength = optionalSettingsNumber(control.itemMinLength, `${field}.itemMinLength`, true); const itemMaxLength = optionalSettingsNumber(control.itemMaxLength, `${field}.itemMaxLength`, true)
+      if ((minItems ?? 0) < 0 || (maxItems ?? 1000) > 1000 || minItems !== undefined && maxItems !== undefined && minItems > maxItems || (itemMinLength ?? 0) < 0 || (itemMaxLength ?? 1000) > 1000 || itemMinLength !== undefined && itemMaxLength !== undefined && itemMinLength > itemMaxLength) throw new Error(`${field} list bounds are invalid.`)
+      const unique = optionalSettingsBoolean(control.unique, `${field}.unique`)
+      const defaultValue = control.defaultValue === undefined ? undefined : Array.isArray(control.defaultValue) && control.defaultValue.every((item) => typeof item === 'string') ? [...control.defaultValue] as string[] : (() => { throw new Error(`${field}.defaultValue must be a string array.`) })()
+      if (defaultValue && (minItems !== undefined && defaultValue.length < minItems || maxItems !== undefined && defaultValue.length > maxItems || unique && new Set(defaultValue).size !== defaultValue.length)) throw new Error(`${field}.defaultValue violates its list bounds.`)
+      return { ...stored, kind, defaultValue, placeholder: optionalSettingsText(control.placeholder, `${field}.placeholder`, 160), minItems, maxItems, itemMinLength, itemMaxLength, unique }
+    }
+    rejectUnknownSettingsKeys(control, [...storedAllowed, 'addLabel', 'itemLabelPath', 'itemIdPath', 'minItems', 'maxItems', 'defaultItems', 'newItem', 'fields'], field)
+    if (groupDepth >= 2) throw new Error('Extension settings groups may nest at most two levels.')
+    const minItems = optionalSettingsNumber(control.minItems, `${field}.minItems`, true); const maxItems = optionalSettingsNumber(control.maxItems, `${field}.maxItems`, true)
+    if ((minItems ?? 0) < 0 || (maxItems ?? 100) > 100 || minItems !== undefined && maxItems !== undefined && minItems > maxItems) throw new Error(`${field} group bounds are invalid.`)
+    if (!Array.isArray(control.fields) || !control.fields.length) throw new Error(`${field}.fields must be a non-empty array.`)
+    const defaultItems = control.defaultItems === undefined ? undefined : Array.isArray(control.defaultItems) && control.defaultItems.every((item) => item && typeof item === 'object' && !Array.isArray(item)) ? safeSettingsJson(control.defaultItems, `${field}.defaultItems`) as Array<Record<string, unknown>> : (() => { throw new Error(`${field}.defaultItems must be an object array.`) })()
+    if (defaultItems && (minItems !== undefined && defaultItems.length < minItems || maxItems !== undefined && defaultItems.length > maxItems)) throw new Error(`${field}.defaultItems violates its group bounds.`)
+    const newItem = control.newItem === undefined ? undefined : safeSettingsJson(settingsRecord(control.newItem, `${field}.newItem`), `${field}.newItem`) as Record<string, unknown>
+    return { ...stored, kind: 'group', addLabel: optionalSettingsText(control.addLabel, `${field}.addLabel`, 100), itemLabelPath: control.itemLabelPath === undefined ? undefined : settingsPointer(control.itemLabelPath, `${field}.itemLabelPath`), itemIdPath: control.itemIdPath === undefined ? undefined : settingsPointer(control.itemIdPath, `${field}.itemIdPath`), minItems, maxItems, defaultItems, newItem, fields: control.fields.map((entry, index) => parseControl(entry, `${field}.fields[${index}]`, groupDepth + 1)) }
+  }
+  const sections = candidate.sections.map((value, sectionIndex) => {
+    const section = settingsRecord(value, `settings.sections[${sectionIndex}]`)
+    rejectUnknownSettingsKeys(section, ['id', 'title', 'description', 'controls'], `settings.sections[${sectionIndex}]`)
+    if (!Array.isArray(section.controls) || !section.controls.length) throw new Error(`settings.sections[${sectionIndex}].controls must be a non-empty array.`)
+    return { id: uniqueId(section.id, `settings.sections[${sectionIndex}].id`), title: requireText(section.title, `settings.sections[${sectionIndex}].title`, 100), description: optionalSettingsText(section.description, `settings.sections[${sectionIndex}].description`, 500), controls: section.controls.map((control, controlIndex) => parseControl(control, `settings.sections[${sectionIndex}].controls[${controlIndex}]`, 0)) }
+  })
+  if (usesConfig && !permissions.includes('config:sync')) throw new Error('Synchronized extension settings require config:sync.')
+  if (usesSecrets && !permissions.includes('secrets:device')) throw new Error('Secret extension settings require secrets:device.')
+  return { schemaVersion: 1, label: optionalSettingsText(candidate.label, 'settings.label', 80), description: optionalSettingsText(candidate.description, 'settings.description', 300), helpText: optionalSettingsText(candidate.helpText, 'settings.helpText', 500), icon: optionalSettingsText(candidate.icon, 'settings.icon', 48), sections }
 }
 
 export const validateExtensionPackageManifest = (value: unknown): ExtensionPackageManifest => {
@@ -91,10 +272,11 @@ export const validateExtensionPackageManifest = (value: unknown): ExtensionPacka
     icon: entry.icon ? requireText(entry.icon, 'uiEntries.icon', 48) : undefined,
     launchDestination: entry.launchDestination ? requireText(entry.launchDestination, 'uiEntries.launchDestination', 128) : undefined,
   }))
-  if (uiEntries?.some((entry) => !['settings', 'review', 'page', 'create', 'workspace', 'migration'].includes(entry.surface) || !/\.(?:js|mjs)$/.test(entry.entry))) throw new Error('Extension UI entries are invalid.')
-  const surfacePermission = { settings: 'ui:settings', review: 'ui:review', page: 'ui:page', create: 'ui:create', workspace: 'ui:workspace', migration: 'ui:migration' } as const
+  if (uiEntries?.some((entry) => !['review', 'page', 'create', 'workspace', 'migration'].includes(entry.surface) || !/\.(?:js|mjs)$/.test(entry.entry))) throw new Error('Extension UI entries are invalid; settings must use the declarative settings contract.')
+  const surfacePermission = { review: 'ui:review', page: 'ui:page', create: 'ui:create', workspace: 'ui:workspace', migration: 'ui:migration' } as const
   if (uiEntries?.some((entry) => !permissions.includes(surfacePermission[entry.surface]))) throw new Error('Extension UI entries require their matching UI permission.')
-  if (!workerEntry && !uiEntries?.length) throw new Error('SDK v2 extension needs a worker or UI entry.')
+  const settings = parseExtensionSettings(v2.settings, permissions)
+  if (!workerEntry && !uiEntries?.length && !settings) throw new Error('SDK v2 extension needs a worker, UI entry, or declarative settings contribution.')
   if (uiEntries && new Set(uiEntries.map((entry) => entry.id)).size !== uiEntries.length) throw new Error('Extension UI entry ids must be unique.')
   const provenance = v2.provenance
   if (!provenance || typeof provenance !== 'object') throw new Error('SDK v2 extension provenance is required.')
@@ -129,7 +311,7 @@ export const validateExtensionPackageManifest = (value: unknown): ExtensionPacka
   for (const values of Object.values(normalizedContributions || {})) if (values && new Set(values.map((entry) => entry.id)).size !== values.length) throw new Error('Extension contribution ids must be unique within their type.')
   if (normalizedContributions?.promptTypes?.length && !permissions.includes('study:prompt-types')) throw new Error('Prompt type contributions require study:prompt-types.')
   if (normalizedContributions?.queuePolicies?.length && !permissions.includes('study:queue-policies')) throw new Error('Queue policy contributions require study:queue-policies.')
-  return { ...common, schemaVersion: 2, sdkVersion: 2, permissions: [...permissions], publisherKey: requireText(v2.publisherKey, 'publisherKey', 4096), workerEntry, uiEntries, contributions: normalizedContributions, provenance: { sourceCommit, coreCommit, buildSystem: requireText(provenance.buildSystem, 'provenance.buildSystem', 200) } }
+  return { ...common, schemaVersion: 2, sdkVersion: 2, permissions: [...permissions], publisherKey: requireText(v2.publisherKey, 'publisherKey', 4096), workerEntry, uiEntries, settings, contributions: normalizedContributions, provenance: { sourceCommit, coreCommit, buildSystem: requireText(provenance.buildSystem, 'provenance.buildSystem', 200) } }
 }
 
 export const parseExtensionPackage = (bytes: Uint8Array): ParsedExtensionPackage => {

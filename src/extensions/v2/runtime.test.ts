@@ -3,7 +3,7 @@ import type { ExtensionHostV2, ExtensionManifestV2, WorkerTransportMessageV2 } f
 import { createSandboxedExtensionUiV2, ExtensionWorkerRuntimeV2 } from './runtime'
 
 const manifest = (permissions: ExtensionManifestV2['permissions'] = ['study:signals']): ExtensionManifestV2 => ({
-  format: 'neo-anki-extension', schemaVersion: 2, sdkVersion: 2, id: 'org.neoanki.fixture', name: 'Fixture', version: '2.0.0', publisher: 'Neo Anki', publisherKey: 'fixture-key', permissions, workerEntry: 'worker.js', provenance: { sourceCommit: 'a'.repeat(40), buildSystem: 'fixture' }, uiEntries: [{ id: 'settings', surface: 'settings', entry: 'settings.js' }],
+  format: 'neo-anki-extension', schemaVersion: 2, sdkVersion: 2, id: 'org.neoanki.fixture', name: 'Fixture', version: '2.0.0', publisher: 'Neo Anki', publisherKey: 'fixture-key', permissions, workerEntry: 'worker.js', provenance: { sourceCommit: 'a'.repeat(40), buildSystem: 'fixture' }, uiEntries: [{ id: 'page', surface: 'page', entry: 'page.js' }],
 })
 
 const host = (): ExtensionHostV2 => ({
@@ -86,21 +86,21 @@ describe('SDK v2 isolated runtimes', () => {
   })
 
   it('creates DOM/CSS-isolated UI frames without ambient network access', () => {
-    const runtime = createSandboxedExtensionUiV2(manifest(['ui:settings']), 'settings', 'blob:https://neoanki.test/settings', { locale: 'en-US', theme: 'dark', dto: {} })
+    const runtime = createSandboxedExtensionUiV2(manifest(['ui:page']), 'page', 'blob:https://neoanki.test/page', { locale: 'en-US', theme: 'dark', dto: {} })
     expect(runtime.iframe.title).toContain('Fixture')
     expect(runtime.iframe.getAttribute('sandbox')).toBe('allow-scripts')
     expect(runtime.iframe.getAttribute('sandbox')).not.toContain('allow-same-origin')
     const frameDocument = atob(runtime.iframe.src.split(',')[1]!)
     expect(frameDocument).toContain("connect-src 'none'")
     expect(frameDocument).toContain('<html lang="en-US" data-theme="dark">')
-    expect(frameDocument).toContain('<title>Fixture: settings</title>')
+    expect(frameDocument).toContain('<title>Fixture: page</title>')
     expect(frameDocument).toContain('min-height:0!important;height:auto!important')
     runtime.close()
   })
 
   it('reports the sandbox readiness handshake to the host frame', async () => {
     const lifecycle = vi.fn()
-    const runtime = createSandboxedExtensionUiV2(manifest(['ui:settings']), 'settings', 'blob:https://neoanki.test/settings', { locale: 'en', theme: 'light', dto: {} }, undefined, lifecycle)
+    const runtime = createSandboxedExtensionUiV2(manifest(['ui:page']), 'page', 'blob:https://neoanki.test/page', { locale: 'en', theme: 'light', dto: {} }, undefined, lifecycle)
     document.body.append(runtime.iframe)
     const target = runtime.iframe.contentWindow!
     vi.spyOn(target, 'postMessage').mockImplementation(((_message: unknown, _origin: string, transfer?: Transferable[]) => {
@@ -114,7 +114,7 @@ describe('SDK v2 isolated runtimes', () => {
 
   it('accepts tall intrinsic frame sizes while keeping resize messages bounded', async () => {
     const lifecycle = vi.fn()
-    const runtime = createSandboxedExtensionUiV2(manifest(['ui:settings']), 'settings', 'blob:https://neoanki.test/settings', { locale: 'en', theme: 'light', dto: {} }, undefined, lifecycle)
+    const runtime = createSandboxedExtensionUiV2(manifest(['ui:page']), 'page', 'blob:https://neoanki.test/page', { locale: 'en', theme: 'light', dto: {} }, undefined, lifecycle)
     document.body.append(runtime.iframe)
     const target = runtime.iframe.contentWindow!
     let extensionPort: MessagePort | undefined

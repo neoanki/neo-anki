@@ -10,6 +10,6 @@
     "build": "neo-anki-extension build"
   },
   "dependencies": {
-    "@neo-anki/extension-sdk": "2.2.0"
+    "@neo-anki/extension-sdk": "2.3.0"
   }
 }
