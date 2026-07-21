@@ -29,14 +29,12 @@ class FakeWorker {
 
 describe('SDK v2 isolated runtimes', () => {
   it('launches compiled extension workers as ES modules', () => {
-    const calls: Array<{ url: string; options?: WorkerOptions }> = []
-    let worker: FakeWorker | undefined
-    vi.stubGlobal('Worker', class extends FakeWorker {
-      constructor(url: string | URL, options?: WorkerOptions) { super(); calls.push({ url: String(url), options }); worker = this }
-    })
+    const worker = new FakeWorker()
+    const WorkerMock = vi.fn(function WorkerConstructor() { return worker })
+    vi.stubGlobal('Worker', WorkerMock)
     const runtime = new ExtensionWorkerRuntimeV2(manifest(), 'blob:https://neoanki.test/module-worker', host())
-    worker!.emit({ protocol: 2, type: 'ready', extensionId: manifest().id })
-    expect(calls).toEqual([{ url: 'blob:https://neoanki.test/module-worker', options: { type: 'module', name: `neo-anki:${manifest().id}` } }])
+    worker.emit({ protocol: 2, type: 'ready', extensionId: manifest().id })
+    expect(WorkerMock).toHaveBeenCalledWith('blob:https://neoanki.test/module-worker', { type: 'module', name: `neo-anki:${manifest().id}` })
     runtime.close()
     vi.unstubAllGlobals()
   })
