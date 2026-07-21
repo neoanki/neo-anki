@@ -160,7 +160,7 @@ test('browser shell keeps extracted workspace tools out of core', async ({ page 
   await startWith(page)
   await page.getByRole('button', { name: 'Plans' }).first().click()
   await expect(page.getByRole('heading', { name: 'No workspace tools installed' })).toBeVisible()
-  await expect(page.getByRole('tab', { name: /saved views|shared packs/i })).toHaveCount(0)
+  await expect(page.getByRole('tab', { name: /saved searches|learning packs/i })).toHaveCount(0)
 })
 
 test('settings presents only isolated SDK 2 packages as extensions', async ({ page }) => {

@@ -17,7 +17,7 @@ The release posture is nevertheless **high risk for migration claims** and **med
 - `.colpkg` is treated as an additive deck import rather than a complete collection replacement, and Neo Anki cannot export an interoperable `.apkg`/`.colpkg` rollback artifact.
 - There is no device/web/mobile synchronization service. The bundled “sync” extension is only same-browser `BroadcastChannel` replication and can resurrect deletions.
 - FSRS cards due later today are eligible immediately, so short-term learning/relearning steps and exact due times can be violated.
-- NeoAnki TTS hashes Base64 text instead of decoded audio bytes. The desktop store rejects the generated asset, leaving generated audio visible in memory but unsavable and causing later workspace saves to keep failing until reload.
+- Text to Speech hashes Base64 text instead of decoded audio bytes. The desktop store rejects the generated asset, leaving generated audio visible in memory but unsavable and causing later workspace saves to keep failing until reload.
 - The default catch-all TTS profile shadows every subsequently created profile, and profile order cannot be changed.
 - Extension content transactions receive only three array checks, not full schema and invariant validation. A malformed extension result can enter live React state before persistence rejects it.
 - Extension reinstall of identical package bytes removes the active package directory before the replacement and registry state are durable, contradicting the documented atomic-upgrade invariant.
@@ -381,7 +381,7 @@ The observations below are heuristic because no timed participant study was run.
 
 ### LOGIC-006 — Pack updates advance through silent drift
 
-**P1 · high confidence · bundled Shared Packs · confirmed.** Patch validation is shallow; missing local/base mappings are silently skipped while installed version advances. `variants` changes are never merged into cards. Duplicate `sourceId` in a manifest overwrites `itemMap` while creating multiple items. Impact: subscriptions claim a version whose content was not applied; later patches lose a stable base. Remediation: strict schema/unique IDs, transactional preconditions, explicit drift conflicts, variant/card reconciliation and no version advance on skip. Tests: missing mapping, duplicate source, variant add/remove, malformed field. Effort M.
+**P1 · high confidence · bundled Learning Packs · confirmed.** Patch validation is shallow; missing local/base mappings are silently skipped while installed version advances. `variants` changes are never merged into cards. Duplicate `sourceId` in a manifest overwrites `itemMap` while creating multiple items. Impact: subscriptions claim a version whose content was not applied; later patches lose a stable base. Remediation: strict schema/unique IDs, transactional preconditions, explicit drift conflicts, variant/card reconciliation and no version advance on skip. Tests: missing mapping, duplicate source, variant add/remove, malformed field. Effort M.
 
 ### LOGIC-007 — Insights metrics imply unsupported precision
 
@@ -405,11 +405,11 @@ The observations below are heuristic because no timed participant study was run.
 
 ### PED-001 — Cloze is pedagogically and compatibly incorrect
 
-**P1 · very high confidence · bundled Prompt Types/importer · confirmed.** Cloze creation emits one card, and rendering replaces every `{{cN::...}}` with blanks then joins every answer (`src/extensions/prompts/index.ts`). Anki creates a separate card per cloze number. Impact: prompts leak grouping, require multi-answer recall, and imported cloze siblings become duplicate identical hide-all cards. Remediation: parse cloze IDs/hints robustly, store target cloze on each card, hide only target and render other text according to documented semantics. Golden tests for repeated IDs, hints, overlaps, edits and import. Effort M.
+**P1 · very high confidence · bundled More Card Types/importer · confirmed.** Cloze creation emits one card, and rendering replaces every `{{cN::...}}` with blanks then joins every answer (`src/extensions/prompts/index.ts`). Anki creates a separate card per cloze number. Impact: prompts leak grouping, require multi-answer recall, and imported cloze siblings become duplicate identical hide-all cards. Remediation: parse cloze IDs/hints robustly, store target cloze on each card, hide only target and render other text according to documented semantics. Golden tests for repeated IDs, hints, overlaps, edits and import. Effort M.
 
 ### PED-002 — Typed feedback does not affect grading
 
-**P2 · high confidence · core + Prompt Types · confirmed.** Exact/close/incorrect feedback is shown, but all three grade buttons remain available and an incorrect answer can be marked Recalled. Accent stripping can classify semantically distinct answers as equal/close. Retrieval feedback is useful, but uncalibrated self-grading preserves metacognitive bias. Remediation: default/recommend a rating from comparator with explicit override, preserve language-sensitive comparison profiles, show differences, log override. Tests: accents, scripts, empty/long answers, incorrect→Good override. Effort M.
+**P2 · high confidence · core + More Card Types · confirmed.** Exact/close/incorrect feedback is shown, but all three grade buttons remain available and an incorrect answer can be marked Recalled. Accent stripping can classify semantically distinct answers as equal/close. Retrieval feedback is useful, but uncalibrated self-grading preserves metacognitive bias. Remediation: default/recommend a rating from comparator with explicit override, preserve language-sensitive comparison profiles, show differences, log override. Tests: accents, scripts, empty/long answers, incorrect→Good override. Effort M.
 
 ### PED-003 — Sibling and leech safeguards are incomplete
 
@@ -501,7 +501,7 @@ The observations below are heuristic because no timed participant study was run.
 
 ### PERF-003 — Text algorithms are unbounded
 
-**P2 · medium-high confidence · Prompt Types/TTS · design risk.** Typed comparison allocates an O(n×m) Levenshtein matrix for arbitrary strings. TTS permits 100 user regex replacements over arbitrary item text with no safe-regex/timeout and can suffer catastrophic backtracking. Remediation: length caps/banded distance and safe-regex validation or worker timeout. Tests: adversarial long input and pathological regex. Effort S-M.
+**P2 · medium-high confidence · More Card Types/Text to Speech · design risk.** Typed comparison allocates an O(n×m) Levenshtein matrix for arbitrary strings. Text to Speech permits 100 user regex replacements over arbitrary item text with no safe-regex/timeout and can suffer catastrophic backtracking. Remediation: length caps/banded distance and safe-regex validation or worker timeout. Tests: adversarial long input and pathological regex. Effort S-M.
 
 ### TEST-001 — Coverage does not protect risky surfaces
 
@@ -543,19 +543,19 @@ The observations below are heuristic because no timed participant study was run.
 
 | Component | Strengths | Weak spots | Score/verdict |
 | --- | --- | --- | --- |
-| Prompt Types | Simple public contract; typed feedback; reverse/audio fallback. | Incorrect cloze semantics; O(n×m) compare; accent-insensitive normalization; no Easy/automatic calibration. | 2/5; not Anki-compatible. |
+| More Card Types | Simple public contract; typed feedback; reverse/audio fallback. | Incorrect cloze semantics; O(n×m) compare; accent-insensitive normalization; no Easy/automatic calibration. | 2/5; not Anki-compatible. |
 | Image Occlusion | Content-addressed image; alt-text field; numeric masks. | Pointer-first drawing, invalid rectangle ranges can overflow, no Anki IO import/edit parity, no advanced shapes. | 2.5/5; useful MVP, accessibility gap. |
 | Interoperability | Decodes tiny legacy and current zstd/protobuf fixtures; media hashing; clear generic warning. | Drop-in blockers ANKI-001–003; sync archive DoS; no preflight report. | 1/5 for migration; content-only preview. |
-| Recovery Policies | Finite score guard and simple alternatives. | Policy semantics are lightly documented/validated; planner underfill and early-due behavior dominate. | 3/5; contained. |
-| Goals & Saved Views | Goals contribute bounded priority; filter service supports tags/states/sort internally. | UI saves query only; library preset drops most filter fields; deadline math is UTC/fixed-day sensitive; no full editor. | 2.5/5. |
-| Shared Packs | Three-way field conflict concept and scheduling preservation through registry. | Shallow schemas, silent drift/version advance, duplicate source IDs, variants ignored, no signature/author verification. | 2/5; unsafe for trusted update claims. |
+| Review Priorities | Finite score guard and simple alternatives. | Policy semantics are lightly documented/validated; planner underfill and early-due behavior dominate. | 3/5; contained. |
+| Goals & Saved Searches | Goals contribute bounded priority; filter service supports tags/states/sort internally. | UI saves query only; library preset drops most filter fields; deadline math is UTC/fixed-day sensitive; no full editor. | 2.5/5. |
+| Learning Packs | Three-way field conflict concept and scheduling preservation through registry. | Shallow schemas, silent drift/version advance, duplicate source IDs, variants ignored, no signature/author verification. | 2/5; unsafe for trusted update claims. |
 | Insights | Calm presentation and workload framing. | Fabricated no-data recall, coarse lifetime metrics, heuristic forecast called simulation. | 2/5; avoid decision-grade claims. |
 | Browser Tab Sync | Tiny, understandable transport; useful development demo. | Not device sync; delete resurrection, no tombstones/invariant checks. | 1.5/5 as “sync”; 3/5 as demo. |
 | Card Timer | Disabled by default, bounded setting, guarded rating submission. | Time pressure auto-fails, no pause/visibility handling. | 2/5 pedagogically. |
 | SDK model/registry | One contract for bundled/local, permission/contribution collision checks, fallbacks/error boundaries. | Whole-workspace props/transactions, weak validation, full-trust ambiguity, no ABI/conformance matrix. | 2.5/5. |
 | Package format/CLI | Path traversal, file/count/size, manifest/network domain validation; React host linking. | Nondeterministic archives; no signatures/provenance/dependency model; TTS builds against unpinned core `main`; 5 MB limit constrains rich assets. | 3/5 security, 1.5/5 release reproducibility. |
 | Study Pulse example | Proves a separately authored page/policy and is exercised in Electron. | Tracked binary changes on every build; example does not demonstrate commands/network/secrets/migrations. | 3/5 example, 1/5 reproducibility. |
-| NeoAnki TTS | Ambitious public-SDK proof; profiles, five providers, secrets, processing, fallback, accessible Play/Stop, good mocked tests. | LOGIC-008–011, SEC-004, secret race, stale playback, profile tab semantics, local-only config. | 1/5 release readiness until persistence/profile blockers fixed. |
+| Text to Speech | Ambitious public-SDK proof; profiles, five providers, secrets, processing, fallback, accessible Play/Stop, good mocked tests. | LOGIC-008–011, SEC-004, secret race, stale playback, profile tab semantics, local-only config. | 1/5 release readiness until persistence/profile blockers fixed. |
 
 ## 9. Pedagogy assessment
 

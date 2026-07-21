@@ -12,7 +12,7 @@ type DesktopWindow = ReturnType<DesktopApplication['windows']>[number]
 const interoperabilityPackage = join(process.cwd(), 'test-extensions', 'org.neoanki.interoperability-2.0.3.neoanki-extension')
 const coreArgs = ['.']
 const extensionArgs = ['.', `--install-extension=${interoperabilityPackage}`]
-const migrationFrame = (window: DesktopWindow) => window.locator('iframe[title^="Anki & CSV Interoperability:"]').contentFrame()
+const migrationFrame = (window: DesktopWindow) => window.locator('iframe[title^="Anki & CSV"]').contentFrame()
 const migrate = async (window: DesktopWindow, file: string | { name: string; mimeType: string; buffer: Buffer }, openOnboarding = true) => {
   if (openOnboarding) await window.getByRole('button', { name: /migrate from anki/i }).click()
   const frame = migrationFrame(window)

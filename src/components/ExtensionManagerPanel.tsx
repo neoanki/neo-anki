@@ -125,7 +125,7 @@ export const ExtensionManagerPanel = () => {
       <strong className="permission-title">Requested capabilities</strong>
       <ManifestSummary manifest={candidate.manifest} addedPermissions={candidate.addedPermissions}/>
       <p className="extension-trust-warning"><AlertTriangle size={16}/><span>Worker code and UI run in isolated contexts; core validates every capability call and workspace patch. A valid signature proves package integrity, not publisher identity, so publisher trust still matters.</span></p>
-      {candidate.isDowngrade && <p className="extension-error" role="alert">This package is older than the installed version. Downgrading may remove capabilities or break extension-owned data.</p>}
+      {candidate.isDowngrade && <p className="extension-error" role="alert">This package is older than the installed version. Downgrading may remove features or make data created by the extension unavailable.</p>}
       <div className="button-row extension-review-actions"><button className="secondary-button" disabled={busy} onClick={() => void cancelCandidate()}>Cancel</button><button className="primary-button" disabled={busy} onClick={() => void installCandidate()}><Check size={17}/> {candidate.currentVersion ? candidate.isDowngrade ? 'Downgrade' : 'Update' : 'Install extension'}</button></div>
     </section>}
 
