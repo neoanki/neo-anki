@@ -19,7 +19,10 @@ interface RetainedCreateDraft {
   assets: MediaAsset[]
   occlusions: OcclusionRect[]
   selectedActions: string[]
+  failedAction: FailedAuthoringAction | null
 }
+
+interface FailedAuthoringAction { extensionId: string; actionId: string; itemId: string; idempotencyKey: string; draft: KnowledgeDraftV1 }
 
 let retainedCreateDraft: RetainedCreateDraft | null = null
 const createDraftStorageKey = 'neoanki:create-draft:v1'
@@ -41,6 +44,11 @@ const loadRetainedCreateDraft = (): RetainedCreateDraft | null => {
       assets: Array.isArray(value.assets) ? value.assets : [],
       occlusions: Array.isArray(value.occlusions) ? value.occlusions : [],
       selectedActions: Array.isArray(value.selectedActions) ? value.selectedActions.filter((entry): entry is string => typeof entry === 'string') : [],
+      failedAction: value.failedAction && typeof value.failedAction === 'object'
+        && typeof value.failedAction.extensionId === 'string' && typeof value.failedAction.actionId === 'string'
+        && typeof value.failedAction.itemId === 'string' && typeof value.failedAction.idempotencyKey === 'string'
+        && value.failedAction.draft && typeof value.failedAction.draft === 'object'
+        ? value.failedAction as FailedAuthoringAction : null,
     }
     return retainedCreateDraft
   } catch { return null }
@@ -70,12 +78,12 @@ export const CreatePage = () => {
   const [saving, setSaving] = useState(false)
   const [attempted, setAttempted] = useState(false)
   const [promptTouched, setPromptTouched] = useState(false)
-  const [saveError, setSaveError] = useState('')
+  const [saveError, setSaveError] = useState(() => initialDraft?.failedAction ? 'Knowledge was saved, but its extension action was interrupted. Retry the extension action without creating a duplicate item.' : '')
   const [actionResultMessage, setActionResultMessage] = useState('')
   const authoringActions = useMemo(() => extensionAuthoringActionsV2(), [])
   const [selectedActions, setSelectedActions] = useState<Set<string>>(() => new Set(initialDraft?.selectedActions || authoringActions.filter((action) => action.defaultSelected).map((action) => `${action.extensionId}:${action.id}`)))
   const [actionStatuses, setActionStatuses] = useState<Map<string, ExtensionAuthoringActionStatusV1>>(new Map())
-  const [failedAction, setFailedAction] = useState<{ extensionId: string; actionId: string; itemId: string; idempotencyKey: string; draft: KnowledgeDraftV1 } | null>(null)
+  const [failedAction, setFailedAction] = useState<FailedAuthoringAction | null>(() => initialDraft?.failedAction || null)
   const findings = useMemo(() => prompt.trim() && (promptTouched || attempted) ? analyzeCardHealth(prompt, answer) : [], [prompt, answer, promptTouched, attempted])
   const duplicates = useMemo(() => findDuplicateItems(prompt, data.items), [prompt, data.items])
   const collections = [...new Set(data.items.map((item) => item.collection))]
@@ -87,8 +95,8 @@ export const CreatePage = () => {
   const draft: KnowledgeDraftV1 = useMemo(() => ({ prompt: prompt.trim(), answer: answer.trim(), context: context.trim(), collection: collection.trim(), tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean), selectedPromptTypes: [...variants], mediaIds: assets.map((asset) => asset.id) }), [answer, assets, collection, context, prompt, tags, variants])
 
   useEffect(() => {
-    persistCreateDraft({ variants, prompt, answer, context, collection, tags, citations, assets, occlusions, selectedActions: [...selectedActions] })
-  }, [answer, assets, citations, collection, context, occlusions, prompt, selectedActions, tags, variants])
+    persistCreateDraft({ variants, prompt, answer, context, collection, tags, citations, assets, occlusions, selectedActions: [...selectedActions], failedAction })
+  }, [answer, assets, citations, collection, context, failedAction, occlusions, prompt, selectedActions, tags, variants])
 
   useEffect(() => {
     let current = true

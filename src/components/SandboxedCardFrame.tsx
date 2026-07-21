@@ -1,17 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 const sanitizeCardHtml = (html: string) => {
-  const template = document.createElement('template')
-  template.innerHTML = html
-  template.content.querySelectorAll('script, meta, base, link, iframe, object, embed, form').forEach((element) => element.remove())
-  template.content.querySelectorAll<HTMLElement>('*').forEach((element) => {
+  const parsed = new DOMParser().parseFromString(html, 'text/html')
+  parsed.body.querySelectorAll('script, meta, base, link, iframe, object, embed, form').forEach((element) => element.remove())
+  parsed.body.querySelectorAll<HTMLElement>('*').forEach((element) => {
     for (const attribute of [...element.attributes]) {
       const name = attribute.name.toLowerCase()
       if (name.startsWith('on') || ['srcdoc', 'action', 'formaction'].includes(name)) element.removeAttribute(attribute.name)
       if ((name === 'href' || name === 'xlink:href') && !attribute.value.trim().startsWith('#')) element.removeAttribute(attribute.name)
     }
   })
-  return template.innerHTML
+  return parsed.body.innerHTML
 }
 
 const safeCss = (css: string) => css.replace(/<\/style/gi, '<\\/style')

@@ -78,6 +78,29 @@ test('preserves an unfinished knowledge draft across an automatic reload', async
   await expect(page.getByLabel('Answer', { exact: true })).toHaveValue('')
 })
 
+test('reload preserves a failed extension retry checkpoint without enabling a duplicate item', async ({ page }) => {
+  const data = onboarded()
+  await page.addInitScript(({ workspace, failedDraft }) => {
+    if (window.top !== window) return
+    localStorage.setItem('neo-anki:data:v1', JSON.stringify(workspace))
+    sessionStorage.setItem('neoanki:create-draft:v1', JSON.stringify(failedDraft))
+  }, {
+    workspace: data,
+    failedDraft: {
+      variants: ['forward'], prompt: 'Saved prompt?', answer: 'Saved answer', context: '', collection: 'QA', tags: '', citations: [{ title: '', url: '' }], assets: [], occlusions: [], selectedActions: ['org.example.audio:generate'],
+      failedAction: { extensionId: 'org.example.audio', actionId: 'generate', itemId: data.items[0].id, idempotencyKey: `${data.items[0].id}:org.example.audio:generate`, draft: { prompt: 'Saved prompt?', answer: 'Saved answer', context: '', collection: 'QA', tags: [], selectedPromptTypes: ['forward'], mediaIds: [] } },
+    },
+  })
+  await page.goto('/#/create')
+
+  await expect(page.getByRole('alert')).toContainText(/extension action was interrupted/i)
+  await expect(page.getByRole('button', { name: /retry extension action/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^add knowledge item$/i })).toBeDisabled()
+  await page.reload()
+  await expect(page.getByRole('button', { name: /retry extension action/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^add knowledge item$/i })).toBeDisabled()
+})
+
 test('core forward review reveals the answer before grading', async ({ page }) => {
   const data = onboarded()
   data.items = [data.items[0]]
