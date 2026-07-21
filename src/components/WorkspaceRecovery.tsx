@@ -68,7 +68,7 @@ export const WorkspaceRecovery = () => {
         <button className="secondary-button" disabled={Boolean(busy)} onClick={() => void restoreDesktopBackup()}><ArchiveRestore size={18} aria-hidden="true" /> {busy === 'restore' ? 'Restoring…' : 'Restore backup'}</button>
         <button className="text-button danger" disabled={Boolean(busy)} onClick={() => void startEmpty()}><RotateCcw size={18} aria-hidden="true" /> {busy === 'empty' ? 'Starting empty…' : 'Start empty'}</button>
       </div>
-      {!window.neoAnkiDesktop && <input ref={backupInput} className="visually-hidden" type="file" accept=".json,application/json" onChange={(event) => void restoreBrowserBackup(event.target.files?.[0])} />}
+      {!window.neoAnkiDesktop && <input ref={backupInput} className="visually-hidden" type="file" accept=".json,application/json" aria-label="Choose Neo Anki JSON backup to recover" onChange={(event) => void restoreBrowserBackup(event.target.files?.[0])} />}
       {message && <p className="inline-message" role="status">{message}</p>}
       {error && <p className="inline-message error" role="alert"><FileWarning size={16} aria-hidden="true" /> {error}</p>}
     </section>

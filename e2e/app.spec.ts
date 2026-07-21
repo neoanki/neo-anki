@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { createSeedData } from '../src/data/seed'
+import { observeRuntimeFailures } from './support/qa'
 
 const onboarded = () => {
   const data = createSeedData()
@@ -9,7 +10,7 @@ const onboarded = () => {
 }
 
 const startWith = async (page: Parameters<typeof test>[0] extends never ? never : any, data = onboarded()) => {
-  await page.addInitScript((seed: unknown) => localStorage.setItem('neo-anki:data:v1', JSON.stringify(seed)), data)
+  await page.addInitScript((seed: unknown) => { if (window.top === window) localStorage.setItem('neo-anki:data:v1', JSON.stringify(seed)) }, data)
   await page.goto('/')
 }
 
@@ -77,6 +78,29 @@ test('preserves an unfinished knowledge draft across an automatic reload', async
   await expect(page.getByLabel('Answer', { exact: true })).toHaveValue('')
 })
 
+test('reload preserves a failed extension retry checkpoint without enabling a duplicate item', async ({ page }) => {
+  const data = onboarded()
+  await page.addInitScript(({ workspace, failedDraft }) => {
+    if (window.top !== window) return
+    localStorage.setItem('neo-anki:data:v1', JSON.stringify(workspace))
+    sessionStorage.setItem('neoanki:create-draft:v1', JSON.stringify(failedDraft))
+  }, {
+    workspace: data,
+    failedDraft: {
+      variants: ['forward'], prompt: 'Saved prompt?', answer: 'Saved answer', context: '', collection: 'QA', tags: '', citations: [{ title: '', url: '' }], assets: [], occlusions: [], selectedActions: ['org.example.audio:generate'],
+      failedAction: { extensionId: 'org.example.audio', actionId: 'generate', itemId: data.items[0].id, idempotencyKey: `${data.items[0].id}:org.example.audio:generate`, draft: { prompt: 'Saved prompt?', answer: 'Saved answer', context: '', collection: 'QA', tags: [], selectedPromptTypes: ['forward'], mediaIds: [] } },
+    },
+  })
+  await page.goto('/#/create')
+
+  await expect(page.getByRole('alert')).toContainText(/extension action was interrupted/i)
+  await expect(page.getByRole('button', { name: /retry extension action/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^add knowledge item$/i })).toBeDisabled()
+  await page.reload()
+  await expect(page.getByRole('button', { name: /retry extension action/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^add knowledge item$/i })).toBeDisabled()
+})
+
 test('core forward review reveals the answer before grading', async ({ page }) => {
   const data = onboarded()
   data.items = [data.items[0]]
@@ -87,7 +111,57 @@ test('core forward review reveals the answer before grading', async ({ page }) =
   await page.getByRole('button', { name: /reveal answer/i }).click()
   await expect(page.getByText(data.items[0].answer, { exact: true })).toBeVisible()
   await page.locator('button.grade-button.recalled').click()
-  await expect(page.getByRole('heading', { name: /enough for this session/i })).toBeVisible()
+  const completionHeading = page.getByRole('heading', { name: /enough for this session/i })
+  await expect(completionHeading).toBeVisible()
+  await expect(completionHeading).toBeFocused()
+})
+
+test('sandboxed imported templates resize without CSP or renderer errors', async ({ page }) => {
+  const failures = observeRuntimeFailures(page)
+  const data = onboarded()
+  data.items = [data.items[0]]
+  data.cards = [{
+    ...data.cards[0],
+    itemId: data.items[0].id,
+    rendering: {
+      questionHtml: '<div style="height:420px">Tall imported question</div>',
+      answerHtml: '<div style="height:460px">Tall imported answer</div>',
+      css: '.card { padding: 8px; }',
+      source: 'anki-template',
+    },
+  }]
+  data.reviews = []
+  await startWith(page, data)
+
+  await page.locator('button.study-button').click()
+  const frame = page.locator('.sandboxed-card-frame')
+  await expect(frame).toBeVisible()
+  await expect.poll(() => frame.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(400)
+  expect(failures).toEqual([])
+})
+
+test('sandboxed imported templates cannot navigate away from the reviewed card', async ({ page }) => {
+  const data = onboarded()
+  data.items = [data.items[0]]
+  data.cards = [{
+    ...data.cards[0],
+    itemId: data.items[0].id,
+    rendering: {
+      questionHtml: '<meta http-equiv="refresh" content="0;url=data:text/html,escaped-card"><p>Expected prompt</p><img src="neoanki-media://asset/local-image">',
+      answerHtml: '<p>Expected answer</p>',
+      css: '</style><meta http-equiv="refresh" content="0;url=data:text/html,escaped-css"><style>',
+      source: 'anki-template',
+    },
+  }]
+  data.reviews = []
+  await startWith(page, data)
+  await page.locator('button.study-button').click()
+
+  const cardFrame = page.locator('.sandboxed-card-frame')
+  await expect(cardFrame).toBeVisible()
+  await page.waitForTimeout(250)
+  expect(await cardFrame.contentFrame().locator('body').textContent()).toContain('Expected prompt')
+  await expect(cardFrame.contentFrame().locator('img')).toHaveAttribute('src', 'neoanki-media://asset/local-image')
 })
 
 test('undo restores the previous review exactly enough to grade again', async ({ page }) => {
@@ -105,6 +179,26 @@ test('undo restores the previous review exactly enough to grade again', async ({
   await expect(page.locator('.prompt-content h1')).toHaveText(firstPrompt || '')
   await expect(page.locator('.answer-content')).toBeVisible()
   await expect(page.locator('button.grade-button.recalled')).toBeVisible()
+})
+
+test('undo returns to the reviewed card when sibling burying skipped queue entries', async ({ page }) => {
+  const data = onboarded()
+  const item = data.items[0]
+  const first = { ...data.cards[0], id: 'reviewed-sibling', itemId: item.id, variant: 'forward' }
+  const skipped = { ...data.cards[0], id: 'skipped-sibling', itemId: item.id, variant: 'qa-missing-prompt-type' }
+  data.items = [item]
+  data.cards = [first, skipped]
+  data.reviews = []
+  await startWith(page, data)
+
+  await page.locator('button.study-button').click()
+  await page.getByRole('button', { name: /reveal answer/i }).click()
+  await page.locator('button.grade-button.recalled').click()
+  await expect(page.getByRole('heading', { name: /enough for this session/i })).toBeVisible()
+  await page.getByRole('button', { name: /undo last answer/i }).click()
+
+  await expect(page.getByText(/extension for “qa-missing-prompt-type” is unavailable/i)).toHaveCount(0)
+  await expect(page.locator('.answer-content')).toBeVisible()
 })
 
 test('trash keeps knowledge recoverable after deletion', async ({ page }) => {
@@ -226,7 +320,8 @@ test('production shell is accessible and cached for offline use', async ({ page,
   await page.evaluate(() => navigator.serviceWorker.ready)
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
   await expect.poll(() => page.evaluate(async () => {
-    const requests = await (await caches.open('neo-anki-v5')).keys()
+    const cacheNames = (await caches.keys()).filter((name) => name.startsWith('neo-anki-v'))
+    const requests = (await Promise.all(cacheNames.map(async (name) => (await caches.open(name)).keys()))).flat()
     return requests.some((request) => request.url.endsWith('.js'))
   })).toBe(true)
   await context.setOffline(true)

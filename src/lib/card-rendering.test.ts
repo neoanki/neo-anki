@@ -34,4 +34,13 @@ describe('Workspace v4 card rendering projection', () => {
     expect(rendered.questionHtml).not.toContain('[method]')
     expect(rendered.answerHtml).toContain('<span class="cloze" data-ordinal="2">spacing</span>')
   })
+
+  it('does not crash rendering when imported media URLs contain malformed escapes', () => {
+    const type: NoteType = { ...base, id: 'type', profileId: 'profile', name: 'Custom', fieldIds: ['front'], templateIds: ['template'], kind: 'standard', css: '' }
+    const note: Note = { ...base, id: 'note', profileId: 'profile', noteTypeId: type.id, fields: { front: '<img src="broken%E0%A4%A.png">Prompt' }, tags: [], marked: false }
+    const template: CardTemplate = { ...base, id: 'template', noteTypeId: type.id, name: 'Forward', ordinal: 0, questionFormat: '{{Front}}', answerFormat: '{{Front}}' }
+    const card: Card = { ...base, id: 'card', profileId: 'profile', noteId: note.id, templateId: template.id, deckId: 'deck', presetId: 'preset', ordinal: 0, flags: 0, suspended: false, scheduling: { strategy: 'neo-fsrs', queue: 'new', dueAt: now, stability: 0, difficulty: 0, elapsedDays: 0, scheduledDays: 0, reps: 0, lapses: 0, state: 0 } }
+
+    expect(() => renderWorkspaceCard(card, note, type, template, [{ id: 'front', name: 'Front' }], 'Imported', [], () => '')).not.toThrow()
+  })
 })

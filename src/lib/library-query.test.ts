@@ -12,7 +12,8 @@ describe('Library query syntax', () => {
     cards[0].suspended = true; cards[0].buriedUntil = '2099-01-01T00:00:00.000Z'
     expect(matchesLibraryQuery(item, cards, 'is:suspended is:buried')).toBe(true)
     cards[0].suspended = false; cards[0].fsrs.state = 0; expect(matchesLibraryQuery(item, cards, 'is:new')).toBe(true)
-    cards[0].fsrs.state = 2; cards[0].fsrs.due = '2020-01-01T00:00:00.000Z'; expect(matchesLibraryQuery(item, cards, 'is:due')).toBe(true)
+    cards[0].fsrs.state = 2; cards[0].fsrs.due = '2020-01-01T00:00:00.000Z'; cards[0].buriedUntil = undefined; expect(matchesLibraryQuery(item, cards, 'is:due')).toBe(true)
+    cards[0].buriedUntil = '2099-01-01T00:00:00.000Z'; expect(matchesLibraryQuery(item, cards, 'is:due', new Date('2026-07-18T12:00:00.000Z'))).toBe(false)
   })
 
   it('supports common flag, card, note-type, media, date, wildcard, and due-property operators', () => {
@@ -25,6 +26,15 @@ describe('Library query syntax', () => {
     expect(matchesLibraryQuery(item, cards, 'flag:none')).toBe(false)
     item.mediaIds = ['media']; expect(matchesLibraryQuery(item, cards, 'has:media')).toBe(true)
     expect(matchesLibraryQuery(item, cards, 'added:99999 edited:99999', new Date('2026-07-18T12:00:00.000Z'))).toBe(true)
+  })
+
+  it('matches every card-level deck represented by a multi-card note', () => {
+    const data = createSeedData()
+    const item = data.items[0]
+    const first = { ...data.cards[0], itemId: item.id, deckName: 'Languages::Spanish' }
+    const second = { ...data.cards[0], id: 'second-deck-card', itemId: item.id, deckName: 'Languages::Japanese' }
+
+    expect(matchesLibraryQuery(item, [first, second], 'deck:"Languages::Japanese"')).toBe(true)
   })
 
   it('sorts deterministically by due, difficulty, deck, creation, and edit time', () => {

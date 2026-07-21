@@ -40,13 +40,19 @@ export const scheduleReview = (
   return scheduler.next(hydrateFSRSCard(card.fsrs), now, toFSRSRating(rating))
 }
 
-export const previewReview = (card: PracticeCard, retention: number, now = new Date()) => {
+export const previewReview = (
+  card: PracticeCard,
+  options: number | NonNullable<PracticeCard['schedulerOptions']>,
+  now = new Date(),
+) => {
+  const retention = typeof options === 'number' ? options : options.desiredRetention
   const scheduler = fsrs({
     request_retention: retention,
+    maximum_interval: typeof options === 'number' ? 36_500 : options.maximumIntervalDays,
     enable_fuzz: false,
     enable_short_term: true,
-    learning_steps: ['1m', '10m'],
-    relearning_steps: ['10m'],
+    learning_steps: (typeof options === 'number' ? [1, 10] : options.learningStepsMinutes).map((value) => `${value}m`) as Steps,
+    relearning_steps: (typeof options === 'number' ? [10] : options.relearningStepsMinutes).map((value) => `${value}m`) as Steps,
   })
   const preview = scheduler.repeat(hydrateFSRSCard(card.fsrs), now)
   return {

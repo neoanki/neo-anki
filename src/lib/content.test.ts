@@ -12,6 +12,8 @@ describe('content rendering and diagnostics', () => {
     expect(compareTypedAnswer('spaced repetiton', 'spaced repetition').result).toBe('close')
     expect(compareTypedAnswer('banana', 'spaced repetition').result).toBe('incorrect')
     expect(compareTypedAnswer('x'.repeat(600), 'x'.repeat(600)).result).toBe('incorrect')
+    expect(compareTypedAnswer('C', 'C++').result).not.toBe('exact')
+    expect(compareTypedAnswer('Na', 'Na+').result).not.toBe('exact')
   })
 
   it('reports actionable health findings and exact duplicates', () => {
@@ -29,5 +31,11 @@ describe('content rendering and diagnostics', () => {
     const itemWithMedia = { ...item, mediaIds: ['asset-1'] }
     expect(getAssetForCard(itemWithMedia, [{ id: 'asset-1', filename: 'image.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==', byteLength: 1, hash: 'a'.repeat(64), altText: 'Fixture', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' }])).toMatchObject({ id: 'asset-1' })
     expect(getAssetForCard(itemWithMedia, [])).toBeUndefined()
+  })
+
+  it('does not mislabel multilingual questions as open-form prompts', () => {
+    for (const prompt of ['Що зміцнює практика пригадування?', '記憶を強化するものは何ですか？', 'ما الذي يقوي الذاكرة؟']) {
+      expect(analyzeCardHealth(prompt, 'Retrieval practice').map((finding) => finding.code)).not.toContain('open-form')
+    }
   })
 })

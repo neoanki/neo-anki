@@ -28,6 +28,25 @@ class FakeWorker {
 }
 
 describe('SDK v2 isolated runtimes', () => {
+  it('rejects worker messages larger than the documented 8 MiB boundary', async () => {
+    const worker = new FakeWorker()
+    const runtime = new ExtensionWorkerRuntimeV2(manifest(), 'blob:https://neoanki.test/worker', host(), () => worker as never)
+    worker.emit({ protocol: 2, type: 'ready', extensionId: manifest().id })
+    const request = { type: 'planning-signals' as const, request: { requestId: 'oversized', contributionId: 'planner', now: new Date().toISOString(), items: [] } }
+    const pending = runtime.execute(request)
+    await Promise.resolve()
+
+    const oversizedReason = 'x'.repeat(8 * 1024 * 1024 + 1)
+    worker.emit({
+      protocol: 2,
+      type: 'response',
+      response: { type: 'planning-signals', requestId: 'oversized', signals: [{ itemId: 'item', score: 1, reason: oversizedReason }] },
+    })
+
+    expect(worker.terminated).toBe(true)
+    await expect(pending).rejects.toThrow(/exceeds 8 MiB/)
+  })
+
   it('launches compiled extension workers as ES modules', () => {
     const worker = new FakeWorker()
     const WorkerMock = vi.fn(function WorkerConstructor() { return worker })

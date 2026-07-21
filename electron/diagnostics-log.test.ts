@@ -21,4 +21,24 @@ describe('DiagnosticsLog', () => {
     expect(contents).not.toContain('alice')
     expect(JSON.parse(contents)).toMatchObject({ appVersion: '1.2.3', source: 'renderer', code: 'render-failed' })
   })
+
+  it('redacts common unquoted credentials and Windows user paths', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'neoanki-diagnostics-'))
+    roots.push(root)
+    const log = new DiagnosticsLog(root, '1.2.3')
+    await log.record({
+      source: 'main',
+      level: 'error',
+      code: 'sync-failed',
+      message: 'refresh_token=private-refresh password:correct-horse token=device-token at C:\\Users\\alice\\Neo Anki\\workspace.db',
+    })
+
+    const contents = await log.read()
+    expect(contents).not.toContain('private-refresh')
+    expect(contents).not.toContain('correct-horse')
+    expect(contents).not.toContain('device-token')
+    expect(contents).not.toContain('alice')
+    expect(contents).toContain('<credential>')
+    expect(contents).toContain('<local-path>')
+  })
 })

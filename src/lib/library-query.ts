@@ -22,14 +22,16 @@ export const matchesLibraryQuery = (item: KnowledgeItem, cards: PracticeCard[], 
     const operator = separator > 0 ? token.slice(0, separator).toLowerCase() : ''
     const value = clean(separator > 0 ? token.slice(separator + 1) : token)
     let matches: boolean
-    if (operator === 'deck') matches = wildcard(deckName(value), deckName(cards[0]?.deckName || item.collection))
+    if (operator === 'deck') matches = cards.length
+      ? cards.some((card) => wildcard(deckName(value), deckName(card.deckName || item.collection)))
+      : wildcard(deckName(value), deckName(item.collection))
     else if (operator === 'tag' && value === 'none') matches = item.tags.length === 0
     else if (operator === 'tag') matches = item.tags.some((tag) => wildcard(value, tag.toLowerCase()) || tag.toLowerCase().startsWith(`${value}::`))
     else if (operator === 'is' && value === 'suspended') matches = cards.some((card) => card.suspended)
     else if (operator === 'is' && value === 'buried') matches = cards.some((card) => Boolean(card.buriedUntil && new Date(card.buriedUntil) > now))
     else if (operator === 'is' && value === 'leech') matches = cards.some((card) => card.leech)
     else if (operator === 'is' && value === 'new') matches = cards.some((card) => card.fsrs.state === State.New)
-    else if (operator === 'is' && value === 'due') matches = cards.some((card) => !card.suspended && card.fsrs.state !== State.New && new Date(card.fsrs.due) <= now)
+    else if (operator === 'is' && value === 'due') matches = cards.some((card) => !card.suspended && (!card.buriedUntil || new Date(card.buriedUntil) <= now) && card.fsrs.state !== State.New && new Date(card.fsrs.due) <= now)
     else if (operator === 'is' && value === 'review') matches = cards.some((card) => card.fsrs.state === State.Review)
     else if (operator === 'is' && (value === 'learn' || value === 'learning')) matches = cards.some((card) => card.fsrs.state === State.Learning || card.fsrs.state === State.Relearning)
     else if (operator === 'flag') matches = value === 'any' ? cards.some((card) => Boolean(card.flags)) : value === 'none' || value === '0' ? cards.every((card) => !card.flags) : cards.some((card) => card.flags === Number(value))

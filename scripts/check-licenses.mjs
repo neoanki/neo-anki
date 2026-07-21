@@ -5,6 +5,7 @@ import { stdout } from 'node:process'
 
 const root = resolve(import.meta.dirname, '..')
 const allowed = new Set(['MIT', 'ISC', 'BSD-2-Clause', 'BSD-3-Clause', 'Apache-2.0', 'Python-2.0', 'BlueOak-1.0.0', '0BSD'])
+const approvedLicense = (expression) => expression.replace(/[()]/g, '').split(/\s+OR\s+/).some((license) => allowed.has(license.trim()))
 const visited = new Map()
 const fallbackText = (license, manifest) => {
   const owner = typeof manifest.author === 'string' ? manifest.author : manifest.author?.name || `${manifest.name} contributors`
@@ -37,7 +38,7 @@ const visit = (name, parentRoot) => {
   const key = `${manifest.name}@${manifest.version}`
   if (visited.has(key)) return
   const license = typeof manifest.license === 'string' ? manifest.license : ''
-  if (!allowed.has(license)) throw new Error(`${key} uses unapproved or missing license ${license || '(missing)'}.`)
+  if (!approvedLicense(license)) throw new Error(`${key} uses unapproved or missing license ${license || '(missing)'}.`)
   const licenseName = readdirSync(packageRoot).find((file) => /^(?:licen[sc]e|copying)(?:\..*)?$/i.test(file))
   const text = licenseName ? readFileSync(join(packageRoot, licenseName), 'utf8').trim() : fallbackText(license, manifest)
   if (!text) throw new Error(`${key} does not ship a license text and has no approved fallback.`)
