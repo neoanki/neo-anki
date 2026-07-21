@@ -67,13 +67,14 @@ describe('SDK v2 isolated runtimes', () => {
   })
 
   it('creates DOM/CSS-isolated UI frames without ambient network access', () => {
-    const runtime = createSandboxedExtensionUiV2(manifest(['ui:settings']), 'settings', 'blob:https://neoanki.test/settings', { locale: 'en', theme: 'dark', dto: {} })
+    const runtime = createSandboxedExtensionUiV2(manifest(['ui:settings']), 'settings', 'blob:https://neoanki.test/settings', { locale: 'en-US', theme: 'dark', dto: {} })
     expect(runtime.iframe.title).toContain('Fixture')
     expect(runtime.iframe.getAttribute('sandbox')).toBe('allow-scripts')
     expect(runtime.iframe.getAttribute('sandbox')).not.toContain('allow-same-origin')
     const frameDocument = atob(runtime.iframe.src.split(',')[1]!)
     expect(frameDocument).toContain("connect-src 'none'")
-    expect(frameDocument).toContain('<html data-theme="dark">')
+    expect(frameDocument).toContain('<html lang="en-US" data-theme="dark">')
+    expect(frameDocument).toContain('<title>Fixture: settings</title>')
     expect(frameDocument).toContain('min-height:0!important;height:auto!important')
     runtime.close()
   })
@@ -89,6 +90,26 @@ describe('SDK v2 isolated runtimes', () => {
     }) as typeof target.postMessage)
     runtime.iframe.dispatchEvent(new Event('load'))
     await vi.waitFor(() => expect(lifecycle).toHaveBeenCalledWith({ type: 'ready' }))
+    runtime.close()
+  })
+
+  it('accepts tall intrinsic frame sizes while keeping resize messages bounded', async () => {
+    const lifecycle = vi.fn()
+    const runtime = createSandboxedExtensionUiV2(manifest(['ui:settings']), 'settings', 'blob:https://neoanki.test/settings', { locale: 'en', theme: 'light', dto: {} }, undefined, lifecycle)
+    document.body.append(runtime.iframe)
+    const target = runtime.iframe.contentWindow!
+    let extensionPort: MessagePort | undefined
+    vi.spyOn(target, 'postMessage').mockImplementation(((_message: unknown, _origin: string, transfer?: Transferable[]) => {
+      extensionPort = transfer?.[0] as MessagePort | undefined
+      extensionPort?.start()
+    }) as typeof target.postMessage)
+    runtime.iframe.dispatchEvent(new Event('load'))
+    extensionPort!.postMessage({ protocol: 2, type: 'event', name: 'resize', payload: { height: 4_200 } })
+    await vi.waitFor(() => expect(lifecycle).toHaveBeenCalledWith({ type: 'resize', height: 4_200 }))
+    extensionPort!.postMessage({ protocol: 2, type: 'event', name: 'resize', payload: { height: 40_000 } })
+    await vi.waitFor(() => expect(lifecycle).toHaveBeenCalledWith({ type: 'resize', height: 24_000 }))
+    extensionPort!.postMessage({ protocol: 2, type: 'event', name: 'resize', payload: { height: 20 } })
+    await vi.waitFor(() => expect(lifecycle).toHaveBeenCalledWith({ type: 'resize', height: 96 }))
     runtime.close()
   })
 })

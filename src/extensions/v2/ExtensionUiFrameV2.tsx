@@ -29,6 +29,7 @@ const currentAppearance = (): { theme: 'light' | 'dark'; appearance: SandboxedUi
         primary,
         primaryHover: cssValue(styles, '--primary-hover', primary),
         primarySoft: cssValue(styles, '--primary-soft', theme === 'dark' ? '#3b314f' : '#ece6f8'),
+        onPrimary: theme === 'dark' ? '#1b1724' : '#ffffff',
         success: cssValue(styles, '--green', theme === 'dark' ? '#78c9ad' : '#26755f'),
         successSoft: cssValue(styles, '--green-soft', theme === 'dark' ? '#263e36' : '#e2f2ec'),
         warning: cssValue(styles, '--amber', theme === 'dark' ? '#e2b46f' : '#9a631b'),

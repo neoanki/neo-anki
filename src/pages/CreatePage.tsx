@@ -22,12 +22,41 @@ interface RetainedCreateDraft {
 }
 
 let retainedCreateDraft: RetainedCreateDraft | null = null
+const createDraftStorageKey = 'neoanki:create-draft:v1'
 const extensionReturnKey = 'neoanki:extensions:return:v1'
 const markExtensionReturnToCreate = () => window.sessionStorage.setItem(extensionReturnKey, JSON.stringify({ route: 'create', createdAt: Date.now() }))
+const loadRetainedCreateDraft = (): RetainedCreateDraft | null => {
+  if (retainedCreateDraft) return retainedCreateDraft
+  try {
+    const value = JSON.parse(window.sessionStorage.getItem(createDraftStorageKey) || 'null') as Partial<RetainedCreateDraft> | null
+    if (!value || !Array.isArray(value.variants) || typeof value.prompt !== 'string' || typeof value.answer !== 'string') return null
+    retainedCreateDraft = {
+      variants: value.variants,
+      prompt: value.prompt,
+      answer: value.answer,
+      context: typeof value.context === 'string' ? value.context : '',
+      collection: typeof value.collection === 'string' ? value.collection : '',
+      tags: typeof value.tags === 'string' ? value.tags : '',
+      citations: Array.isArray(value.citations) ? value.citations : [{ title: '', url: '' }],
+      assets: Array.isArray(value.assets) ? value.assets : [],
+      occlusions: Array.isArray(value.occlusions) ? value.occlusions : [],
+      selectedActions: Array.isArray(value.selectedActions) ? value.selectedActions.filter((entry): entry is string => typeof entry === 'string') : [],
+    }
+    return retainedCreateDraft
+  } catch { return null }
+}
+const persistCreateDraft = (draft: RetainedCreateDraft) => {
+  retainedCreateDraft = draft
+  try { window.sessionStorage.setItem(createDraftStorageKey, JSON.stringify(draft)) } catch { /* Keep the in-memory draft if browser storage is unavailable or full. */ }
+}
+const discardCreateDraft = () => {
+  retainedCreateDraft = null
+  try { window.sessionStorage.removeItem(createDraftStorageKey) } catch { /* The cleared in-memory draft remains authoritative. */ }
+}
 
 export const CreatePage = () => {
   const { data, addItem, navigate } = useApp()
-  const initialDraft = useMemo(() => retainedCreateDraft, [])
+  const initialDraft = useMemo(() => loadRetainedCreateDraft(), [])
   const [variants, setVariants] = useState<PromptVariant[]>(() => initialDraft?.variants || ['forward'])
   const [prompt, setPrompt] = useState(() => initialDraft?.prompt || '')
   const [answer, setAnswer] = useState(() => initialDraft?.answer || '')
@@ -58,7 +87,7 @@ export const CreatePage = () => {
   const draft: KnowledgeDraftV1 = useMemo(() => ({ prompt: prompt.trim(), answer: answer.trim(), context: context.trim(), collection: collection.trim(), tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean), selectedPromptTypes: [...variants], mediaIds: assets.map((asset) => asset.id) }), [answer, assets, collection, context, prompt, tags, variants])
 
   useEffect(() => {
-    retainedCreateDraft = { variants, prompt, answer, context, collection, tags, citations, assets, occlusions, selectedActions: [...selectedActions] }
+    persistCreateDraft({ variants, prompt, answer, context, collection, tags, citations, assets, occlusions, selectedActions: [...selectedActions] })
   }, [answer, assets, citations, collection, context, occlusions, prompt, selectedActions, tags, variants])
 
   useEffect(() => {
@@ -74,7 +103,7 @@ export const CreatePage = () => {
   const toggleVariant = (variant: PromptVariant) => setVariants((current) => current.includes(variant) ? current.filter((value) => value !== variant) : [...current, variant])
   const selectPromptType = (id: string) => setVariants((current) => current.includes(id) ? current : [...current, id])
   const clearDraft = () => {
-    retainedCreateDraft = null
+    discardCreateDraft()
     setPrompt(''); setAnswer(''); setContext(''); setTags(''); setAssets([]); setOcclusions([]); setCitations([{ title: '', url: '' }]); setAttempted(false); setPromptTouched(false)
   }
   const configureAction = (extensionId: string) => {

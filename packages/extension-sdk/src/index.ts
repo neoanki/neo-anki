@@ -80,7 +80,7 @@ export interface SandboxedUiAppearanceV1 {
   colors: {
     background: string; surface: string; surfaceStrong: string; surfaceMuted: string
     text: string; textSoft: string; textFaint: string; border: string; borderStrong: string
-    primary: string; primaryHover: string; primarySoft: string; success: string; successSoft: string
+    primary: string; primaryHover: string; primarySoft: string; onPrimary?: string; success: string; successSoft: string
     warning: string; warningSoft: string; danger: string; dangerSoft: string; focus: string
   }
   typography: { fontFamily: string; fontSize: string; lineHeight: string }
@@ -131,6 +131,7 @@ const appearanceVariables: Record<string, (appearance: SandboxedUiAppearanceV1) 
   '--neo-primary': (value) => value.colors.primary,
   '--neo-primary-hover': (value) => value.colors.primaryHover,
   '--neo-primary-soft': (value) => value.colors.primarySoft,
+  '--neo-on-primary': (value) => value.colors.onPrimary || '#ffffff',
   '--neo-success': (value) => value.colors.success,
   '--neo-success-soft': (value) => value.colors.successSoft,
   '--neo-warning': (value) => value.colors.warning,
@@ -249,10 +250,15 @@ export const createSandboxedUiClientV2 = () => new Promise<SandboxedUiClientV2>(
       }
     }
     port.start()
-    const reportHeight = (height = Math.max(document.body?.scrollHeight || 0, document.documentElement.scrollHeight)) => port.postMessage({ protocol: 2, type: 'event', name: 'resize', payload: { height } } satisfies SandboxedUiMessageV2)
+    // The document element's scroll height is at least the iframe viewport height,
+    // so including it prevents a frame from ever shrinking after its content gets
+    // shorter or its responsive layout changes. The body is explicitly reset to
+    // auto height by the shared appearance helper and therefore represents the
+    // extension's intrinsic content height.
+    const reportHeight = (height = document.body?.scrollHeight || document.documentElement.scrollHeight) => port.postMessage({ protocol: 2, type: 'event', name: 'resize', payload: { height } } satisfies SandboxedUiMessageV2)
     if (typeof ResizeObserver !== 'undefined') {
       const observer = new ResizeObserver(() => reportHeight())
-      observer.observe(document.documentElement)
+      observer.observe(document.body || document.documentElement)
     }
     port.postMessage({ protocol: 2, type: 'ready' } satisfies SandboxedUiMessageV2)
     resolve({

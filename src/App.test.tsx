@@ -55,6 +55,34 @@ describe('application workflows', () => {
     expect(write).not.toHaveBeenCalled()
   })
 
+  it('blocks desktop autosave and exposes every recovery action after a preserved-source failure', async () => {
+    const saveData = vi.fn(async () => undefined)
+    window.neoAnkiDesktop = {
+      isDesktop: true,
+      loadData: () => ({
+        data: null,
+        storagePath: '/tmp/neo-anki.sqlite',
+        recoveredFromBackup: false,
+        error: 'The workspace database could not be opened. 2 automatic backups are available for explicit restore.',
+        recoverySourcePath: '/tmp/neo-anki.corrupt.sqlite',
+      }),
+      saveData,
+      exportRecoverySource: async () => ({ canceled: false, path: '/tmp/exported-recovery.sqlite' }),
+      onNavigate: () => () => undefined,
+    } as unknown as NeoAnkiDesktopBridge
+
+    render(<AppProvider><App /></AppProvider>)
+
+    expect(screen.getByRole('heading', { name: 'Your workspace needs attention.' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Export original data' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Restore backup' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Start empty' })).toBeEnabled()
+    expect(screen.getByText('/tmp/neo-anki.corrupt.sqlite', { exact: false })).toBeInTheDocument()
+    await new Promise((resolve) => window.setTimeout(resolve, 0))
+    expect(saveData).not.toHaveBeenCalled()
+  })
+
   it('plans large workspaces through the cancellable background worker path', async () => {
     const data = createSeedData(); data.settings.onboardingComplete = true
     const item = data.items[0]; const card = data.cards.find((value) => value.itemId === item.id) || data.cards[0]
@@ -86,6 +114,64 @@ describe('application workflows', () => {
     expect(save).toBeDisabled()
     await userEvent.type(screen.getByLabelText('Prompt'), ' updated')
     expect(save).toBeEnabled()
+  })
+
+  it('edits Neo Basic with product terminology while preserving named custom models and field synchronization', async () => {
+    const data = createSeedData()
+    data.settings.onboardingComplete = true
+    const core = data.items[0]
+    const custom = data.items[1]
+    core.noteModel = {
+      noteTypeId: 'note-type:neo-basic',
+      noteTypeName: 'Neo Basic',
+      fields: [
+        { id: 'field:front', name: 'Front', ordinal: 0, value: core.prompt },
+        { id: 'field:back', name: 'Back', ordinal: 1, value: core.answer },
+        { id: 'field:context', name: 'Context', ordinal: 2, value: core.context },
+      ],
+    }
+    custom.noteModel = {
+      noteTypeId: 'note-type:imported-custom',
+      noteTypeName: 'Imported Custom',
+      fields: [
+        { id: 'field:question', name: 'Question text', ordinal: 0, value: custom.prompt },
+        { id: 'field:response', name: 'Expected response', ordinal: 1, value: custom.answer },
+        { id: 'field:hint', name: 'Hint', ordinal: 2, value: custom.context },
+      ],
+    }
+    localStorage.setItem('neo-anki:data:v1', JSON.stringify(data))
+    render(<AppProvider><App /></AppProvider>)
+    await userEvent.click(screen.getAllByRole('button', { name: 'Library' })[0])
+
+    await userEvent.click(screen.getByRole('button', { name: `Edit ${core.prompt}` }))
+    expect(screen.getByRole('group', { name: 'Knowledge content' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Prompt')).toHaveValue(core.prompt)
+    expect(screen.getByLabelText('Answer')).toHaveValue(core.answer)
+    expect(screen.getByRole('textbox', { name: 'Context' })).toHaveValue(core.context)
+    expect(screen.queryByLabelText('Front')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Back')).not.toBeInTheDocument()
+
+    await userEvent.clear(screen.getByLabelText('Prompt'))
+    await userEvent.type(screen.getByLabelText('Prompt'), 'Edited product prompt')
+    await userEvent.clear(screen.getByLabelText('Answer'))
+    await userEvent.type(screen.getByLabelText('Answer'), 'Edited product answer')
+    await userEvent.clear(screen.getByRole('textbox', { name: 'Context' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Context' }), 'Edited optional context')
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit content' })).not.toBeInTheDocument())
+    await waitFor(() => {
+      const stored = JSON.parse(localStorage.getItem('neo-anki:data:v1') || '{}') as typeof data
+      const item = stored.items.find((candidate) => candidate.id === core.id)!
+      expect(item).toMatchObject({ prompt: 'Edited product prompt', answer: 'Edited product answer', context: 'Edited optional context' })
+      expect(item.noteModel?.fields.map((field) => field.value)).toEqual(['Edited product prompt', 'Edited product answer', 'Edited optional context'])
+    })
+
+    await userEvent.click(screen.getByRole('button', { name: `Edit ${custom.prompt}` }))
+    expect(screen.getByRole('group', { name: 'Named fields · Imported Custom' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Question text')).toHaveValue(custom.prompt)
+    expect(screen.getByLabelText('Expected response')).toHaveValue(custom.answer)
+    expect(screen.getByLabelText('Hint')).toHaveValue(custom.context)
+    expect(screen.queryByLabelText('Prompt')).not.toBeInTheDocument()
   })
 
   it('keeps desktop edits open until their exact snapshot is durably saved', async () => {

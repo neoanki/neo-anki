@@ -15,6 +15,17 @@ interface SecretState { version: 1; values: Record<string, string> }
 interface ExtensionNetworkRequest { operationId?: string; url: string; method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; headers?: Record<string, string>; bodyBase64?: string; timeoutMs?: number; maximumResponseBytes?: number }
 interface ExtensionNetworkResponse { status: number; statusText: string; headers: Record<string, string>; bodyBase64: string }
 type ExtensionFetcher = (input: string, init?: RequestInit) => Promise<Response>
+export interface ExtensionSecretProtector {
+  available(): boolean
+  seal(value: string): Uint8Array
+  open(value: Uint8Array): string
+}
+
+const systemSecretProtector: ExtensionSecretProtector = {
+  available: () => secureSecretStorageAvailable(process.platform, safeStorage.isEncryptionAvailable(), process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : undefined),
+  seal: (value) => new Uint8Array(safeStorage.encryptString(value)),
+  open: (value) => safeStorage.decryptString(Buffer.from(value)),
+}
 
 const hostAllowed = (hostname: string, domains: string[]) => domains.some((domain) => domain.startsWith('*.')
   ? hostname.endsWith(domain.slice(1)) && hostname.length > domain.length - 1
@@ -31,7 +42,12 @@ export class ExtensionServices {
   private tokens = new Map<string, string>()
   private secretQueues = new Map<string, Promise<void>>()
   private networkControllers = new Map<string, AbortController>()
-  constructor(private readonly userDataRoot: string, private readonly manager: ExtensionManager, private readonly fetcher: ExtensionFetcher = net.fetch) {}
+  constructor(
+    private readonly userDataRoot: string,
+    private readonly manager: ExtensionManager,
+    private readonly fetcher: ExtensionFetcher = net.fetch,
+    private readonly secretProtector: ExtensionSecretProtector = systemSecretProtector,
+  ) {}
 
   async claim(id: string) {
     await this.manager.requireEnabled(id)
@@ -88,8 +104,7 @@ export class ExtensionServices {
   }
 
   private assertSecretSupport() {
-    const linuxBackend = process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : undefined
-    if (!secureSecretStorageAvailable(process.platform, safeStorage.isEncryptionAvailable(), linuxBackend)) {
+    if (!this.secretProtector.available()) {
       throw new Error('Secure OS credential storage is unavailable on this device. Linux requires Secret Service or KWallet; basic_text is not accepted.')
     }
   }
@@ -123,7 +138,7 @@ export class ExtensionServices {
     keys.forEach((key) => this.assertKey(key))
     return this.withSecretLock(id, async () => {
       const state = await this.readSecrets(id)
-      return Object.fromEntries(keys.map((key) => [key, state.values[key] ? safeStorage.decryptString(Buffer.from(state.values[key], 'base64')) : null]))
+      return Object.fromEntries(keys.map((key) => [key, state.values[key] ? this.secretProtector.open(Buffer.from(state.values[key], 'base64')) : null]))
     })
   }
 
@@ -133,7 +148,7 @@ export class ExtensionServices {
     changes.forEach((change) => { this.assertKey(change.key); if (change.op === 'set' && (!change.value || change.value.length > 16_384)) throw new Error('Secret values must be between 1 and 16,384 characters.') })
     await this.withSecretLock(id, async () => {
       const state = await this.readSecrets(id)
-      for (const change of changes) if (change.op === 'set') state.values[change.key] = safeStorage.encryptString(change.value).toString('base64'); else delete state.values[change.key]
+      for (const change of changes) if (change.op === 'set') state.values[change.key] = Buffer.from(this.secretProtector.seal(change.value)).toString('base64'); else delete state.values[change.key]
       await this.writeSecrets(id, state)
     })
   }

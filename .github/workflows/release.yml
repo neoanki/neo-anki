@@ -64,8 +64,6 @@ jobs:
             args: --linux --x64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
-    env:
-      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -75,7 +73,19 @@ jobs:
       - run: npm ci
       - run: npm run release:policy
       - run: npm run build && npm run extension:example && npm run desktop:prepare
+      - name: Build signed and notarized macOS release artifacts
+        if: runner.os == 'macOS'
+        env:
+          CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npx electron-builder ${{ matrix.args }} --publish never
       - name: Build release artifacts
+        if: runner.os != 'macOS'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npx electron-builder ${{ matrix.args }} --publish never
       - name: Verify macOS payload and launch
         if: runner.os == 'macOS'
@@ -85,7 +95,11 @@ jobs:
           test -n "$app_path"
           executable="$app_path/Contents/MacOS/Neo Anki"
           test -x "$executable"
-          NEO_ANKI_PACKAGED_APP="$executable" npx playwright test --config=playwright.desktop.config.ts --grep 'packaged application launches'
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          codesign -dv --verbose=4 "$app_path" 2>&1 | grep -F 'Authority=Developer ID Application:'
+          xcrun stapler validate "$app_path"
+          spctl --assess --type execute --verbose=2 "$app_path"
+          NEO_ANKI_RELEASE_APP="$executable" npm run test:acceptance:release -- --grep 'clean core journey'
       - name: Verify Windows payload and launch
         if: runner.os == 'Windows'
         shell: pwsh
@@ -94,8 +108,8 @@ jobs:
           if (-not $installer) { throw 'No Windows installer was produced.' }
           $executable = Get-ChildItem release/win-unpacked -Filter *.exe | Select-Object -First 1
           if (-not $executable) { throw 'No packaged Windows executable was produced.' }
-          $env:NEO_ANKI_PACKAGED_APP = $executable.FullName
-          npx playwright test --config=playwright.desktop.config.ts --grep 'packaged application launches'
+          $env:NEO_ANKI_RELEASE_APP = $executable.FullName
+          npm run test:acceptance:release -- --grep 'clean core journey'
       - name: Verify Linux AppImage payload and launch
         if: runner.os == 'Linux'
         shell: bash
@@ -108,7 +122,7 @@ jobs:
           test -d squashfs-root/usr
           executable="$(find release/linux-unpacked -maxdepth 1 -type f -name 'neo-anki' -print -quit)"
           test -x "$executable"
-          NEO_ANKI_PACKAGED_APP="$executable" xvfb-run --auto-servernum npx playwright test --config=playwright.desktop.config.ts --grep 'packaged application launches'
+          NEO_ANKI_RELEASE_APP="$executable" xvfb-run --auto-servernum npm run test:acceptance:release -- --grep 'clean core journey'
       - name: Stage distributable files and installation guidance
         run: node scripts/prepare-release-artifacts.mjs "${{ matrix.name }}"
       - name: Create CycloneDX SBOM

@@ -4,15 +4,18 @@ Release artifacts are built only by `.github/workflows/release.yml`. Local packa
 
 ## Trust model
 
-Tagged desktop releases do not require platform signing credentials or repository secrets:
+Tagged macOS releases require Developer ID signing and Apple notarization. The release workflow must have these protected repository secrets:
 
-- macOS DMG and ZIP payloads are checked and launched in a packaged-app smoke test.
-- Windows EXE payloads are checked and launched in a packaged-app smoke test.
-- Linux AppImages are extracted and structurally verified before a packaged-app smoke test.
+- `MACOS_CSC_LINK` — the exported Developer ID Application certificate (`.p12`) as base64 or a supported secure URL.
+- `MACOS_CSC_KEY_PASSWORD` — the certificate password.
+- `APPLE_ID` and `APPLE_APP_SPECIFIC_PASSWORD` — notarization credentials.
+- `APPLE_TEAM_ID` — the Apple Developer team identifier.
+
+The macOS job fails unless the app has a Developer ID signature, a stapled notarization ticket, and passes Gatekeeper assessment. It then runs the packaged clean-core acceptance journey. Windows and Linux artifacts run the same packaged acceptance journey; Windows Authenticode remains a separate future improvement.
 
 Every platform artifact is accompanied by platform-specific installation guidance, deterministic SHA-256 checksums, a CycloneDX SBOM, and GitHub build-provenance attestations. Only top-level distributable files are uploaded; unpacked staging directories and automatic-update metadata are excluded.
 
-Developer ID signing, Apple notarization, and Windows Authenticode signing are optional future trust improvements. Their absence does not block packaging, CI, or a draft release. Until implemented, release notes and installation guidance must state that macOS and Windows artifacts are unsigned.
+Missing macOS signing or notarization credentials block the release. Do not publish another unsigned macOS artifact and do not instruct users to bypass Gatekeeper.
 
 Release filenames are normalized before hashing. After the draft is uploaded, CI downloads all expected assets again and fails unless every checksum, SBOM, and primary artifact attestation still verifies under its final GitHub filename.
 
@@ -24,7 +27,7 @@ Automatic application updates remain disabled until signed update metadata and r
 2. Create and push a `vX.Y.Z` tag matching `package.json`.
 3. Wait for the release workflow to finish on macOS universal, Windows x64, and Linux x64.
 4. Inspect the release notes, checksums, CycloneDX SBOMs, build attestations, installers, and included installation guidance in the generated draft GitHub Release.
-5. Verify checksums and GitHub attestations, then install each artifact on a clean machine using the documented unsigned-app flow. Verify onboarding, a review, restart persistence, backup export, and backup restore.
+5. Verify checksums and GitHub attestations, then install each artifact on a clean machine. On macOS, verify Gatekeeper accepts the quarantined download without a security override. Verify onboarding, a review, restart persistence, backup export, and backup restore.
 6. Verify an artifact with `gh attestation verify <artifact> --repo neoanki/neo-anki`, then publish the draft.
 
 Native app-store releases are separate from the desktop GitHub release. Complete `docs/mobile-release-checklist.md` on physical devices before publishing either store binary; an automated Expo export alone is not approval.

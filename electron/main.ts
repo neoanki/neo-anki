@@ -1,10 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, safeStorage, session, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
-import { basename, join, relative, resolve, sep } from 'node:path'
+import { basename, extname, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ExtensionManager } from './extension-manager.js'
 import { MarketplaceClient } from './marketplace-client.js'
-import { ExtensionServices } from './extension-services.js'
+import { ExtensionServices, type ExtensionSecretProtector } from './extension-services.js'
 import { WorkspaceStore } from './workspace-store.js'
 import { DiagnosticsLog } from './diagnostics-log.js'
 import { DesktopSyncManager } from './sync-manager.js'
@@ -41,6 +41,17 @@ let quitAfterFlush = false
 
 let rendererReady = false
 let rendererStartupTimer: NodeJS.Timeout | null = null
+
+const disposableTestSecretProtector = (): ExtensionSecretProtector | undefined => {
+  if (process.env.NEO_ANKI_E2E_SECRET_BACKEND !== 'disposable-file') return undefined
+  if (app.isPackaged) throw new Error('The disposable secret backend is unavailable in packaged applications.')
+  if (process.env.NEO_ANKI_TEST_ALLOW_MULTIPLE_INSTANCES !== '1' || !process.env.NEO_ANKI_USER_DATA_DIR) throw new Error('The disposable secret backend is restricted to isolated E2E profiles.')
+  return {
+    available: () => true,
+    seal: (value) => new TextEncoder().encode(value),
+    open: (value) => new TextDecoder().decode(value),
+  }
+}
 
 const hasSingleInstanceLock = process.env.NEO_ANKI_TEST_ALLOW_MULTIPLE_INSTANCES === '1' || app.requestSingleInstanceLock()
 if (!hasSingleInstanceLock) app.quit()
@@ -100,7 +111,7 @@ const installApplicationMenu = () => {
 const queueSave = (changes: WorkspaceChangeSet) => {
   saveQueue = saveQueue.catch(() => undefined).then(async () => {
     workspaceStore.applyChanges(changes)
-    await workspaceStore.maybeCreateDailyBackup()
+    await workspaceStore.createRollingBackup()
   })
   return saveQueue
 }
@@ -172,10 +183,11 @@ const registerDesktopIpc = () => {
 
   ipcMain.handle('neo-anki:export-recovery-source', async (event) => {
     assertTrustedSender(event)
+    const sourceExtension = extname(workspaceStore.status().recoverySourcePath || '').toLowerCase() === '.json' ? 'json' : 'sqlite'
     const options = {
       title: 'Export Preserved Neo Anki Workspace',
-      defaultPath: `neo-anki-recovery-${new Date().toISOString().slice(0, 10)}.sqlite`,
-      filters: [{ name: 'Neo Anki recovery database', extensions: ['sqlite'] }],
+      defaultPath: `neo-anki-recovery-${new Date().toISOString().slice(0, 10)}.${sourceExtension}`,
+      filters: [{ name: sourceExtension === 'json' ? 'Neo Anki recovery JSON' : 'Neo Anki recovery database', extensions: [sourceExtension] }],
     }
     const result = mainWindow ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options)
     if (result.canceled || !result.filePath) return { canceled: true }
@@ -185,7 +197,7 @@ const registerDesktopIpc = () => {
 
   ipcMain.handle('neo-anki:restore-backup', async (event) => {
     assertTrustedSender(event)
-    const options: Electron.OpenDialogOptions = { title: 'Restore Neo Anki Backup', properties: ['openFile'], filters: [{ name: 'Neo Anki backup', extensions: ['neoanki-backup'] }] }
+    const options: Electron.OpenDialogOptions = { title: 'Restore Neo Anki Backup', defaultPath: workspaceStore.suggestedBackupRestorePath(), properties: ['openFile'], filters: [{ name: 'Neo Anki backup', extensions: ['neoanki-backup'] }] }
     const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
     if (result.canceled || !result.filePaths[0]) return { canceled: true }
     await saveQueue.catch(() => undefined)
@@ -524,7 +536,7 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   })
   extensionManager = new ExtensionManager(app.getPath('userData'), app.getVersion())
   marketplaceClient = new MarketplaceClient(extensionManager, (url, init) => net.fetch(url, init), app.getVersion())
-  extensionServices = new ExtensionServices(app.getPath('userData'), extensionManager)
+  extensionServices = new ExtensionServices(app.getPath('userData'), extensionManager, net.fetch, disposableTestSecretProtector())
   const installPath = process.argv.find((value) => value.startsWith('--install-extension='))?.slice('--install-extension='.length)
   if (installPath) {
     try { await extensionManager.installFile(resolve(installPath)) }

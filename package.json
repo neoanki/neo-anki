@@ -9,7 +9,7 @@
     "examples/*-extension",
     "apps/*"
   ],
-  "version": "0.4.2",
+  "version": "0.4.3",
   "type": "module",
   "main": "dist-electron/main.mjs",
   "scripts": {
@@ -34,6 +34,10 @@
     "desktop:pack": "npm run build && npm run desktop:prepare && electron-builder --dir",
     "desktop:build": "npm run build && npm run desktop:prepare && electron-builder",
     "test:desktop": "npm run desktop:runtime && npm run build && npm run extension:example && npm run desktop:prepare && playwright test --config=playwright.desktop.config.ts",
+    "test:audit:blackbox": "playwright test --config=playwright.blackbox.config.ts",
+    "test:audit:installed-core": "playwright test --config=playwright.installed-audit.config.ts",
+    "test:acceptance:released-extensions": "playwright test --config=playwright.released-artifacts.config.ts",
+    "test:acceptance:release": "playwright test --config=playwright.release-acceptance.config.ts",
     "typecheck": "npm run workspace:build && tsc -b && tsc --noEmit -p tsconfig.electron.json && tsc --noEmit -p tsconfig.electron-test.json && npm run check -w @neo-anki/extension-sdk && npm run domain:check && npm run rendering:check && npm run sync-protocol:check && npm run sync-client:check && npm run sync-service:check && npm run mobile:check",
     "lint": "eslint .",
     "test": "vitest run",
@@ -114,7 +118,6 @@
       "category": "public.app-category.education",
       "icon": "build/icon.icns",
       "hardenedRuntime": true,
-      "notarize": false,
       "target": [
         "dmg",
         "zip"
