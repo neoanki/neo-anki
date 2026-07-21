@@ -1,16 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import DOMPurify from 'dompurify'
 
 const sanitizeCardHtml = (html: string) => {
-  const parsed = new DOMParser().parseFromString(html, 'text/html')
-  parsed.body.querySelectorAll('script, meta, base, link, iframe, object, embed, form').forEach((element) => element.remove())
-  parsed.body.querySelectorAll<HTMLElement>('*').forEach((element) => {
-    for (const attribute of [...element.attributes]) {
-      const name = attribute.name.toLowerCase()
-      if (name.startsWith('on') || ['srcdoc', 'action', 'formaction'].includes(name)) element.removeAttribute(attribute.name)
-      if ((name === 'href' || name === 'xlink:href') && !attribute.value.trim().startsWith('#')) element.removeAttribute(attribute.name)
+  const fragment = DOMPurify.sanitize(html, {
+    RETURN_DOM_FRAGMENT: true,
+    FORBID_TAGS: ['script', 'meta', 'base', 'link', 'iframe', 'object', 'embed', 'form'],
+    FORBID_ATTR: ['srcdoc', 'action', 'formaction'],
+  })
+  fragment.querySelectorAll<HTMLElement>('[href], [xlink\\:href]').forEach((element) => {
+    for (const name of ['href', 'xlink:href']) {
+      const value = element.getAttribute(name)
+      if (value !== null && !value.trim().startsWith('#')) element.removeAttribute(name)
     }
   })
-  return parsed.body.innerHTML
+  const container = document.createElement('div')
+  container.append(fragment)
+  return container.innerHTML
 }
 
 const safeCss = (css: string) => css.replace(/<\/style/gi, '<\\/style')
