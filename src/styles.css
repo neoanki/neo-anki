@@ -964,10 +964,11 @@ p { line-height: 1.45; }
 .sync-state { min-height: 32px; padding: 4px 10px; border-radius: 999px; background: var(--green-soft); color: var(--green); font-size: .82rem; font-weight: 700; }
 
 /* Durable-save feedback and accessibility floor. */
-.persistence-status { position: fixed; top: 10px; right: 12px; z-index: 120; max-width: min(560px, calc(100vw - 24px)); min-height: 36px; display: flex; align-items: center; gap: 12px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-soft); background: var(--surface-strong); box-shadow: var(--shadow-soft); font-size: .8rem; }
+.persistence-status { position: fixed; right: 12px; bottom: 12px; z-index: 120; max-width: min(560px, calc(100vw - 24px)); min-height: 36px; display: flex; align-items: center; gap: 12px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-soft); background: var(--surface-strong); box-shadow: var(--shadow-soft); font-size: .8rem; pointer-events: none; }
 .persistence-status.saved { display: none; }
 .persistence-status.failed { color: var(--red); border-color: color-mix(in srgb, var(--red) 38%, var(--border)); background: var(--red-soft); }
-.persistence-status button { min-height: 32px; flex: 0 0 auto; padding: 0 10px; border: 1px solid currentColor; border-radius: 6px; color: inherit; background: var(--surface-strong); font-weight: 700; }
+.persistence-status button { min-height: 32px; flex: 0 0 auto; padding: 0 10px; border: 1px solid currentColor; border-radius: 6px; color: inherit; background: var(--surface-strong); font-weight: 700; pointer-events: auto; }
+@media (max-width: 760px) { .persistence-status { bottom: calc(76px + env(safe-area-inset-bottom)); } }
 .route-loading { min-height: 40vh; display: grid; place-items: center; color: var(--text-soft); }
 
 @media (pointer: coarse) {
