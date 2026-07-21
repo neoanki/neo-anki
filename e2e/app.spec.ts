@@ -147,7 +147,7 @@ test('sandboxed imported templates cannot navigate away from the reviewed card',
     ...data.cards[0],
     itemId: data.items[0].id,
     rendering: {
-      questionHtml: '<meta http-equiv="refresh" content="0;url=data:text/html,escaped-card"><p>Expected prompt</p>',
+      questionHtml: '<meta http-equiv="refresh" content="0;url=data:text/html,escaped-card"><p>Expected prompt</p><img src="neoanki-media://asset/local-image">',
       answerHtml: '<p>Expected answer</p>',
       css: '</style><meta http-equiv="refresh" content="0;url=data:text/html,escaped-css"><style>',
       source: 'anki-template',
@@ -161,6 +161,7 @@ test('sandboxed imported templates cannot navigate away from the reviewed card',
   await expect(cardFrame).toBeVisible()
   await page.waitForTimeout(250)
   expect(await cardFrame.contentFrame().locator('body').textContent()).toContain('Expected prompt')
+  await expect(cardFrame.contentFrame().locator('img')).toHaveAttribute('src', 'neoanki-media://asset/local-image')
 })
 
 test('undo restores the previous review exactly enough to grade again', async ({ page }) => {
