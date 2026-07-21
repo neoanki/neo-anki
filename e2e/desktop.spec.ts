@@ -9,7 +9,7 @@ import { DatabaseSync } from 'node:sqlite'
 
 type DesktopApplication = Awaited<ReturnType<typeof electron.launch>>
 type DesktopWindow = ReturnType<DesktopApplication['windows']>[number]
-const interoperabilityPackage = join(process.cwd(), 'test-extensions', 'org.neoanki.interoperability-2.0.2.neoanki-extension')
+const interoperabilityPackage = join(process.cwd(), 'test-extensions', 'org.neoanki.interoperability-2.0.3.neoanki-extension')
 const coreArgs = ['.']
 const extensionArgs = ['.', `--install-extension=${interoperabilityPackage}`]
 const migrationFrame = (window: DesktopWindow) => window.locator('iframe[title^="Anki & CSV Interoperability:"]').contentFrame()
