@@ -130,6 +130,17 @@ jobs:
           executable="$(find release/linux-unpacked -maxdepth 1 -type f -name 'neo-anki' -print -quit)"
           test -x "$executable"
           NEO_ANKI_RELEASE_APP="$executable" xvfb-run --auto-servernum npm run test:acceptance:release -- --grep 'clean core journey'
+      - name: Preserve release-acceptance failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-acceptance-failure-${{ matrix.name }}
+          path: |
+            test-results/release-acceptance
+            playwright-report/release-acceptance
+            .audit-results/release-acceptance
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Stage distributable files and installation guidance
         run: node scripts/prepare-release-artifacts.mjs "${{ matrix.name }}"
       - name: Create CycloneDX SBOM

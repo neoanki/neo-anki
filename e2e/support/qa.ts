@@ -2,6 +2,7 @@ import { expect, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
 import { createHash } from 'node:crypto'
+import { execFile } from 'node:child_process'
 import { dirname } from 'node:path'
 
 export const HEADLESS_E2E_ENV = Object.freeze({
@@ -45,7 +46,17 @@ export const stopElectron = async (application: ElectronApplication | undefined)
   const child = application.process()
   if (child.exitCode !== null || child.signalCode !== null) return
   const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()))
-  child.kill('SIGKILL')
+  const gracefulClose = application.close().catch(() => undefined)
+  await Promise.race([gracefulClose, exited, new Promise<void>((resolve) => setTimeout(resolve, 5_000))])
+  if (child.exitCode !== null || child.signalCode !== null) return
+
+  if (process.platform === 'win32' && child.pid) {
+    await new Promise<void>((resolve) => {
+      execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], () => resolve())
+    })
+  } else {
+    child.kill('SIGKILL')
+  }
   await Promise.race([exited, new Promise<void>((resolve) => setTimeout(resolve, 5_000))])
 }
 

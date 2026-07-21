@@ -105,9 +105,11 @@ test('released app completes and persists the clean core journey', async () => {
   const userData = await mkdtemp(join(tmpdir(), 'neoanki-release-core-'))
   let application: ElectronApplication | undefined
   try {
+    console.log('[release-acceptance] launching clean packaged app')
     application = await launch(userData)
     let page = await readyWindow(application)
     const failures = observeRendererFailures(page)
+    console.log('[release-acceptance] completing fresh onboarding')
     await onboardFresh(page)
     await expect(page.getByRole('heading', { name: /add something you want to remember/i })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Import from Anki' })).toBeVisible()
@@ -116,6 +118,7 @@ test('released app completes and persists the clean core journey', async () => {
     await expect.poll(() => workspaceCounts(page)).toEqual({ notes: 0, cards: 0, reviews: 0, media: 0, goals: 0, views: 0 })
     await captureScreenshotEvidence(page, 'core-empty-today.png')
 
+    console.log('[release-acceptance] creating first knowledge item')
     await openCreate(page)
     await expect(page.getByLabel('Prompt', { exact: true })).toBeVisible()
     await expect(page.getByLabel('Answer', { exact: true })).toBeVisible()
@@ -127,6 +130,7 @@ test('released app completes and persists the clean core journey', async () => {
     await expect(page.getByRole('status')).toContainText(/safe new-material queue/i)
     await expect.poll(() => workspaceCounts(page)).toMatchObject({ notes: 1, cards: 1, reviews: 0, media: 0 })
 
+    console.log('[release-acceptance] completing review and edit journey')
     await page.getByRole('button', { name: 'Today' }).first().click()
     await page.locator('button.study-button').click()
     await expect(page.getByRole('progressbar', { name: 'Review session progress' })).toHaveAttribute('aria-valuenow', '1')
@@ -144,7 +148,9 @@ test('released app completes and persists the clean core journey', async () => {
     await captureScreenshotEvidence(page, 'core-review-complete.png')
     expect(failures).toEqual([])
 
+    console.log('[release-acceptance] stopping packaged app before durability restart')
     await stopElectron(application)
+    console.log('[release-acceptance] relaunching packaged app with the same user data')
     application = await launch(userData)
     page = await readyWindow(application)
     const restartFailures = observeRendererFailures(page)
@@ -152,6 +158,7 @@ test('released app completes and persists the clean core journey', async () => {
     await expect(page.getByText('What does the packaged application preserve?', { exact: true })).toBeVisible()
     const durableCounts = await expect.poll(() => workspaceCounts(page)).toEqual({ notes: 1, cards: 1, reviews: 1, media: 0, goals: 0, views: 0 }).then(() => workspaceCounts(page))
     expect(restartFailures).toEqual([])
+    console.log('[release-acceptance] durable restart verified')
     await writeQaEvidence(join(evidenceDirectory, 'core-manifest.json'), {
       scenario: 'released app clean core journey with restart',
       target: 'packaged',
