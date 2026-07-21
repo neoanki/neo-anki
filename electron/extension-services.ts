@@ -59,7 +59,7 @@ export class ExtensionServices {
     return id
   }
 
-  async authorize(token: string, permission: 'content:patch-own' | 'media:create' | 'config:sync' | 'content:read') {
+  async authorize(token: string, permission: 'content:patch-own' | 'content:migrate' | 'media:create' | 'config:sync' | 'content:read') {
     const id = this.extensionId(token)
     await this.manager.requirePermission(id, permission)
     return id

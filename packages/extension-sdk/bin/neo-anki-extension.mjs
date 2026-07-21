@@ -10,6 +10,18 @@ import { createExtensionPackage, EXTENSION_PACKAGE_SUFFIX, EXTENSION_SIGNATURE_P
 
 const cwd = resolve(process.argv[3] || process.cwd())
 const command = process.argv[2] || 'help'
+const browserNodeShimPlugin = {
+  name: 'neo-anki-browser-node-shims',
+  setup(context) {
+    context.onResolve({ filter: /^node:(?:crypto|fs)$/ }, ({ path }) => ({ path, namespace: 'neo-anki-browser-node-shim' }))
+    context.onLoad({ filter: /.*/, namespace: 'neo-anki-browser-node-shim' }, ({ path }) => ({
+      loader: 'js',
+      contents: path === 'node:crypto'
+        ? "export const randomFillSync = (value) => globalThis.crypto.getRandomValues(value); export default { randomFillSync }"
+        : "const unavailable = () => { throw new Error('Node filesystem APIs are unavailable in Neo Anki extensions.') }; export default new Proxy({}, { get: () => unavailable })",
+    }))
+  },
+}
 
 const readProject = async () => {
   const manifest = validateExtensionPackageManifest(JSON.parse(await readFile(join(cwd, 'manifest.json'), 'utf8')))
@@ -26,7 +38,8 @@ const compile = async () => {
   const files = {}
   for (const entry of project.entries) {
     const result = await build({
-      entryPoints: [entry.source], bundle: true, format: 'esm', platform: 'browser', target: 'es2022', jsx: 'automatic', minify: false, sourcemap: false,
+      entryPoints: [entry.source], bundle: true, format: 'esm', platform: 'browser', target: 'es2022', jsx: 'automatic', minify: false, sourcemap: false, loader: { '.wasm': 'dataurl' },
+      plugins: [browserNodeShimPlugin],
       outfile: basename(entry.packagePath), write: false, logLevel: 'silent',
     })
     const module = result.outputFiles.find((file) => file.path.endsWith('.js'))?.contents

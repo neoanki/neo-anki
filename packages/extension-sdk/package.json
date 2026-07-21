@@ -1,6 +1,6 @@
 {
   "name": "@neo-anki/extension-sdk",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Isolated, patch-based TypeScript SDK and build tooling for Neo Anki extensions.",
   "type": "module",
   "license": "MIT",

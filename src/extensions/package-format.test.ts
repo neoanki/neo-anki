@@ -62,9 +62,9 @@ describe('installable extension package format', () => {
   })
 
   it('validates declared network domains and their permission', () => {
-    const valid = validateExtensionPackageManifest({ ...manifest, permissions: ['network:fetch', 'secrets:device'], networkDomains: ['api.example.com', '*.speech.example.com'] })
+    const valid = validateExtensionPackageManifest({ ...manifest, permissions: ['network:fetch', 'secrets:device', 'ui:settings'], networkDomains: ['api.example.com', '*.speech.example.com'] })
     expect(valid.networkDomains).toEqual(['api.example.com', '*.speech.example.com'])
     expect(() => validateExtensionPackageManifest({ ...manifest, networkDomains: ['api.example.com'] })).toThrow('require network:fetch')
-    expect(() => validateExtensionPackageManifest({ ...manifest, permissions: ['network:fetch'], networkDomains: ['https://example.com/path'] })).toThrow('domains are invalid')
+    expect(() => validateExtensionPackageManifest({ ...manifest, permissions: ['network:fetch', 'ui:settings'], networkDomains: ['https://example.com/path'] })).toThrow('domains are invalid')
   })
 })

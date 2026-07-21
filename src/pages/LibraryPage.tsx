@@ -5,7 +5,7 @@ import { formatDue } from '../lib/date'
 import { analyzeCardHealth, normalizeAnswer } from '../lib/content'
 import { useApp } from '../state/AppContext'
 import type { KnowledgeItem, PracticeCard } from '../types'
-import { extensionRuntime } from '../extensions/runtime'
+import { extensionLibraryPresetsV2 } from '../extensions/v2/registry'
 import { useModalDialog } from '../components/useModalDialog'
 import { matchesLibraryQuery, sortLibraryItems, type LibrarySort } from '../lib/library-query'
 
@@ -72,7 +72,7 @@ export const LibraryPage = () => {
   const [healthFilter, setHealthFilter] = useState<'all' | 'quality' | 'empty' | 'duplicate' | 'media'>('all')
   const searchRef = useRef<HTMLInputElement>(null)
   const collections = ['All collections', ...new Set([...data.items.map((item) => item.collection), ...data.cards.map((card) => card.deckName).filter((value): value is string => Boolean(value))])]
-  const libraryPresets = extensionRuntime.libraryPresets(data)
+  const libraryPresets = extensionLibraryPresetsV2()
   const cardsByItem = useMemo(() => {
     const result = new Map<string, PracticeCard[]>()
     for (const card of data.cards) {

@@ -35,6 +35,7 @@ jobs:
           python-version: '3.13'
       - run: python3 -m pip install anki==25.9.4
       - run: npm ci
+      - run: node scripts/fetch-interoperability-test-extension.mjs
       - run: npm run lint && npm run typecheck && npm run test:coverage && npm run test:timezones && npm run benchmark:planner && npm run license:check && npm run build && npm run extension:check && npm run mobile:export
       - run: npx playwright install --with-deps chromium firefox webkit
       - run: npm run test:e2e

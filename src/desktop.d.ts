@@ -24,7 +24,7 @@ declare global {
     installedAt: string
     updatedAt: string
     workerEntryUrl?: string
-    uiEntryUrls?: Array<{ id: string; surface: 'settings' | 'review' | 'page'; url: string }>
+    uiEntryUrls?: Array<{ id: string; surface: import('../packages/extension-sdk/src/index').ExtensionUiSurfaceV2; url: string }>
   }
 
   interface NeoAnkiExtensionCandidate {
@@ -74,6 +74,8 @@ declare global {
     extensionConfigReadV2(token: string): Promise<unknown | null>
     extensionConfigWriteV2(token: string, value: unknown): Promise<{ workspaceRevision: number; data: AppData }>
     extensionContentListNotesV2(token: string, query: ExtensionContentQuery): Promise<ExtensionContentPageDto>
+    extensionMigrationExportV2(token: string): Promise<{ document: unknown; media: MediaAsset[] }>
+    extensionMigrationCommitV2(token: string, input: { document: unknown; media: MediaAsset[]; sourceArchive?: Uint8Array; operation: 'additive' | 'replace-profile' }): Promise<{ workspaceRevision: number; data: AppData }>
     extensionCancelV2(token: string, operationId: string): Promise<void>
     syncStatus(): Promise<NeoAnkiSyncStatus>
     syncListDevices(): Promise<NeoAnkiSyncDevice[]>

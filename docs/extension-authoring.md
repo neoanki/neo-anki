@@ -28,7 +28,7 @@ Install `@neo-anki/extension-sdk`. Do not depend on React or import Neo Anki sou
     "build": "neo-anki-extension build"
   },
   "dependencies": {
-    "@neo-anki/extension-sdk": "2.1.0"
+    "@neo-anki/extension-sdk": "2.2.0"
   }
 }
 ```

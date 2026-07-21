@@ -14,6 +14,7 @@ const host = (): ExtensionHostV2 => ({
   secrets: { read: vi.fn(async () => ({})), mutate: vi.fn(async () => undefined) },
   config: { read: vi.fn(async () => null), write: vi.fn(async () => ({ workspaceRevision: 2 })) },
   content: { listNotes: vi.fn(async () => ({ workspaceRevision: 2, notes: [], availableMediaIds: [] })) },
+  migration: { exportWorkspace: vi.fn(async () => ({ document: {}, media: [] })), commit: vi.fn(async () => ({ workspaceRevision: 2 })) },
 })
 
 class FakeWorker {

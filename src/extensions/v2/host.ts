@@ -8,7 +8,7 @@ const fromBase64 = (value: string) => Uint8Array.from(atob(value), (character) =
 export const createExtensionHostV2 = (extensionId: string): ExtensionHostV2 => {
   const bridge = window.neoAnkiDesktop
   const token = extensionCapabilityToken(extensionId)
-  if (!bridge || !token) return { applyPatch: unavailable, createMedia: unavailable, fetch: unavailable, cancel: unavailable, secrets: { read: unavailable, mutate: unavailable }, config: { read: unavailable, write: unavailable }, content: { listNotes: unavailable } }
+  if (!bridge || !token) return { applyPatch: unavailable, createMedia: unavailable, fetch: unavailable, cancel: unavailable, secrets: { read: unavailable, mutate: unavailable }, config: { read: unavailable, write: unavailable }, content: { listNotes: unavailable }, migration: { exportWorkspace: unavailable, commit: unavailable } }
   return {
     applyPatch: async (patch) => {
       const result = await bridge.extensionApplyPatchV2(token, patch)
@@ -38,5 +38,13 @@ export const createExtensionHostV2 = (extensionId: string): ExtensionHostV2 => {
       },
     },
     content: { listNotes: (query = {}) => bridge.extensionContentListNotesV2(token, query) },
+    migration: {
+      exportWorkspace: () => bridge.extensionMigrationExportV2(token),
+      commit: async (input) => {
+        const result = await bridge.extensionMigrationCommitV2(token, input)
+        window.dispatchEvent(new CustomEvent('neo-anki:workspace-updated-v4', { detail: result.data }))
+        return { workspaceRevision: result.workspaceRevision }
+      },
+    },
   }
 }

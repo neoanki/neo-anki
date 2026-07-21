@@ -4,7 +4,7 @@ import { formatDuration } from '../lib/date'
 import { buildStudySession } from '../lib/planner'
 import { useApp } from '../state/AppContext'
 import type { SessionIntent } from '../types'
-import { extensionRuntime } from '../extensions/runtime'
+import { extensionQueuePoliciesV2 } from '../extensions/v2/registry'
 
 const budgetOptions = [10, 20, 30, 45, 60]
 
@@ -32,7 +32,7 @@ export const TodayPage = () => {
   const request = useMemo(() => ({ minutes: effectiveSessionMinutes, intent, focusCollection: intent === 'focus' ? effectiveFocusCollection : undefined }), [effectiveFocusCollection, effectiveSessionMinutes, intent])
   const session = useMemo(() => buildStudySession(plan, data.items, request), [data.items, plan, request])
   const remainingAfterSession = Math.max(0, plan.remainingSeconds - session.plannedSeconds)
-  const recoveryPolicies = [{ id: 'risk', label: 'Most at-risk first' }, ...extensionRuntime.queuePolicies().map(({ id, label }) => ({ id, label }))]
+  const recoveryPolicies = [{ id: 'risk', label: 'Most at-risk first' }, ...extensionQueuePoliciesV2().map(({ id, label }) => ({ id, label }))]
 
   return (
     <div className="page today-page quiet-today">

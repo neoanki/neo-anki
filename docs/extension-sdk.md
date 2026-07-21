@@ -57,7 +57,7 @@ The worker receives bounded request DTOs. It has no ambient renderer DOM, worksp
 
 ## Sandboxed UI contract
 
-Settings, review and page contributions run in separate opaque-origin iframes. Use `createSandboxedUiClient()` to receive the initialization DTO and invoke the paired worker through the host:
+Settings, review, page, create, workspace, and migration contributions run in separate opaque-origin iframes. Use `createSandboxedUiClient()` to receive the initialization DTO and invoke the paired worker through the host:
 
 ```ts
 import { createSandboxedUiClient } from '@neo-anki/extension-sdk'
@@ -77,8 +77,11 @@ The frame has `sandbox="allow-scripts"` without `allow-same-origin`, an explicit
 | --- | --- |
 | `study:read` | Minimal study projections for the declared contribution |
 | `study:signals` | Bounded planning-signal requests/responses |
+| `study:prompt-types` | Manifest-declared prompt creation, rendering, and typed comparison DTOs |
+| `study:queue-policies` | Manifest-declared bounded queue-scoring requests |
 | `content:read` | Paginated, scoped note DTOs through `content.listNotes` |
 | `content:patch-own` | Owner-scoped, revision-checked `WorkspacePatchV2` changes |
+| `content:migrate` | Local Workspace v4 export plus checkpointed, core-validated migration commit |
 | `media:create` | Core-owned media decoding, hashing and atomic creation |
 | `network:fetch` | Cancellable, bounded HTTPS requests to reviewed destinations |
 | `secrets:device` | Atomic device-local secret reads/mutations in the extension namespace |
@@ -86,12 +89,15 @@ The frame has `sandbox="allow-scripts"` without `allow-same-origin`, an explicit
 | `ui:settings` | A reviewed sandboxed Settings entry |
 | `ui:review` | A reviewed sandboxed Review entry |
 | `ui:page` | A reviewed sandboxed application page |
+| `ui:create` | A reviewed sandboxed authoring entry |
+| `ui:workspace` | A reviewed sandboxed planning/sharing entry |
+| `ui:migration` | A reviewed sandboxed migration entry |
 
-`ExtensionHostV2` exposes `applyPatch`, `createMedia`, `fetch`, `cancel`, atomic `secrets` methods, synchronized `config` methods and paginated `content.listNotes`. The host rejects calls whose permission, owner, operation ID, destination, size or current workspace revision does not match the reviewed contract.
+`ExtensionHostV2` exposes `applyPatch`, `createMedia`, `fetch`, `cancel`, atomic `secrets` methods, synchronized `config` methods, paginated `content.listNotes`, and the high-authority migration broker. The host rejects calls whose permission, owner, operation ID, destination, size or current workspace revision does not match the reviewed contract. Migration commits create a recovery checkpoint and revalidate the complete Workspace v4 document in core.
 
 ## Resource and failure boundaries
 
-- Worker/UI messages are capped at 8 MiB.
+- Ordinary worker/UI messages are bounded; binary-aware accounting permits the reviewed 512 MiB migration envelope without JSON-expanding `File`, `Blob`, or typed-array payloads.
 - A worker may have at most 100 pending requests.
 - Startup is bounded to 5 seconds; ordinary work defaults to 15 seconds and is capped at 180 seconds.
 - Planning DTOs are chunked to 2,000 items and malformed/non-finite signals are rejected.

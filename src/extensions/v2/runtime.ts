@@ -9,7 +9,7 @@ import type {
   WorkerTransportMessageV2,
 } from '../../../packages/extension-sdk/src/index.js'
 
-const MAX_MESSAGE_BYTES = 8 * 1024 * 1024
+const MAX_MESSAGE_BYTES = 512 * 1024 * 1024
 const MAX_PENDING = 100
 const DEFAULT_TIMEOUT_MS = 15_000
 const START_TIMEOUT_MS = 5_000
@@ -22,12 +22,23 @@ interface WorkerLike {
 }
 type WorkerFactory = (url: string) => WorkerLike
 
-const messageBytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength
+const messageBytes = (value: unknown, seen = new Set<object>()): number => {
+  if (value instanceof ArrayBuffer) return value.byteLength
+  if (ArrayBuffer.isView(value)) return value.byteLength
+  if (typeof Blob !== 'undefined' && value instanceof Blob) return value.size
+  if (typeof value === 'string') return new TextEncoder().encode(value).byteLength
+  if (!value || typeof value !== 'object') return 16
+  if (seen.has(value)) throw new Error('Extension messages may not contain cycles.')
+  seen.add(value)
+  const bytes = Array.isArray(value) ? value.reduce((sum, entry) => sum + messageBytes(entry, seen), 0) : Object.entries(value).reduce((sum, [key, entry]) => sum + key.length + messageBytes(entry, seen), 0)
+  seen.delete(value)
+  return bytes
+}
 const bounded = (value: unknown) => {
   if (messageBytes(value) > MAX_MESSAGE_BYTES) throw new Error('Extension message exceeds 8 MiB.')
   return value
 }
-const requestId = (request: WorkerContributionRequest) => request.type === 'planning-signals' ? request.request.requestId : request.type === 'command' ? request.requestId : request.operationId
+const requestId = (request: WorkerContributionRequest) => request.type === 'planning-signals' ? request.request.requestId : request.type === 'cancel' ? request.operationId : request.requestId
 const safeUrl = (value: string) => {
   const url = new URL(value, window.location.href)
   const development = url.protocol === 'http:' && (url.hostname === '127.0.0.1' || url.hostname === 'localhost')
@@ -36,7 +47,7 @@ const safeUrl = (value: string) => {
   return url.href
 }
 
-const permissionFor = (method: ExtensionHostMethodV2): ExtensionManifestV2['permissions'][number] | null => method === 'applyPatch' ? 'content:patch-own' : method === 'createMedia' ? 'media:create' : method === 'fetch' ? 'network:fetch' : method === 'secrets.read' || method === 'secrets.mutate' ? 'secrets:device' : method === 'config.read' || method === 'config.write' ? 'config:sync' : method === 'content.listNotes' ? 'content:read' : null
+const permissionFor = (method: ExtensionHostMethodV2): ExtensionManifestV2['permissions'][number] | null => method === 'applyPatch' ? 'content:patch-own' : method === 'createMedia' ? 'media:create' : method === 'fetch' ? 'network:fetch' : method === 'secrets.read' || method === 'secrets.mutate' ? 'secrets:device' : method === 'config.read' || method === 'config.write' ? 'config:sync' : method === 'content.listNotes' ? 'content:read' : method === 'migration.exportWorkspace' || method === 'migration.commit' ? 'content:migrate' : null
 
 export class ExtensionWorkerRuntimeV2 {
   private worker: WorkerLike
@@ -46,7 +57,7 @@ export class ExtensionWorkerRuntimeV2 {
   private pending = new Map<string, { resolve(value: WorkerContributionResponse): void; reject(error: Error): void; timeout: number }>()
   private closed = false
 
-  constructor(readonly manifest: ExtensionManifestV2, workerUrl: string, private readonly host: ExtensionHostV2, factory: WorkerFactory = (url) => new Worker(url, { type: 'module', name: `neo-anki:${manifest.id}` })) {
+  constructor(readonly manifest: ExtensionManifestV2, workerUrl: string, private readonly host: ExtensionHostV2, factory: WorkerFactory = (url) => new Worker(url, { name: `neo-anki:${manifest.id}` })) {
     if (manifest.schemaVersion !== 2 || manifest.sdkVersion !== 2) throw new Error('SDK v2 runtime requires a schema-v2 manifest.')
     this.worker = factory(safeUrl(workerUrl))
     this.ready = new Promise<void>((resolve, reject) => { this.readyResolve = resolve; this.readyReject = reject })
@@ -56,6 +67,7 @@ export class ExtensionWorkerRuntimeV2 {
         bounded(event.data)
         const message = event.data
         if (!message || message.protocol !== 2) throw new Error('Extension sent an invalid protocol message.')
+        if ((message as unknown as { type?: string }).type === 'fatal') throw new Error(`Extension worker ${manifest.id} failed: ${String((message as unknown as { message?: string }).message || 'unknown startup error')}`)
         if (message.type === 'ready') {
           if (message.extensionId !== manifest.id) throw new Error('Worker identity does not match its reviewed manifest.')
           window.clearTimeout(startup); this.readyResolve(); return
@@ -64,7 +76,7 @@ export class ExtensionWorkerRuntimeV2 {
         if (message.type === 'response') this.handleResponse(message.response)
       } catch (error) { this.fail(error instanceof Error ? error : new Error('Extension protocol failed.')) }
     })
-    const crashed = () => this.fail(new Error(`Extension worker ${manifest.id} crashed.`))
+    const crashed = (event: Event) => { const message = (event as ErrorEvent).message; this.fail(new Error(`Extension worker ${manifest.id} crashed${message ? `: ${message}` : '.'}`)) }
     this.worker.addEventListener('error', crashed); this.worker.addEventListener('messageerror', crashed)
   }
 
@@ -84,7 +96,9 @@ export class ExtensionWorkerRuntimeV2 {
       else if (message.method === 'secrets.mutate') value = await this.host.secrets.mutate(message.args[0] as Parameters<ExtensionHostV2['secrets']['mutate']>[0])
       else if (message.method === 'config.read') value = await this.host.config.read()
       else if (message.method === 'config.write') value = await this.host.config.write(message.args[0])
-      else value = await this.host.content.listNotes(message.args[0] as Parameters<ExtensionHostV2['content']['listNotes']>[0])
+      else if (message.method === 'content.listNotes') value = await this.host.content.listNotes(message.args[0] as Parameters<ExtensionHostV2['content']['listNotes']>[0])
+      else if (message.method === 'migration.exportWorkspace') value = await this.host.migration.exportWorkspace()
+      else value = await this.host.migration.commit(message.args[0] as Parameters<ExtensionHostV2['migration']['commit']>[0])
       this.worker.postMessage(bounded({ protocol: 2, type: 'host-result', callId: message.callId, ok: true, value } satisfies WorkerTransportMessageV2))
     } catch (error) { this.sendHostError(message.callId, 'host-call-failed', error instanceof Error ? error.message : 'Host call failed.') }
   }

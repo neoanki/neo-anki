@@ -4,17 +4,17 @@ Neo Anki has two deliberately different trust tiers. Code compiled into the appl
 
 This page describes the intended boundary and implemented checks, not a proof that every lifecycle path is complete. The July 19 audit's renderer reload and disable/re-enable findings were remediated with instance-bound ownership, revocation, and lifecycle regressions before v0.2.1.
 
-## Trusted core and bundled feature modules
+## Trusted core
 
 The kernel is intended to own the invariants whose failure could corrupt a workspace or make the capture → schedule → review loop unavailable:
 
-- Workspace v4 entities, validation, migration, persistence, media integrity, backup/restore and supported import/export.
+- Workspace v4 entities, validation, migration commits, persistence, media integrity, and backup/restore.
 - Scheduling strategies, review/reversal events, due eligibility and daily planning.
-- The Today, Library, Create, Review, migration, sync, recovery and Settings surfaces.
+- The Today, Library, Create, Review, sync, recovery and Settings shells plus typed extension mounting surfaces.
 - Extension package review, signatures, lifecycle recovery, capability issuance, bounded host services and safe mode.
 - Encrypted sync protocol application, conflict presentation and explicit resolution.
 
-Feature modules under `src/extensions/`—Prompt Types, Image Occlusion, Interoperability, Recovery Policies, Goals & Saved Views, and Shared Packs—are compiled with the app and are therefore trusted. Their internal `CoreModuleManifest`/`NeoAnkiCoreModule` registry supports modularity and failure fallbacks, but it is not an extension SDK or a security boundary. Memory Insights and Card Timer were removed from this registry in July 2026 and now ship only as independently released, signed SDK 2 packages. The former Browser Tab Sync experiment was removed because whole-document last-writer merging could not preserve Workspace v4 deletion and graph invariants.
+There is no internal optional-feature registry. Prompt Types, Image Occlusion, Anki & CSV Interoperability, Recovery Policies, Goals & Saved Views, Shared Packs, Memory Insights, and Card Timer all ship only as independently released, signed SDK 2 packages. The former Browser Tab Sync experiment was removed because whole-document last-writer merging could not preserve Workspace v4 deletion and graph invariants.
 
 ## Installable SDK 2 packages
 
@@ -22,7 +22,7 @@ SDK 2 is the only accepted contract for package distribution:
 
 - Non-UI logic runs in a dedicated module worker. Desktop serves the exact reviewed worker entry through a same-origin gateway with `connect-src 'none'`; a lockdown prelude removes ambient network, storage, nested-worker and realtime browser APIs.
 - UI runs in an iframe with `sandbox="allow-scripts"` and without `allow-same-origin`. Its CSP denies ambient network, forms, base URLs and parent DOM/CSS access.
-- Workers and frames receive minimal DTO projections instead of an entire workspace or application context.
+- Workers and frames receive minimal DTO projections instead of an application context. The explicitly high-authority `content:migrate` capability is the exception: it brokers a Workspace v4 export for local conversion and accepts a staged commit only after core validation, checkpoint creation, and atomic persistence.
 - All useful effects cross typed message channels. The host rechecks the reviewed permission, extension identity, message size, queue size, timeout, cancellation and operation-specific limits.
 - Content changes use owner-scoped `WorkspacePatchV2` operations with expected revisions. Core validates the resulting Workspace v4 graph before accepting a patch; broader workspace persistence still has separately documented atomicity gaps.
 - Network requests are HTTPS-only, restricted to reviewed destinations, redirect-revalidated, streamed to a response cap and cancellable.
@@ -37,7 +37,7 @@ SDK v2 packages are byte-reproducible and Ed25519-signed. Installation verifies 
 - Worker startup, messages, queues and contribution execution are bounded. Cancellation propagates to host operations.
 - UI frames cannot share the host origin, DOM, React tree, cookies or storage.
 - A capability token is bound to the enabled extension instance and exact reviewed permission; reload, disable/re-enable, update, rollback, uninstall, and renderer teardown revoke prior claims and token-owned network work.
-- Patch ownership, expected revisions, operation count/size and the current workspace invariant set are checked before acceptance. The invariant set is not yet complete for every graph relationship.
+- Patch ownership, expected revisions, operation count/size and the current workspace invariant set are checked before acceptance.
 - Unknown or crashing prompt behavior still falls back to a basic reviewable card; extension failure is recorded without granting broader data access.
 - The startup watchdog opens a package-free safe-mode window if installed code prevents renderer readiness.
 
@@ -45,7 +45,7 @@ See [extension-sdk.md](extension-sdk.md), [extension-authoring.md](extension-aut
 
 ## Still postponed
 
-- Real-world publisher identity attestation, automatic extension updates and dependency resolution. Marketplace discovery verifies GitHub review provenance, pinned release metadata and publisher-key continuity, but does not claim legal identity verification. The public catalog includes Card Timer, Memory Insights, and NeoAnki TTS.
+- Real-world publisher identity attestation, automatic extension updates and dependency resolution. Marketplace discovery verifies GitHub review provenance, pinned release metadata and publisher-key continuity, but does not claim legal identity verification.
 - Executing Anki Python add-ons. Unknown add-on metadata may be retained inertly for round-trip safety but is never executed.
 - AI extraction/grading, OCR/PDF pipelines, web clipping and external knowledge connectors.
 - Collaboration, shared-account policy, decorative gamification and third-party scheduler strategies.

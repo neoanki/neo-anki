@@ -6,7 +6,7 @@ import { buildCustomStudySession, buildDailyPlan, buildStudySession } from '../l
 import { adoptPersistedData, clearStoredData, flushPendingSaves, loadData, saveData } from '../lib/storage'
 import { extensionRuntime } from '../extensions/runtime'
 import { mergeImportGraph } from '../lib/import-merge'
-import { planningSignalsForItemV2, refreshExtensionPlanningSignalsV2 } from '../extensions/v2/registry'
+import { createExtensionCardsV2, planningSignalsForItemV2, refreshExtensionPlanningSignalsV2, scoreQueuePolicyV2 } from '../extensions/v2/registry'
 import type { WorkspaceDocumentV4, WorkspacePatchV2 } from '../../packages/compatibility-domain/src/index'
 import { applyWorkspacePatchV2, createWorkspaceDocumentV4 } from '../../packages/compatibility-domain/src/index'
 import { appDataToWorkspaceDocumentV4, workspaceDocumentV4ToAppData } from '../lib/workspace-v4'
@@ -21,12 +21,12 @@ const safeRouteFromLocation = (): Route => {
 const scrollToTop = () => window.scrollTo({ top: 0, behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
 
 const prepareLargePlannerInput = async (data: AppData, now: Date, signal: AbortSignal) => {
-  const signalsByItem: Array<[string, ReturnType<typeof extensionRuntime.planningSignals>]> = []
+  const signalsByItem: Array<[string, ReturnType<typeof planningSignalsForItemV2>]> = []
   const signalBoost = new Map<string, number>()
   for (let offset = 0; offset < data.items.length; offset += 250) {
     if (signal.aborted) throw new DOMException('Background planning was canceled.', 'AbortError')
     for (const item of data.items.slice(offset, offset + 250)) {
-      const signals = [...extensionRuntime.planningSignals(item, data, now), ...planningSignalsForItemV2(item)].filter((value) => Boolean(value.id?.trim()) && Boolean(value.label?.trim()) && Number.isFinite(value.score))
+      const signals = planningSignalsForItemV2(item).filter((value) => Boolean(value.id?.trim()) && Boolean(value.label?.trim()) && Number.isFinite(value.score))
       if (signals.length) signalsByItem.push([item.id, signals])
       signalBoost.set(item.id, signals.reduce((highest, value) => Math.max(highest, value.score), 0))
     }
@@ -37,8 +37,7 @@ const prepareLargePlannerInput = async (data: AppData, now: Date, signal: AbortS
     for (let offset = 0; offset < data.cards.length; offset += 500) {
       if (signal.aborted) throw new DOMException('Background planning was canceled.', 'AbortError')
       for (const card of data.cards.slice(offset, offset + 500)) {
-        const overdueDays = Math.max(0, (now.getTime() - new Date(card.fsrs.due).getTime()) / 86_400_000)
-        const score = extensionRuntime.scoreQueuePolicy(data.settings.recoveryStrategy, { card, overdueDays, extensionBoost: signalBoost.get(card.itemId) || 0 })
+        const score = scoreQueuePolicyV2(data.settings.recoveryStrategy, card.id)
         if (score != null && Number.isFinite(score)) queueScoresByCard.push([card.id, score])
       }
       await yieldPlannerPreparation()
@@ -70,7 +69,7 @@ interface AppContextValue {
   setLearningSafeguards: (changes: Partial<Pick<AppData['settings'], 'burySiblings' | 'leechThreshold' | 'leechAction'>>) => void
   toggleTheme: () => void
   completeOnboarding: (minutes: number) => void
-  addItem: (input: CreateKnowledgeInput) => string
+  addItem: (input: CreateKnowledgeInput) => Promise<string>
   updateItem: (id: string, changes: Partial<Pick<KnowledgeItem, 'prompt' | 'answer' | 'context' | 'collection' | 'tags' | 'source' | 'citations' | 'mediaIds' | 'occlusions' | 'noteModel'>>) => Promise<void>
   updateItemsBulk: (ids: string[], changes: { collection?: string; addTags?: string[]; removeTags?: string[] }) => void
   deleteItem: (id: string) => void
@@ -85,7 +84,6 @@ interface AppContextValue {
   setCardsDueDate: (cardIds: string[], localDate: string) => Promise<void>
   reviewCard: (cardId: string, rating: ReviewRating, durationSeconds: number, rawDurationSeconds?: number) => void
   undoLastReview: () => void
-  runExtensionCommand: (id: string, payload: unknown) => Promise<void>
   loadWorkspaceDocument: () => Promise<WorkspaceDocumentV4>
   applyCoreWorkspacePatch: (patch: WorkspacePatchV2) => Promise<void>
   mergeImport: (imported: Pick<AppData, 'items' | 'cards' | 'assets'> & { workspaceDocumentV4?: unknown; workspaceV4Media?: AppData['assets']; workspaceV4SourceArchive?: Uint8Array; workspaceV4Operation?: 'additive' | 'replace-profile' }) => Promise<void>
@@ -109,7 +107,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [persistenceState, setPersistenceState] = useState<'saving' | 'saved' | 'failed'>('saved')
   const [extensionSignalRevision, setExtensionSignalRevision] = useState(0)
   const [backgroundPlan, setBackgroundPlan] = useState<{ key: string; plan: DailyPlan } | null>(null)
-  const extensionCommandQueue = useRef<Promise<void>>(Promise.resolve())
   const corePatchQueue = useRef<Promise<void>>(Promise.resolve())
 
   useEffect(() => {
@@ -164,8 +161,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const directPlan = useMemo(
     () => { void extensionSignalRevision; return data.cards.length < LARGE_PLANNER_CARD_THRESHOLD ? buildDailyPlan(data.cards, data.reviews, data.settings, new Date(), data.items, {
-      signalsFor: (item, now) => [...extensionRuntime.planningSignals(item, data, now), ...planningSignalsForItemV2(item)],
-      scoreQueuePolicy: (strategy, candidate) => extensionRuntime.scoreQueuePolicy(strategy, candidate),
+      signalsFor: (item) => planningSignalsForItemV2(item),
+      scoreQueuePolicy: (strategy, candidate) => scoreQueuePolicyV2(strategy, candidate.card.id) ?? null,
     }) : null },
     [data, extensionSignalRevision],
   )
@@ -248,7 +245,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }))
   }
 
-  const addItem = (input: CreateKnowledgeInput) => {
+  const addItem = async (input: CreateKnowledgeInput) => {
     const now = new Date().toISOString()
     const itemId = crypto.randomUUID()
     const item: KnowledgeItem = {
@@ -264,7 +261,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       createdAt: now,
       updatedAt: now,
     }
-    const cardSeeds = extensionRuntime.createCards(input)
+    const cardSeeds = await createExtensionCardsV2(input)
     setData((current) => ({
       ...current,
       items: [item, ...current.items],
@@ -501,15 +498,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     })
   }
 
-  const runExtensionCommand = useCallback((id: string, payload: unknown) => {
-    const task = extensionCommandQueue.current.catch(() => undefined).then(async () => {
-      const next = await extensionRuntime.runCommand(id, dataRef.current, payload)
-      setData(next)
-    })
-    extensionCommandQueue.current = task
-    return task
-  }, [setData])
-
   const loadWorkspaceDocument = useCallback(async () => {
     if (window.neoAnkiDesktop) {
       await flushPendingSaves()
@@ -623,7 +611,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setCardsDueDate,
     reviewCard,
     undoLastReview,
-    runExtensionCommand,
     loadWorkspaceDocument,
     applyCoreWorkspacePatch,
     mergeImport,
