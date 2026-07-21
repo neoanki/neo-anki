@@ -26,7 +26,7 @@ interface StagedPackage {
 
 export interface InstalledExtensionRecord extends ExtensionStateEntry {
   workerEntryUrl?: string
-  uiEntryUrls?: Array<{ id: string; surface: 'settings' | 'review' | 'page'; url: string }>
+  uiEntryUrls?: Array<{ id: string; surface: import('../packages/extension-sdk/src/index.js').ExtensionUiSurfaceV2; url: string }>
 }
 
 export interface ExtensionInstallCandidate {

@@ -333,6 +333,16 @@ const registerDesktopIpc = () => {
     assertTrustedSender(event); const extensionId = await extensionServices.authorize(token, 'content:read')
     return workspaceStore.extensionContentNotes(extensionId, query)
   })
+  ipcMain.handle('neo-anki:extension-migration-export-v2', async (event, token: string) => {
+    assertTrustedSender(event); await extensionServices.authorize(token, 'content:migrate'); await saveQueue.catch(() => undefined)
+    return workspaceStore.workspaceV4ExportPayload()
+  })
+  ipcMain.handle('neo-anki:extension-migration-commit-v2', async (event, token: string, input: { document: unknown; media: unknown[]; sourceArchive?: Uint8Array; operation: 'additive' | 'replace-profile' }) => {
+    assertTrustedSender(event); await extensionServices.authorize(token, 'content:migrate'); await saveQueue.catch(() => undefined)
+    await workspaceStore.createImportCheckpoint()
+    const data = workspaceStore.commitWorkspaceV4Import(input)
+    return { workspaceRevision: workspaceStore.workspaceV4Document().workspace.revision, data }
+  })
   ipcMain.handle('neo-anki:extension-cancel-v2', (event, token: string, operationId: string) => { assertTrustedSender(event); extensionServices.cancel(token, operationId) })
   ipcMain.handle('neo-anki:sync-status', (event) => { assertTrustedSender(event); return syncManager.status() })
   ipcMain.handle('neo-anki:sync-list-devices', (event) => { assertTrustedSender(event); return syncManager.listDevices() })

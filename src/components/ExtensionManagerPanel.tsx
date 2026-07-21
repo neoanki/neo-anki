@@ -8,14 +8,20 @@ import { ExtensionMarketplace } from './ExtensionMarketplace'
 const permissionLabels: Record<string, string> = {
   'study:read': 'Read a scoped study projection',
   'study:signals': 'Return bounded study priority signals',
+  'study:prompt-types': 'Create and render declared prompt types',
+  'study:queue-policies': 'Score bounded recovery queue candidates',
   'content:read': 'Read declared content projections',
   'content:patch-own': 'Propose validated changes in owned scope',
+  'content:migrate': 'Inspect and commit validated workspace migrations',
   'media:create': 'Create content-hashed media through core',
   'secrets:device': 'Use atomic device-local secure credentials',
   'config:sync': 'Store non-secret settings with the encrypted workspace',
   'ui:settings': 'Add an isolated Settings panel',
   'ui:review': 'Add an isolated review panel',
   'ui:page': 'Add an isolated application page',
+  'ui:create': 'Add an isolated authoring panel',
+  'ui:workspace': 'Add an isolated workspace tool',
+  'ui:migration': 'Add an isolated migration panel',
 }
 
 const formatBytes = (bytes: number) => bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`

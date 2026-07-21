@@ -51,17 +51,16 @@ describe('application workflows', () => {
     expect(await screen.findByText(/reviews and \d+ new prompts are ready/i, {}, { timeout: 10_000 })).toBeInTheDocument()
   })
 
-  it('creates typed knowledge and exposes it in the library', async () => {
+  it('creates basic knowledge and exposes it in the library', async () => {
     renderApp()
     await userEvent.click(screen.getByRole('button', { name: /new item/i }))
-    await userEvent.click(await screen.findByRole('button', { name: 'Typed answer' }))
-    await userEvent.type(screen.getByLabelText('Prompt or cloze sentence'), 'What is the testing pyramid?')
+    await userEvent.type(await screen.findByLabelText('Prompt or cloze sentence'), 'What is the testing pyramid?')
     await userEvent.type(screen.getByLabelText('Answer'), 'Unit, integration, and end-to-end tests')
     await userEvent.click(screen.getByRole('button', { name: /add knowledge/i }))
     expect(screen.getByRole('status')).toHaveTextContent(/safe new-material queue/i)
     await userEvent.click(screen.getAllByRole('button', { name: 'Library' })[0])
-    expect(await screen.findByText('What is the testing pyramid?')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'typed' })).toBeInTheDocument()
+    const row = (await screen.findByText('What is the testing pyramid?')).closest('article')!
+    expect(within(row).getByRole('button', { name: 'forward' })).toBeInTheDocument()
   })
 
   it('enables editor save only after the controlled draft has changed', async () => {
@@ -107,14 +106,11 @@ describe('application workflows', () => {
     expect(saved.flatMap((changes) => changes.upsert.items)).toContainEqual(expect.objectContaining({ prompt: expect.stringContaining(' persisted') }))
   })
 
-  it('creates a learning goal from Plans', async () => {
+  it('keeps optional workspace tools out of a fresh core install', async () => {
     renderApp()
     await userEvent.click(screen.getAllByRole('button', { name: 'Plans' })[0])
-    const form = (await screen.findByRole('heading', { name: 'Add learning goal' })).closest('form')!
-    await userEvent.type(within(form).getByLabelText('Name'), 'Ship Phase 2')
-    await userEvent.type(within(form).getByLabelText(/search terms/i), 'testing')
-    await userEvent.click(within(form).getByRole('button', { name: 'Add' }))
-    expect(screen.getByText('Ship Phase 2')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'No workspace tools installed' })).toBeInTheDocument()
+    expect(screen.getByText(/marketplace/i)).toBeInTheDocument()
   })
 
   it('has no automatically detectable serious accessibility violations on Today', async () => {

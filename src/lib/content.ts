@@ -1,6 +1,4 @@
-import type { KnowledgeItem, MediaAsset, PracticeCard } from '../types'
-import type { PortableRenderedCard } from '../extensions/core-module'
-import { extensionRuntime } from '../extensions/runtime'
+import type { KnowledgeItem, MediaAsset } from '../types'
 
 export interface CardHealthFinding {
   code: string
@@ -8,10 +6,6 @@ export interface CardHealthFinding {
   message: string
   suggestion: string
 }
-
-export type RenderedCard = PortableRenderedCard
-
-export const renderCard = (item: KnowledgeItem, card: PracticeCard): RenderedCard => extensionRuntime.render(item, card)
 
 export const analyzeCardHealth = (prompt: string, answer: string, citations: KnowledgeItem['citations'] = []): CardHealthFinding[] => {
   const findings: CardHealthFinding[] = []
@@ -42,6 +36,14 @@ export const normalizeAnswer = (value: string) => value
   .trim()
   .replace(/\s+/g, ' ')
 
-export const compareTypedAnswer = (attempt: string, expected: string) => extensionRuntime.compareAnswer('typed', attempt, expected) || { result: 'incorrect' as const, similarity: 0 }
+export const compareTypedAnswer = (attempt: string, expected: string) => {
+  const actual = normalizeAnswer(attempt); const target = normalizeAnswer(expected)
+  if (!target || actual.length > 512 || target.length > 512) return { result: 'incorrect' as const, similarity: 0 }
+  if (actual === target) return { result: 'exact' as const, similarity: 1 }
+  const previous = Array.from({ length: target.length + 1 }, (_, index) => index)
+  for (let row = 1; row <= actual.length; row += 1) { let diagonal = previous[0]; previous[0] = row; for (let col = 1; col <= target.length; col += 1) { const above = previous[col]; previous[col] = Math.min(previous[col] + 1, previous[col - 1] + 1, diagonal + (actual[row - 1] === target[col - 1] ? 0 : 1)); diagonal = above } }
+  const similarity = Math.max(0, 1 - previous[target.length] / Math.max(actual.length, target.length, 1))
+  return { result: similarity >= .82 ? 'close' as const : 'incorrect' as const, similarity }
+}
 
 export const getAssetForCard = (item: KnowledgeItem, assets: MediaAsset[]) => assets.find((asset) => item.mediaIds.includes(asset.id))

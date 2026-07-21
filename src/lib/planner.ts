@@ -1,6 +1,5 @@
 import { State } from 'ts-fsrs'
 import type { DailyPlan, KnowledgeItem, PlannedCard, PracticeCard, RecoveryStrategy, ReviewEvent, SessionBlock, SessionRequest, StudySession, UserSettings } from '../types'
-import type { PlanningSignal, QueuePolicyCandidate } from '../extensions/core-module'
 import { addDays, dayKey, endOfDay, startOfDay } from './date'
 
 const DEFAULT_REVIEW_SECONDS = 14
@@ -9,6 +8,8 @@ const UTILIZATION_TARGET = 0.88
 const FUTURE_NEW_COST = [0, 34, 22, 15, 11, 8, 7]
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+export interface PlanningSignal { id: string; label: string; score: number }
+export interface QueuePolicyCandidate { card: PracticeCard; overdueDays: number; extensionBoost: number }
 
 export const averageReviewSeconds = (reviews: ReviewEvent[]) => {
   const recent = [...reviews].filter((review) => review.kind === 'review' || !review.kind).sort((left, right) => Date.parse(left.reviewedAt) - Date.parse(right.reviewedAt) || left.id.localeCompare(right.id)).slice(-100).filter((review) => review.durationSeconds >= 2 && review.durationSeconds <= 120)

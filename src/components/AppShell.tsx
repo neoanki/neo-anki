@@ -5,7 +5,6 @@ import type { Route } from '../types'
 import { formatDuration } from '../lib/date'
 import { Brand } from './Brand'
 import { SettingsPanel } from './SettingsPanel'
-import { extensionRuntime } from '../extensions/runtime'
 import { extensionUiContributionsV2 } from '../extensions/v2/registry'
 
 const coreLinks: { route: Route; label: string; icon: typeof Clock3 }[] = [
@@ -17,7 +16,7 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
   const { route, navigate, plan, persistenceError, persistenceState, retryPersistence } = useApp()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const hiddenNav = route === 'review'
-  const extensionLinks = useMemo(() => [...extensionRuntime.pages().map((page) => ({ route: page.route, label: page.label, icon: Puzzle })), ...extensionUiContributionsV2('page').map((page) => ({ route: page.route, label: page.label, icon: Puzzle }))], [])
+  const extensionLinks = useMemo(() => extensionUiContributionsV2('page').map((page) => ({ route: page.route, label: page.label, icon: Puzzle })), [])
   const links = useMemo(() => [...coreLinks, ...extensionLinks], [extensionLinks])
   const bottomLinks = links.length > 5 ? links.slice(0, 4) : links
   const overflowLinks = links.length > 5 ? links.slice(4) : []

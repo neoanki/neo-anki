@@ -2,16 +2,11 @@ import { ArchiveRestore, Bug, Database, Download, Moon, RotateCcw, Sun, Trash2, 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useApp } from '../state/AppContext'
 import { downloadBackup, getStorageStatus, parseBackup } from '../lib/storage'
-import { extensionRuntime } from '../extensions/runtime'
 import { ExtensionManagerPanel } from './ExtensionManagerPanel'
 import { UpdatePanel } from './UpdatePanel'
-import { ExtensionHostBoundary } from './ExtensionHostBoundary'
-import { cancelActiveAnkiImport } from '../extensions/interoperability'
 import { useModalDialog } from './useModalDialog'
 import { extensionUiContributionsV2 } from '../extensions/v2/registry'
 import { ExtensionUiFrameV2 } from '../extensions/v2/ExtensionUiFrameV2'
-import type { ImportSummary } from '../types'
-import { ImportPreflightReview } from './ImportPreflightReview'
 import { CompatibilityManager } from './CompatibilityManager'
 import { SyncPanel } from './SyncPanel'
 
@@ -21,17 +16,16 @@ const formatImportSize = (bytes: number) => bytes >= 1024 * 1024 * 1024 ? `${(by
 type MigrationRecoveryFile = { kind: 'source-package' | 'workspace-checkpoint'; name: string; byteLength: number; createdAt: string }
 
 export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
-  const { data, persistenceError, setRetention, setLearningSafeguards, toggleTheme, replaceData, resetData, mergeImport, runExtensionCommand } = useApp()
+  const { data, persistenceError, setRetention, setLearningSafeguards, toggleTheme, replaceData, resetData } = useApp()
   const fileRef = useRef<HTMLInputElement>(null)
   const importToken = useRef(0)
   const [message, setMessage] = useState('')
   const [messageIsError, setMessageIsError] = useState(false)
   const [recoveryFiles, setRecoveryFiles] = useState<MigrationRecoveryFile[]>([])
   const [busyAction, setBusyAction] = useState<'backup' | 'restore' | 'diagnostics' | 'import' | ''>('')
-  const [pendingImport, setPendingImport] = useState<{ filename: string; result: ImportSummary } | null>(null)
   const storage = getStorageStatus()
-  const extensionSettingsPanels = extensionRuntime.settingsPanels()
   const isolatedSettingsPanels = extensionUiContributionsV2('settings')
+  const isolatedMigrationPanels = extensionUiContributionsV2('migration')
   const [dialogRef, requestClose, onBackdropMouseDown] = useModalDialog(onClose)
   const showMessage = (text: string, error = false) => { setMessage(text); setMessageIsError(error) }
   const loadRecoveryFiles = useCallback(async () => await window.neoAnkiDesktop?.listMigrationRecoveryFiles?.() || [], [])
@@ -47,7 +41,6 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
     if (file.size > MAX_IMPORT_BYTES) { showMessage(`That file is ${formatImportSize(file.size)}. Neo Anki limits a single import to 512 MB compressed.`, true); return }
     if (file.size > LARGE_IMPORT_BYTES && !window.confirm(`This import is ${formatImportSize(file.size)} and may take several minutes. Continue?`)) return
     const replacesWorkspace = file.name.toLowerCase().endsWith('.json')
-    const isAnkiPackage = /\.(?:apkg|colpkg)$/i.test(file.name)
     if (replacesWorkspace && !window.confirm('Restore this JSON backup as the complete workspace? Neo Anki will create a recovery checkpoint before replacing current data.')) return
     const token = ++importToken.current
     setBusyAction('import'); showMessage(`Reading ${file.name}… Your workspace has not changed.`)
@@ -59,53 +52,18 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
         if (token !== importToken.current) return
         replaceData(replacement)
       }
-      else {
-        const result = await extensionRuntime.importFile(file, (progress) => { if (token === importToken.current) showMessage(progress) })
-        if (token !== importToken.current) return
-        if (isAnkiPackage) {
-          if (!result.preflight) throw new Error('The Anki package did not produce a compatibility preflight.')
-          setPendingImport({ filename: file.name, result }); showMessage('')
-          return
-        }
-        await window.neoAnkiDesktop?.createImportCheckpoint()
-        if (token !== importToken.current) return
-        await mergeImport(result)
-        showMessage(`Imported ${result.items.length} ${result.items.length === 1 ? 'item' : 'items'}. ${result.warnings.join(' ')}`)
-        return
-      }
+      else throw new Error('Install an import/export extension from the marketplace for this file type.')
       showMessage('Backup imported successfully.')
     } catch (error) {
       showMessage(error instanceof Error ? error.message : 'Could not import that file.', true)
     } finally { if (token === importToken.current) { setBusyAction(''); if (fileRef.current) fileRef.current.value = '' } }
   }
 
-  const commitPendingImport = async () => {
-    if (!pendingImport) return
-    setBusyAction('import'); showMessage('Creating a rollback checkpoint before migration…')
-    try {
-      await window.neoAnkiDesktop?.createImportCheckpoint()
-      await mergeImport(pendingImport.result)
-      showMessage(`Imported ${pendingImport.result.items.length} ${pendingImport.result.items.length === 1 ? 'item' : 'items'}. The source package and rollback checkpoint were retained.`)
-      await refreshRecoveryFiles()
-      setPendingImport(null)
-    } catch (error) { showMessage(error instanceof Error ? error.message : 'Could not commit that Anki migration.', true) }
-    finally { setBusyAction('') }
-  }
-
   const cancelImport = () => {
     importToken.current += 1
-    cancelActiveAnkiImport()
     setBusyAction('')
     showMessage('Import canceled. The workspace was not changed.')
     if (fileRef.current) fileRef.current.value = ''
-  }
-
-  const exportWith = async (id: string) => {
-    const exporter = extensionRuntime.exporters().find((candidate) => candidate.id === id)
-    if (!exporter) return
-    const exported = await exporter.export(data)
-    const url = URL.createObjectURL(new Blob([typeof exported === 'string' ? exported : new Uint8Array(exported)], { type: exporter.mimeType }))
-    const anchor = document.createElement('a'); anchor.href = url; anchor.download = exporter.filename; anchor.click(); URL.revokeObjectURL(url)
   }
 
   const exportBackup = async () => {
@@ -150,7 +108,7 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
           <button className="icon-button" onClick={requestClose} aria-label="Close settings"><X size={20} /></button>
         </div>
 
-        {pendingImport?.result.preflight ? <ImportPreflightReview filename={pendingImport.filename} preflight={pendingImport.result.preflight} busy={busyAction === 'import'} onCancel={() => { setPendingImport(null); showMessage('Migration canceled. No workspace data changed.') }} onConfirm={() => void commitPendingImport()} /> : <>
+        <>
         <div className="setting-row">
           <div>
             <strong>Appearance</strong>
@@ -192,11 +150,10 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
           <div className="button-row">
             <button className="secondary-button" disabled={Boolean(busyAction)} onClick={exportBackup}><Download size={18} /> {busyAction === 'backup' ? 'Exporting…' : 'Export backup'}</button>
             {window.neoAnkiDesktop && <button className="secondary-button" disabled={Boolean(busyAction)} onClick={restoreBackup}><ArchiveRestore size={18} /> {busyAction === 'restore' ? 'Restoring…' : 'Restore backup'}</button>}
-            {extensionRuntime.exporters().map((exporter) => <button className="secondary-button" key={exporter.id} onClick={() => exportWith(exporter.id)}><Download size={18} /> {exporter.label}</button>)}
             <button className="secondary-button" disabled={Boolean(busyAction)} onClick={() => fileRef.current?.click()}><Upload size={18} /> {busyAction === 'import' ? 'Importing…' : 'Import'}</button>
             {busyAction === 'import' && <button className="text-button danger" onClick={cancelImport}>Cancel import</button>}
             {window.neoAnkiDesktop && <button className="secondary-button" disabled={Boolean(busyAction)} onClick={() => void exportDiagnostics()}><Bug size={18}/> {busyAction === 'diagnostics' ? 'Exporting…' : 'Export diagnostics'}</button>}
-            <input ref={fileRef} className="visually-hidden" type="file" accept=".json,.csv,.apkg,.colpkg" onChange={(event) => void importFile(event.target.files?.[0])} />
+            <input ref={fileRef} className="visually-hidden" type="file" accept=".json" onChange={(event) => void importFile(event.target.files?.[0])} />
           </div>
           {recoveryFiles.length > 0 && <details className="migration-recovery-files"><summary>Migration rollback files ({recoveryFiles.length})</summary><p>Keep these until you have verified your migrated collection and an Anki export. Removing a file is permanent and does not change the live workspace.</p><ul>{recoveryFiles.map((file) => <li key={`${file.kind}:${file.name}`}><span><strong>{file.kind === 'source-package' ? 'Original Anki package' : 'Pre-import workspace checkpoint'}</strong><small>{formatImportSize(file.byteLength)} · {new Date(file.createdAt).toLocaleString()}</small></span><button className="text-button danger" onClick={() => void (async () => {
             if (!window.neoAnkiDesktop?.removeMigrationRecoveryFile || !window.confirm(`Permanently remove this ${file.kind === 'source-package' ? 'original Anki package' : 'pre-import workspace checkpoint'}? Keep it until migration and rollback exports are verified.`)) return
@@ -206,16 +163,8 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
           {message && <p className={messageIsError ? 'inline-message error' : 'inline-message'} role={messageIsError ? 'alert' : 'status'}>{message}</p>}
         </div>
 
-        {extensionSettingsPanels.map(({ id, extensionId, component: Panel }) => (
-          <ExtensionHostBoundary
-            key={`${extensionId}:${id}`}
-            onError={(error) => extensionRuntime.reportDiagnostic(extensionId, id, error)}
-            fallback={<p className="extension-error" role="status">This extension’s settings are unavailable. The rest of Settings is unaffected.</p>}
-          >
-            <Panel moduleId={extensionId} data={structuredClone(data)} runCommand={runExtensionCommand} />
-          </ExtensionHostBoundary>
-        ))}
         {isolatedSettingsPanels.map((contribution) => <div className="setting-block" key={`${contribution.extensionId}:${contribution.id}`}><strong>{contribution.label}</strong><ExtensionUiFrameV2 contribution={contribution} dto={{ theme: data.settings.theme, platform: window.neoAnkiDesktop ? 'desktop' : 'web' }} /></div>)}
+        {isolatedMigrationPanels.map((contribution) => <div className="setting-block" key={`${contribution.extensionId}:${contribution.id}`}><strong>{contribution.label}</strong><ExtensionUiFrameV2 contribution={contribution} dto={{ mode: 'settings', operation: 'additive' }} /></div>)}
 
         <UpdatePanel />
         <ExtensionManagerPanel />
@@ -227,7 +176,7 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
           </div>
           <button className="text-button danger" onClick={() => window.confirm('Reset the complete Neo Anki workspace? A recovery backup will be created first.') && resetData()}><RotateCcw size={17} /> Reset</button>
         </div>
-        </>}
+        </>
       </section>
     </div>
   )

@@ -1,14 +1,12 @@
 import { ArrowLeft, ArrowRight, Check, Clock3, Edit3, Layers3, RotateCcw, Sparkles, Undo2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { getAssetForCard } from '../lib/content'
+import { compareTypedAnswer, getAssetForCard } from '../lib/content'
 import { formatDue, formatDuration } from '../lib/date'
 import { previewReview } from '../lib/fsrs'
-import { rectStyle } from '../extensions/image-occlusion'
-import { extensionRuntime } from '../extensions/runtime'
+import { rectStyle } from '../lib/occlusion'
 import { useApp } from '../state/AppContext'
 import type { ReviewRating } from '../types'
-import { ExtensionHostBoundary } from '../components/ExtensionHostBoundary'
-import { extensionUiContributionsV2 } from '../extensions/v2/registry'
+import { compareExtensionPromptV2, extensionUiContributionsV2, renderExtensionPromptV2 } from '../extensions/v2/registry'
 import { ExtensionUiFrameV2 } from '../extensions/v2/ExtensionUiFrameV2'
 import { SandboxedCardFrame } from '../components/SandboxedCardFrame'
 import { safeExternalUrl } from '../lib/urls'
@@ -30,6 +28,11 @@ export const ReviewPage = () => {
   const entry = activeSession?.queue[index]
   const card = data.cards.find((candidate) => candidate.id === entry?.card.id)
   const item = data.items.find((candidate) => candidate.id === card?.itemId)
+  const [externalContentState, setExternalContentState] = useState<{ cardId: string; value: Awaited<ReturnType<typeof renderExtensionPromptV2>> } | null>(null)
+  const [typedResultState, setTypedResultState] = useState<{ key: string; value: { result: 'exact' | 'close' | 'incorrect'; similarity: number } | null } | null>(null)
+  const externalContent = externalContentState && externalContentState.cardId === card?.id ? externalContentState.value : null
+  const fallbackContent = useMemo(() => item ? ({ prompt: item.prompt, answer: item.answer, context: item.context, typed: false, mediaId: item.mediaIds[0], citations: item.citations }) : null, [item])
+  const content = externalContent || fallbackContent
 
   const preview = useMemo(() => card ? previewReview(card, card.schedulerOptions?.desiredRetention || data.settings.retention) : null, [card, data.settings.retention])
 
@@ -86,6 +89,22 @@ export const ReviewPage = () => {
     currentCardIdRef.current = card?.id
     gradingRef.current = false
   }, [card?.id])
+
+  useEffect(() => {
+    let current = true
+    if (item && card && card.variant !== 'forward') void renderExtensionPromptV2(item, card).then((value) => { if (current) setExternalContentState({ cardId: card.id, value }) }).catch(() => undefined)
+    return () => { current = false }
+  }, [card, item])
+
+  useEffect(() => {
+    let current = true
+    if (revealed && card && (content?.typed || card.rendering?.typedAnswer)) {
+      const expected = card.rendering?.typedAnswer?.expected || content?.answer || ''
+      const key = `${card.id}:${typedAnswer}:${expected}`
+      if (!card.rendering?.typedAnswer) void compareExtensionPromptV2(card.variant, typedAnswer, expected).then((value) => { if (current) setTypedResultState({ key, value: value || compareTypedAnswer(typedAnswer, expected) }) }).catch(() => { if (current) setTypedResultState({ key, value: compareTypedAnswer(typedAnswer, expected) }) })
+    }
+    return () => { current = false }
+  }, [card, content, revealed, typedAnswer])
 
   useEffect(() => {
     const now = performance.now()
@@ -174,14 +193,14 @@ export const ReviewPage = () => {
     )
   }
 
-  const content = extensionRuntime.render(item, card)
+  if (!content) return <div className="route-loading" role="status">Loading prompt…</div>
   const templateRendering = card.rendering?.source === 'anki-template' ? card.rendering : undefined
   const asset = getAssetForCard(item, data.assets)
   const typedExpected = templateRendering?.typedAnswer?.expected || content.answer
   const isTyped = Boolean(templateRendering?.typedAnswer || content.typed)
-  const typedResult = revealed && isTyped ? extensionRuntime.compareAnswer('typed', typedAnswer, typedExpected) : null
+  const typedKey = `${card.id}:${typedAnswer}:${typedExpected}`
+  const typedResult = revealed && isTyped ? templateRendering?.typedAnswer ? compareTypedAnswer(typedAnswer, typedExpected) : typedResultState?.key === typedKey ? typedResultState.value : null : null
   const progress = ((index + (revealed ? 0.5 : 0)) / activeSession.queue.length) * 100
-  const reviewTools = extensionRuntime.reviewTools()
   const isolatedReviewTools = extensionUiContributionsV2('review')
 
   return (
@@ -191,11 +210,6 @@ export const ReviewPage = () => {
         <div className="session-progress" role="progressbar" aria-label="Review session progress" aria-valuemin={0} aria-valuemax={activeSession.queue.length} aria-valuenow={index}><span style={{ width: `${progress}%` }} /></div>
         <div className="review-status">
           <div className="review-tool-host">
-            {reviewTools.map(({ id, extensionId, component: Tool }) => (
-              <ExtensionHostBoundary key={`${extensionId}:${id}`} onError={(error) => extensionRuntime.reportDiagnostic(extensionId, id, error)}>
-                <Tool moduleId={extensionId} card={structuredClone(card)} item={structuredClone(item)} assets={structuredClone(data.assets)} revealed={revealed} submitRating={(rating) => grade(rating, false, card.id)} />
-              </ExtensionHostBoundary>
-            ))}
             {isolatedReviewTools.map((contribution) => <ExtensionUiFrameV2 key={`${contribution.extensionId}:${contribution.id}`} contribution={contribution} reloadKey={`${card.id}:${revealed ? 'answer' : 'prompt'}`} dto={{ card: { id: card.id, noteId: item.id, deck: item.collection, tags: item.tags, suspended: card.suspended, dueAt: card.fsrs.due }, revealed }} />)}
           </div>
           <div className="review-count"><span>{entry.contextKey}</span>{index + 1} / {activeSession.queue.length}</div>

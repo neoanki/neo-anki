@@ -2,11 +2,9 @@ import { ArrowLeft, ArrowRight, Check, Clock3, FileArchive, FolderOpen, Plus } f
 import { useRef, useState } from 'react'
 import { useApp } from '../state/AppContext'
 import { Brand } from './Brand'
-import { extensionRuntime } from '../extensions/runtime'
 import { parseBackup } from '../lib/storage'
-import type { ImportSummary } from '../types'
-import { ImportPreflightReview } from './ImportPreflightReview'
-import { cancelActiveAnkiImport } from '../extensions/interoperability'
+import { extensionUiContributionsV2 } from '../extensions/v2/registry'
+import { ExtensionUiFrameV2 } from '../extensions/v2/ExtensionUiFrameV2'
 
 const options = [
   { minutes: 10, label: 'Light', copy: 'A small habit for busy days.' },
@@ -18,38 +16,13 @@ const options = [
 type StartChoice = 'fresh' | 'anki' | 'neo'
 
 export const Onboarding = () => {
-  const { completeOnboarding, mergeImport, replaceData } = useApp()
+  const { completeOnboarding, replaceData } = useApp()
   const [choice, setChoice] = useState<StartChoice | null>(null)
   const [minutes, setMinutes] = useState(30)
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
-  const [pendingImport, setPendingImport] = useState<{ filename: string; result: ImportSummary } | null>(null)
-  const ankiFile = useRef<HTMLInputElement>(null)
   const neoFile = useRef<HTMLInputElement>(null)
-
-  const migrateAnki = async (file?: File) => {
-    if (!file) return
-    if (!/\.(?:apkg|colpkg)$/i.test(file.name)) { setStatus('Choose an Anki .apkg or .colpkg package.'); return }
-    setBusy(true); setStatus('Inspecting the package in an isolated worker. Your workspace has not changed…')
-    try {
-      const result = await extensionRuntime.importFile(file, setStatus)
-      if (!result.preflight) throw new Error('The Anki package did not produce a compatibility preflight.')
-      setPendingImport({ filename: file.name, result }); setStatus('')
-    } catch (error) { setStatus(error instanceof Error ? error.message : 'Could not inspect that Anki package.') }
-    finally { setBusy(false); if (ankiFile.current) ankiFile.current.value = '' }
-  }
-
-  const commitAnki = async () => {
-    if (!pendingImport) return
-    setBusy(true); setStatus('Creating a rollback checkpoint before activation…')
-    try {
-      await window.neoAnkiDesktop?.createImportCheckpoint()
-      // The seed shown before onboarding is a disposable preview, not user
-      // content. First-launch migration must activate only the imported graph.
-      await mergeImport({ ...pendingImport.result, workspaceV4Operation: 'replace-profile' })
-      completeOnboarding(minutes)
-    } catch (error) { setStatus(error instanceof Error ? error.message : 'Could not commit that Anki migration.'); setBusy(false) }
-  }
+  const migrationPanels = extensionUiContributionsV2('migration')
 
   const openNeo = async (file?: File) => {
     if (!file) return
@@ -87,7 +60,7 @@ export const Onboarding = () => {
             <fieldset className="time-options"><legend className="visually-hidden">Choose daily learning time</legend>{options.map((option) => <button key={option.minutes} onClick={() => setMinutes(option.minutes)} className={minutes === option.minutes ? 'selected' : ''} aria-pressed={minutes === option.minutes}><span className="radio-mark">{minutes === option.minutes && <Check size={15} />}</span><span><strong>{option.minutes} minutes · {option.label}</strong><small>{option.copy}</small></span></button>)}</fieldset>
             <button className="primary-button full-width" onClick={() => completeOnboarding(minutes)}>Build my first plan <ArrowRight size={19} /></button>
           </>}
-          {choice === 'anki' && (pendingImport?.result.preflight ? <ImportPreflightReview filename={pendingImport.filename} preflight={pendingImport.result.preflight} busy={busy} onCancel={() => { setPendingImport(null); setStatus('Migration canceled. No workspace data changed.') }} onConfirm={() => void commitAnki()} /> : <><p className="onboarding-intro">Workspace v4 preserves named fields, templates/CSS, scheduling, review history, presets, flags, bury/suspend state, filtered-deck origin, media, and bounded inert add-on metadata. A .colpkg replaces the active profile; an .apkg is additive.</p><button className="primary-button full-width" disabled={busy} onClick={() => ankiFile.current?.click()}>{busy ? 'Inspecting package…' : 'Choose Anki package to inspect'}</button>{busy && <button className="secondary-button full-width" onClick={() => { cancelActiveAnkiImport(); setBusy(false); setStatus('Import canceled. The workspace was not changed.') }}>Cancel import</button>}<input ref={ankiFile} className="visually-hidden" type="file" accept=".apkg,.colpkg" onChange={(event) => void migrateAnki(event.target.files?.[0])} /></>)}
+          {choice === 'anki' && <><p className="onboarding-intro">Migration is provided by isolated extensions. Neo Anki validates the resulting Workspace v4 document and creates a rollback checkpoint before commit.</p>{migrationPanels.length ? migrationPanels.map((panel) => <ExtensionUiFrameV2 key={`${panel.extensionId}:${panel.id}`} contribution={panel} dto={{ mode: 'onboarding', operation: 'replace-profile', dailyMinutes: minutes }} />) : <p className="inline-message" role="status">Install Anki & CSV Interoperability from the extension marketplace, then restart onboarding.</p>}</>}
           {choice === 'neo' && <><p className="onboarding-intro">Neo Anki validates schema, references, scheduling bounds, Trash, packs, and media metadata before activating the workspace.</p><button className="primary-button full-width" disabled={busy} onClick={() => neoFile.current?.click()}>{busy ? 'Validating workspace…' : 'Choose Neo JSON backup'}</button><input ref={neoFile} className="visually-hidden" type="file" accept=".json" onChange={(event) => void openNeo(event.target.files?.[0])} /></>}
         </>}
         {status && <p className={/could not|refused|not supported|error/i.test(status) ? 'inline-message error' : 'inline-message'} role={/could not|refused|not supported|error/i.test(status) ? 'alert' : 'status'}>{status}</p>}

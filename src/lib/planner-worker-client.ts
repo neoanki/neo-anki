@@ -1,4 +1,4 @@
-import type { PlanningSignal } from '../extensions/core-module'
+import type { PlanningSignal } from './planner'
 import type { DailyPlan, KnowledgeItem, PracticeCard, ReviewEvent, UserSettings } from '../types'
 
 export interface PlannerWorkerPayload {

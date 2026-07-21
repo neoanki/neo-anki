@@ -27,5 +27,3 @@ export const mergeAppData = (local: AppData, remote: AppData): AppData => {
     updatedAt: local.updatedAt >= remote.updatedAt ? local.updatedAt : remote.updatedAt,
   }
 }
-
-export type { SyncTransport } from '../extensions/core-module'

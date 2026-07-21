@@ -14,11 +14,10 @@ export default defineConfig({
       include: [
         'src/lib/**/*.ts',
         'src/state/AppContext.tsx',
-        'src/extensions/registry.ts',
         'src/extensions/package-format.ts',
-        'src/extensions/card-timer/index.tsx',
         'src/extensions/v2/runtime.ts',
-        'src/extensions/interoperability/{anki,index}.ts',
+        'src/extensions/v2/registry.ts',
+        'src/extensions/v2/host.ts',
         'electron/{diagnostics-log,extension-manager,extension-services,secret-backend,sync-manager,workspace-store}.ts',
         'apps/mobile/src/{rendering,workspace}.ts',
       ],

@@ -1,24 +1,11 @@
-import { ExtensionRegistry } from './registry'
-import { imageOcclusionExtension } from './image-occlusion'
-import { interoperabilityExtension } from './interoperability'
-import { promptTypesExtension } from './prompts'
-import { recoveryPoliciesExtension } from './recovery-policies'
-import { workspaceExtension } from './workspace'
-import { sharedPacksExtension } from './shared-packs'
-import type { NeoAnkiCoreModule } from './core-module'
 import { prepareExtensionHost } from './host'
 import { initializeExtensionRegistryV2 } from './v2/registry'
 
-const bundledModules: NeoAnkiCoreModule[] = [
-  promptTypesExtension,
-  imageOcclusionExtension,
-  interoperabilityExtension,
-  recoveryPoliciesExtension,
-  workspaceExtension,
-  sharedPacksExtension,
-]
-
-export const extensionRuntime = new ExtensionRegistry(bundledModules)
+const diagnostics: Array<{ extensionId: string; contribution: string; message: string }> = []
+export const extensionRuntime = {
+  reportDiagnostic(extensionId: string, contribution: string, error: unknown) { diagnostics.unshift({ extensionId, contribution, message: error instanceof Error ? error.message : String(error) }); if (diagnostics.length > 500) diagnostics.length = 500 },
+  getDiagnostics: () => [...diagnostics],
+}
 
 export const initializeExternalExtensions = async () => {
   if (!window.neoAnkiDesktop || new URLSearchParams(window.location.search).get('safe-mode') === '1') return

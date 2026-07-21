@@ -36,6 +36,8 @@ contextBridge.exposeInMainWorld('neoAnkiDesktop', {
   extensionConfigReadV2: (token: string) => ipcRenderer.invoke('neo-anki:extension-config-read-v2', token),
   extensionConfigWriteV2: (token: string, value: unknown) => ipcRenderer.invoke('neo-anki:extension-config-write-v2', token, value),
   extensionContentListNotesV2: (token: string, query: unknown) => ipcRenderer.invoke('neo-anki:extension-content-list-notes-v2', token, query),
+  extensionMigrationExportV2: (token: string) => ipcRenderer.invoke('neo-anki:extension-migration-export-v2', token),
+  extensionMigrationCommitV2: (token: string, input: unknown) => ipcRenderer.invoke('neo-anki:extension-migration-commit-v2', token, input),
   extensionCancelV2: (token: string, operationId: string) => ipcRenderer.invoke('neo-anki:extension-cancel-v2', token, operationId),
   syncStatus: () => ipcRenderer.invoke('neo-anki:sync-status'),
   syncListDevices: () => ipcRenderer.invoke('neo-anki:sync-list-devices'),
