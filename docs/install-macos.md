@@ -1,14 +1,14 @@
 # Install Neo Anki on macOS
 
-Neo Anki's supported macOS release artifacts are Developer ID signed and notarized. macOS should open them without an unidentified-developer or malware-verification override.
+Neo Anki's current macOS release artifacts are ad-hoc signed and verified by CI, but are not yet Developer ID signed or Apple notarized. The signature protects the packaged code from unnoticed modification after signing; it does not establish Neo Anki as an Apple-verified publisher. Verify the release checksum and GitHub provenance attestation before approving the app.
 
-Version 0.4.2 and older macOS artifacts are legacy unsigned builds and do not satisfy this policy. Wait for a newer signed release instead of bypassing Gatekeeper.
+Version 0.4.2 and older macOS artifacts are legacy unsigned builds. Prefer a newer ad-hoc signed release.
 
 1. Open the [latest release](https://github.com/neoanki/neo-anki/releases/latest) and download the macOS DMG.
 2. Open the DMG and drag Neo Anki to Applications.
-3. Open Neo Anki from Applications.
+3. Control-click Neo Anki in Applications, choose **Open**, then choose **Open** in the confirmation dialog. If macOS offers only a blocked message, open **System Settings → Privacy & Security**, confirm the app name, and choose **Open Anyway**.
 
-If macOS says it cannot verify Neo Anki, stop. That artifact does not satisfy the current release policy; do not bypass Gatekeeper. Report the version and filename on the issue tracker and use a newer signed release when available.
+This one-time warning is expected for the interim ad-hoc signed release. Do not use shell commands that remove quarantine metadata. Stop if the checksum, attestation, filename, or displayed app name differs from the release page.
 
 Neo Anki stores its desktop workspace under `~/Library/Application Support/Neo Anki/` and keeps automatic recovery backups beside it. Installing a newer release preserves that directory; removing the application does not erase it.
 
