@@ -50,7 +50,7 @@ Build an installable macOS DMG and ZIP with:
 npm run desktop:build
 ```
 
-Artifacts are written to `release/`. Tagged releases require macOS Developer ID signing and notarization credentials; Windows and Linux builds are launched and inspected but Windows Authenticode signing is not yet a release prerequisite. CI produces checksums, SBOMs, and GitHub provenance attestations for the packaged artifacts. Local developer builds are not release artifacts.
+Artifacts are written to `release/`. Tagged macOS releases are ad-hoc signed and launch-tested; users must verify the checksum and GitHub provenance attestation and approve the first launch in macOS because Developer ID notarization is deferred. Windows and Linux builds are also launched and inspected; Windows Authenticode signing is not yet a release prerequisite. CI produces checksums, SBOMs, and GitHub provenance attestations for the packaged artifacts. Local developer builds are not release artifacts.
 
 The Vite browser surface is an installable offline PWA with encrypted-sync support. Run it with `npm run dev`; production hosting must use HTTPS and configure the sync service’s allowed origin. Hosted reliability and adversarial multi-device convergence remain release gates.
 
