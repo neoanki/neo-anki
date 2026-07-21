@@ -1,6 +1,7 @@
 import { copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
+import { createHash } from 'node:crypto'
 
 const targetName = process.argv[2]
 const targets = {
@@ -30,6 +31,10 @@ const stagedFiles = sourceFiles.map((file) => ({ source: file, destination: file
 if (new Set(stagedFiles.map(({ destination }) => destination)).size !== stagedFiles.length) throw new Error(`Normalized artifact names collide for ${targetName}.`)
 for (const file of stagedFiles) await copyFile(join(sourceDirectory, file.source), join(destinationDirectory, file.destination))
 await copyFile(resolve(target.instructions), join(destinationDirectory, `INSTALL-${targetName}.md`))
+const artifacts = await Promise.all(stagedFiles.map(async ({ destination }) => ({
+  filename: destination,
+  sha256: createHash('sha256').update(await readFile(join(destinationDirectory, destination))).digest('hex'),
+})))
 const evidence = {
   schemaVersion: 1,
   version: `v${packageJson.version}`,
@@ -37,6 +42,8 @@ const evidence = {
   platform: targetName,
   workflowRun: process.env.GITHUB_RUN_ID || 'local',
   node: process.version,
+  headless: true,
+  artifacts,
   gates: ['lint', 'typecheck', 'unit-coverage', 'timezone', 'anki-oracle-25.9.4', 'browser-chromium-firefox-webkit', 'desktop-durability', 'mobile-export', 'packaged-launch'],
 }
 await writeFile(join(destinationDirectory, `RELEASE-EVIDENCE-${targetName}.json`), `${JSON.stringify(evidence, null, 2)}\n`, 'utf8')

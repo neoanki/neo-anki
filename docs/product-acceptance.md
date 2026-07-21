@@ -1,5 +1,7 @@
 # Product acceptance strategy
 
+The executable commands, headless guarantees, native-mobile boundary, evidence contract, and defect lifecycle are defined in the [QA automation guide](qa-automation.md).
+
 Neo Anki is accepted from the outside in. Unit, component, and source-build tests are necessary, but they do not establish that a downloaded application is usable.
 
 ## Why the previous audit missed user-visible failures
@@ -46,6 +48,7 @@ Every release must cover these states with a new profile unless the row explicit
 
 ## Black-box rules
 
+- Every automated browser, Electron, packaged-artifact, extension and native E2E run is headless. Playwright configurations set `headless: true`; Electron launches set `NEO_ANKI_E2E_HEADLESS=1`; native simulators run without opening their UI. Physical-device accessibility and hardware checks are the only manual exception.
 - The test subject is the packaged executable and exact signed package bytes intended for publication.
 - Each scenario gets a unique temporary application-data directory. Tests never depend on the developer's profile.
 - Start with no database, local storage, extension state, credentials, or service-worker cache.

@@ -1,0 +1,34 @@
+appId: app.neoanki.mobile
+name: Native authoring, review, restart, and durable library state
+tags:
+  - release-critical
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "You’re caught up"
+    timeout: 30000
+- tapOn: "Add"
+- assertVisible: "Add knowledge"
+- tapOn: "Front"
+- inputText: "What survives a native process restart?"
+- tapOn: "Back"
+- inputText: "The encrypted local workspace."
+- hideKeyboard
+- tapOn: "Add knowledge item"
+- extendedWaitUntil:
+    visible: "1 ready"
+    timeout: 15000
+- tapOn: "Show answer"
+- assertVisible: "The encrypted local workspace."
+- tapOn: "Recalled: I remembered it"
+- extendedWaitUntil:
+    visible: "You’re caught up"
+    timeout: 15000
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: "You’re caught up"
+    timeout: 30000
+- tapOn: "Library"
+- assertVisible: "What survives a native process restart?"

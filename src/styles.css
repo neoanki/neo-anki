@@ -968,7 +968,7 @@ p { line-height: 1.45; }
 .route-loading { min-height: 40vh; display: grid; place-items: center; color: var(--text-soft); }
 
 @media (pointer: coarse) {
-  button, summary, select, input[type='checkbox'], input[type='radio'] { min-height: 44px; }
+  button, summary, select, input, textarea { min-height: 44px !important; }
   .toolbar-icon-button, .icon-button { min-width: 44px; width: 44px; }
 }
 

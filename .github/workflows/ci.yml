@@ -36,6 +36,7 @@ jobs:
           python-version: '3.13'
       - run: python3 -m pip install anki==25.9.4
       - run: npm ci
+      - run: npm run qa:contracts
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:coverage
@@ -69,10 +70,13 @@ jobs:
       - run: npx playwright install --with-deps chromium firefox webkit
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v7
-        if: failure()
+        if: always()
         with:
           name: browser-test-results
-          path: test-results/
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
           retention-days: 14
 
   mobile:
@@ -126,8 +130,11 @@ jobs:
       - run: npx playwright install chromium
       - run: ${{ matrix.command }}
       - uses: actions/upload-artifact@v7
-        if: failure()
+        if: always()
         with:
           name: desktop-test-results-${{ matrix.name }}
-          path: test-results/
+          path: |
+            test-results/
+            playwright-report/desktop/
+          if-no-files-found: ignore
           retention-days: 14

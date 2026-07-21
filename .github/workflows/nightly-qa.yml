@@ -1,0 +1,72 @@
+name: Nightly adversarial QA
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-qa
+  cancel-in-progress: true
+
+jobs:
+  contracts-and-fuzz:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run qa:contracts
+      - run: NEO_ANKI_QA_CASES=4096 npm run test:unit -- src/lib/adversarial-contracts.test.ts
+
+  cross-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: nightly-browser-evidence
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  known-bugs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:known-bugs
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: nightly-known-bug-evidence
+          path: |
+            test-results/
+            playwright-report/known-bugs/
+          if-no-files-found: ignore
+          retention-days: 30

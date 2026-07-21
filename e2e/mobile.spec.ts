@@ -37,3 +37,24 @@ test('dark mobile navigation remains reachable and accessible at 200% text size'
   const results = await new AxeBuilder({ page }).analyze()
   expect(results.violations.filter((violation) => ['critical', 'serious'].includes(violation.impact || ''))).toEqual([])
 })
+
+test('mobile authoring keeps every visible control touch-sized at 200% text', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile', 'Touch-target geometry requires the coarse-pointer mobile project.')
+  const data = createSeedData(); data.settings.onboardingComplete = true
+  await page.addInitScript((seed) => localStorage.setItem('neo-anki:data:v1', JSON.stringify(seed)), data)
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/')
+  await page.getByText('More', { exact: true }).click()
+  await page.getByRole('button', { name: 'Add knowledge' }).click()
+  await expect(page.getByRole('heading', { name: 'New knowledge' })).toBeVisible()
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+  const undersized = await page.locator('button:visible, input:visible, textarea:visible, select:visible').evaluateAll((elements) => elements.map((element) => {
+    const rect = element.getBoundingClientRect()
+    return { label: element.getAttribute('aria-label') || element.textContent?.trim() || element.tagName, width: rect.width, height: rect.height }
+  }).filter((control) => control.height < 44 || control.width < 44))
+  expect(undersized).toEqual([])
+  const results = await new AxeBuilder({ page }).analyze()
+  expect(results.violations.filter((violation) => ['critical', 'serious'].includes(violation.impact || ''))).toEqual([])
+})

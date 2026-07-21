@@ -327,6 +327,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setPersistenceError('')
       setPersistenceState('saved')
     } catch (error) {
+      dataRef.current = current
+      setRenderedData(current)
       setPersistenceError(error instanceof Error ? error.message : 'Neo Anki could not save this knowledge item.')
       setPersistenceState('failed')
       throw error

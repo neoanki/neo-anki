@@ -50,11 +50,11 @@ Build an installable macOS DMG and ZIP with:
 npm run desktop:build
 ```
 
-Artifacts are written to `release/`. Tagged releases build without platform signing credentials: CI launches each packaged build and produces checksums, SBOMs, and GitHub provenance attestations. macOS Developer ID signing/notarization and Windows Authenticode signing are optional future improvements, not release or CI prerequisites. Local developer builds are not release artifacts.
+Artifacts are written to `release/`. Tagged releases require macOS Developer ID signing and notarization credentials; Windows and Linux builds are launched and inspected but Windows Authenticode signing is not yet a release prerequisite. CI produces checksums, SBOMs, and GitHub provenance attestations for the packaged artifacts. Local developer builds are not release artifacts.
 
 The Vite browser surface is an installable offline PWA with encrypted-sync support. Run it with `npm run dev`; production hosting must use HTTPS and configure the sync service’s allowed origin. Hosted reliability and adversarial multi-device convergence remain release gates.
 
-The native mobile client lives in `apps/mobile`. Verify both production bundles with `npm run mobile:check && npm run mobile:export`.
+The native mobile client lives in `apps/mobile`. Verify both production bundles with `npm run mobile:check && npm run mobile:export`. Native binary acceptance uses headless Maestro flows; see the [QA automation guide](docs/qa-automation.md).
 
 ## Quality gates
 
@@ -62,7 +62,7 @@ The native mobile client lives in `apps/mobile`. Verify both production bundles 
 npm run test:all
 ```
 
-This runs ESLint with accessibility rules, TypeScript for renderer and Electron processes, unit/integration/component tests with enforced coverage, the production renderer build, browser accessibility/offline tests, and an Electron restart-persistence test. Install Chromium once with `npx playwright install chromium` if needed.
+This runs the headless-policy and documentation contracts, ESLint with accessibility rules, TypeScript for renderer and Electron processes, unit/integration/component tests with enforced coverage, the production renderer build, browser accessibility/offline tests, and Electron restart-persistence tests. Install Chromium once with `npx playwright install chromium` if needed.
 
 The risk-scoped coverage gate includes selected compatibility, state/context, Electron persistence and extension services, SDK v2 runtime, sync-client, and native workspace/rendering modules. It does not cover every sync, mobile, page, or failure path. Current minimums for the included files are 75% statements, 64% branches, 73% functions, and 83% lines. CI installs pinned Anki 25.9.4 for its corpus/oracle tests; that narrow fixture matrix does not imply compatibility with every Anki collection.
 

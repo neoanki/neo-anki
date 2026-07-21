@@ -74,6 +74,14 @@ const CustomStudyProbe = () => {
   </div>
 }
 
+const FailedAuthoringProbe = () => {
+  const { addItem, data, persistenceState } = useApp()
+  return <div>
+    <output aria-label="failed authoring state">{`${data.items.length}:${persistenceState}`}</output>
+    <button onClick={() => void addItem({ prompt: 'Ghost item', answer: 'Must roll back', context: '', collection: '', tags: [], citations: [], assets: [], occlusions: [], variants: ['forward'] }).catch(() => undefined)}>Fail add</button>
+  </div>
+}
+
 describe('workspace safety actions', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -171,5 +179,19 @@ describe('workspace safety actions', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Grade preview' }))
     expect(screen.getByLabelText('custom due')).toHaveTextContent(before!)
     expect(screen.getByLabelText('custom reviews')).toHaveTextContent('1')
+  })
+
+  it('rolls back optimistic authoring when durable persistence fails', async () => {
+    const initial = createSeedData()
+    window.neoAnkiDesktop = {
+      isDesktop: true,
+      loadData: () => ({ data: initial, storagePath: '/tmp/neo-anki-data.json', recoveredFromBackup: false }),
+      saveData: async () => { throw new Error('QA simulated disk full') },
+      onNavigate: () => () => undefined,
+    } as unknown as NeoAnkiDesktopBridge
+    render(<AppProvider><FailedAuthoringProbe /></AppProvider>)
+    await userEvent.click(screen.getByRole('button', { name: 'Fail add' }))
+    await waitFor(() => expect(screen.getByLabelText('failed authoring state')).toHaveTextContent(`${initial.items.length}:failed`))
+    expect(screen.queryByText('Ghost item')).not.toBeInTheDocument()
   })
 })

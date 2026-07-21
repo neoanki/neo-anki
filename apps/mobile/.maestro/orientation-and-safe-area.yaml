@@ -1,0 +1,23 @@
+appId: app.neoanki.mobile
+name: Native tabs remain reachable in landscape and after rotation
+tags:
+  - accessibility
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "You’re caught up"
+    timeout: 30000
+- setOrientation: LANDSCAPE
+- assertVisible: "Today"
+- assertVisible: "Library"
+- assertVisible: "Add"
+- assertVisible: "Sync"
+- assertVisible: "More"
+- tapOn: "More"
+- assertVisible: "Open statistics"
+- tapOn: "Open statistics"
+- assertVisible: "Statistics"
+- tapOn: "Back to More"
+- setOrientation: PORTRAIT
+- assertVisible: "More"
