@@ -6,6 +6,7 @@ const sanitizeCardHtml = (html: string) => {
     RETURN_DOM_FRAGMENT: true,
     FORBID_TAGS: ['script', 'meta', 'base', 'link', 'iframe', 'object', 'embed', 'form'],
     FORBID_ATTR: ['srcdoc', 'action', 'formaction'],
+    ALLOWED_URI_REGEXP: /^(?:(?:data|blob|neoanki-media):|#)/i,
   })
   fragment.querySelectorAll<HTMLElement>('[href], [xlink\\:href]').forEach((element) => {
     for (const name of ['href', 'xlink:href']) {
