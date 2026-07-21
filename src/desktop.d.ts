@@ -76,6 +76,7 @@ declare global {
     extensionSaveFileV2?(token: string, request: { filename: string; mimeType: string; text?: string; bytes?: Uint8Array }): Promise<{ canceled: boolean; path?: string }>
     extensionOpenExternalV2?(token: string, url: string): Promise<void>
     extensionSecretReadBatchV2(token: string, keys: string[]): Promise<Record<string, string | null>>
+    extensionSecretStatusBatchV2?(token: string, keys: string[]): Promise<Record<string, boolean>>
     extensionSecretMutateBatchV2(token: string, changes: Array<{ op: 'set'; key: string; value: string } | { op: 'delete'; key: string }>): Promise<void>
     extensionConfigReadV2(token: string): Promise<unknown | null>
     extensionConfigWriteV2(token: string, value: unknown): Promise<{ workspaceRevision: number; data: AppData }>

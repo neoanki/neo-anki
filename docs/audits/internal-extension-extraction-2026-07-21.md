@@ -6,7 +6,7 @@ The bundled-module inventory contained eight entries. All eight now live in dedi
 
 | Former bundled module | Result | Repository / next stable seam |
 | --- | --- | --- |
-| Card Timer | Extracted and marketplace-listed | [`neoanki/neoanki-card-timer`](https://github.com/neoanki/neoanki-card-timer) · `config:sync`, `ui:settings`, `ui:review` |
+| Card Timer | Extracted and marketplace-listed | [`neoanki/neoanki-card-timer`](https://github.com/neoanki/neoanki-card-timer) · declarative host-rendered settings with `config:sync`; review frame with `ui:review` |
 | Collection Insights | Extracted and marketplace-listed with a narrower read-only collection view | [`neoanki/neoanki-insights`](https://github.com/neoanki/neoanki-insights) · `content:read`, `ui:page`; add a privacy-reviewed aggregate-history API before restoring historical recall charts |
 | More Card Types | Extracted and marketplace-listed | [`neoanki/neoanki-prompt-types`](https://github.com/neoanki/neoanki-prompt-types) · manifest-declared `study:prompt-types`; core keeps only the basic forward fallback |
 | Image Occlusion | Extracted and marketplace-listed | [`neoanki/neoanki-image-occlusion`](https://github.com/neoanki/neoanki-image-occlusion) · `study:prompt-types`, `ui:create`; opaque-origin, keyboard-operable authoring UI |

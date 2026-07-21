@@ -1,6 +1,6 @@
 import { ArrowLeft } from 'lucide-react'
 import { ExtensionManagerPanel } from '../components/ExtensionManagerPanel'
-import { extensionUiContributionsV2 } from '../extensions/v2/registry'
+import { extensionSettingsContributionsV2, extensionUiContributionsV2 } from '../extensions/v2/registry'
 import { useApp } from '../state/AppContext'
 
 const extensionReturnKey = 'neoanki:extensions:return:v1'
@@ -15,8 +15,8 @@ export const ExtensionsPage = () => {
   const { route, navigate } = useApp()
   const returnToCreate = shouldReturnToCreate()
   const focusExtensionId = route.startsWith('extensions:') ? route.slice('extensions:'.length) : ''
-  const contributions = focusExtensionId ? extensionUiContributionsV2().filter((entry) => entry.extensionId === focusExtensionId && (entry.surface === 'migration' || entry.surface === 'settings')) : []
-  const configuration = contributions.find((entry) => entry.surface === 'migration') || contributions[0]
+  const contributions = focusExtensionId ? [...extensionSettingsContributionsV2(), ...extensionUiContributionsV2('migration')].filter((entry) => entry.extensionId === focusExtensionId) : []
+  const configuration = contributions.find((entry) => entry.surface === 'settings') || contributions[0]
   const configurationId = configuration ? `${configuration.extensionId}:${configuration.id}` : ''
   return <div className="page extensions-page">
   <header className="page-header">

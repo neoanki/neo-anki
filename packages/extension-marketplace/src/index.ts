@@ -5,7 +5,7 @@ export const MAX_MARKETPLACE_EXTENSIONS = 5000
 
 export const marketplaceCategories = ['study', 'authoring', 'import-export', 'planning', 'analytics', 'accessibility', 'integration', 'appearance'] as const
 export type MarketplaceCategory = typeof marketplaceCategories[number]
-export type MarketplacePermission = 'study:read' | 'study:signals' | 'study:prompt-types' | 'study:queue-policies' | 'content:read' | 'content:patch-own' | 'content:migrate' | 'media:create' | 'files:save' | 'ui:open-external' | 'network:fetch' | 'secrets:device' | 'config:sync' | 'ui:settings' | 'ui:review' | 'ui:page' | 'ui:create' | 'ui:workspace' | 'ui:migration'
+export type MarketplacePermission = 'study:read' | 'study:signals' | 'study:prompt-types' | 'study:queue-policies' | 'content:read' | 'content:patch-own' | 'content:migrate' | 'media:create' | 'files:save' | 'ui:open-external' | 'network:fetch' | 'secrets:device' | 'config:sync' | 'ui:review' | 'ui:page' | 'ui:create' | 'ui:workspace' | 'ui:migration'
 
 export interface MarketplaceExtension {
   id: string
@@ -38,7 +38,7 @@ export interface MarketplaceCatalog {
 const idPattern = /^[a-z0-9]+(?:[.-][a-z0-9]+)+$/
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 const packagePattern = /^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/download\/[^/]+\/[^/]+\.neoanki-extension$/
-const permissionSet = new Set<MarketplacePermission>(['study:read', 'study:signals', 'study:prompt-types', 'study:queue-policies', 'content:read', 'content:patch-own', 'content:migrate', 'media:create', 'files:save', 'ui:open-external', 'network:fetch', 'secrets:device', 'config:sync', 'ui:settings', 'ui:review', 'ui:page', 'ui:create', 'ui:workspace', 'ui:migration'])
+const permissionSet = new Set<MarketplacePermission>(['study:read', 'study:signals', 'study:prompt-types', 'study:queue-policies', 'content:read', 'content:patch-own', 'content:migrate', 'media:create', 'files:save', 'ui:open-external', 'network:fetch', 'secrets:device', 'config:sync', 'ui:review', 'ui:page', 'ui:create', 'ui:workspace', 'ui:migration'])
 const categorySet = new Set<MarketplaceCategory>(marketplaceCategories)
 
 const fail = (message: string): never => { throw new Error(message) }

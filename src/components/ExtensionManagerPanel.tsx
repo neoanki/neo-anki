@@ -1,11 +1,12 @@
 import { AlertTriangle, Check, ExternalLink, PackagePlus, Puzzle, Settings2, ShieldCheck, Trash2 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { AnyExtensionPermission } from '../../packages/extension-sdk/src/index'
 import { extensionRuntime } from '../extensions/runtime'
 import { safeExternalUrl } from '../lib/urls'
 import { ExtensionMarketplace } from './ExtensionMarketplace'
-import { extensionUiContributionsV2 } from '../extensions/v2/registry'
+import { extensionSettingsContributionsV2, extensionUiContributionsV2 } from '../extensions/v2/registry'
 import { ExtensionUiFrameV2 } from '../extensions/v2/ExtensionUiFrameV2'
+import { ExtensionSettingsForm } from './ExtensionSettingsForm'
 import { flushPendingSaves } from '../lib/storage'
 
 const permissionLabels: Record<string, string> = {
@@ -21,7 +22,6 @@ const permissionLabels: Record<string, string> = {
   'ui:open-external': 'Open approved HTTPS or email links',
   'secrets:device': 'Use atomic device-local secure credentials',
   'config:sync': 'Store non-secret settings with the encrypted workspace',
-  'ui:settings': 'Add an isolated Settings panel',
   'ui:review': 'Add an isolated review panel',
   'ui:page': 'Add an isolated application page',
   'ui:create': 'Add an isolated authoring panel',
@@ -61,10 +61,20 @@ export const ExtensionManagerPanel = ({ fullPage = false, focusExtensionId = '',
   const [message, setMessage] = useState(restoredHubState.notice || '')
   const [view, setView] = useState<ExtensionHubView>(openConfigurationId ? 'configure' : fullPage ? restoredHubState.view : 'browse')
   const [configurationId, setConfigurationId] = useState(openConfigurationId || restoredHubState.configurationId)
+  const [dirtyConfigurationId, setDirtyConfigurationId] = useState('')
   const [uninstallTarget, setUninstallTarget] = useState<NeoAnkiInstalledExtension | null>(null)
   const diagnostics = extensionRuntime.getDiagnostics()
-  const configurable = useMemo(() => extensionUiContributionsV2().filter((entry) => entry.surface === 'settings' || entry.surface === 'migration'), [])
+  const configurable = useMemo(() => [...extensionSettingsContributionsV2(), ...extensionUiContributionsV2('migration')], [])
   const selectedConfiguration = configurable.find((entry) => `${entry.extensionId}:${entry.id}` === configurationId) || configurable[0]
+
+  const confirmConfigurationChange = useCallback((nextId: string) => {
+    if (dirtyConfigurationId && dirtyConfigurationId !== nextId && !window.confirm('Discard unsaved extension settings?')) return false
+    setDirtyConfigurationId(''); setConfigurationId(nextId); return true
+  }, [dirtyConfigurationId])
+  const changeView = (next: ExtensionHubView) => {
+    if (view === 'configure' && next !== 'configure' && dirtyConfigurationId && !window.confirm('Discard unsaved extension settings?')) return
+    setDirtyConfigurationId(''); setView(next)
+  }
 
   useEffect(() => { if (fullPage) saveHubState({ view, configurationId }) }, [configurationId, fullPage, view])
 
@@ -139,9 +149,9 @@ export const ExtensionManagerPanel = ({ fullPage = false, focusExtensionId = '',
     {!fullPage && <p>Discover, manage, and configure signed additions to Neo Anki. Extension code runs in isolated workers and interface frames.</p>}
 
     {fullPage && <div className="extension-hub-tabs" role="tablist" aria-label="Extensions views">
-      <button role="tab" aria-selected={view === 'browse'} onClick={() => setView('browse')}>Browse</button>
-      <button role="tab" aria-selected={view === 'installed'} onClick={() => setView('installed')}>Installed <span>{installed.length}</span></button>
-      <button role="tab" aria-selected={view === 'configure'} onClick={() => setView('configure')}>Configure <span>{configurable.length}</span></button>
+      <button role="tab" aria-selected={view === 'browse'} onClick={() => changeView('browse')}>Browse</button>
+      <button role="tab" aria-selected={view === 'installed'} onClick={() => changeView('installed')}>Installed <span>{installed.length}</span></button>
+      <button role="tab" aria-selected={view === 'configure'} onClick={() => changeView('configure')}>Configure <span>{configurable.length}</span></button>
     </div>}
 
     {safeMode && <div className="extension-reload" role="status"><span><ShieldCheck size={17}/><span><strong>Safe mode is active</strong><small>Locally installed extensions were skipped for this launch.</small></span></span><button className="secondary-button compact" onClick={() => { window.location.search = '' }}>Restart normally</button></div>}
@@ -170,12 +180,12 @@ export const ExtensionManagerPanel = ({ fullPage = false, focusExtensionId = '',
       {installed.map((record) => {
         const failure = diagnostics.find((diagnostic) => diagnostic.extensionId === record.manifest.id)
         const homepage = safeExternalUrl(record.manifest.homepage)
-        const settings = configurable.find((entry) => entry.extensionId === record.manifest.id)
-        return <details className="extension-row" key={record.manifest.id}><summary><span><strong>{record.manifest.name}</strong><small>Signed isolated SDK 2 package · {record.manifest.publisher}</small></span><span className="extension-state"><i className={record.enabled && !failure ? '' : 'inactive'}>{failure ? 'Error' : record.enabled ? 'Active' : 'Disabled'}</i><code>v{record.manifest.version}</code></span></summary><p className="extension-description">{record.manifest.description}</p>{failure && <p className="extension-error" role="status">{failure.message}</p>}<ManifestSummary manifest={record.manifest}/><div className="extension-record-meta"><span>SHA-256 <code>{record.digest.slice(0, 12)}</code></span><span>Key <code>{record.manifest.publisherKey.slice(0, 12)}</code></span><span>Source <code>{record.manifest.provenance.sourceCommit.slice(0, 12)}</code></span>{homepage && <a href={homepage} target="_blank" rel="noopener noreferrer">Homepage <ExternalLink size={13}/></a>}</div><div className="extension-actions">{settings && <button className="secondary-button compact" onClick={() => { setConfigurationId(`${settings.extensionId}:${settings.id}`); setView('configure') }}><Settings2 size={15}/> Configure</button>}<button className="secondary-button compact" disabled={busy} onClick={() => void toggle(record)}>{record.enabled ? 'Disable' : 'Enable'}</button><button className="text-button danger" disabled={busy} onClick={() => setUninstallTarget(record)}><Trash2 size={15}/> Uninstall</button></div></details>
+        const settings = configurable.find((entry) => entry.extensionId === record.manifest.id && entry.surface === 'settings')
+        return <details className="extension-row" key={record.manifest.id}><summary><span><strong>{record.manifest.name}</strong><small>Signed isolated SDK 2 package · {record.manifest.publisher}</small></span><span className="extension-state"><i className={record.enabled && !failure ? '' : 'inactive'}>{failure ? 'Error' : record.enabled ? 'Active' : 'Disabled'}</i><code>v{record.manifest.version}</code></span></summary><p className="extension-description">{record.manifest.description}</p>{failure && <p className="extension-error" role="status">{failure.message}</p>}<ManifestSummary manifest={record.manifest}/><div className="extension-record-meta"><span>SHA-256 <code>{record.digest.slice(0, 12)}</code></span><span>Key <code>{record.manifest.publisherKey.slice(0, 12)}</code></span><span>Source <code>{record.manifest.provenance.sourceCommit.slice(0, 12)}</code></span>{homepage && <a href={homepage} target="_blank" rel="noopener noreferrer">Homepage <ExternalLink size={13}/></a>}</div><div className="extension-actions">{settings && <button className="secondary-button compact" onClick={() => { if (confirmConfigurationChange(`${settings.extensionId}:${settings.id}`)) setView('configure') }}><Settings2 size={15}/> Configure</button>}<button className="secondary-button compact" disabled={busy} onClick={() => void toggle(record)}>{record.enabled ? 'Disable' : 'Enable'}</button><button className="text-button danger" disabled={busy} onClick={() => setUninstallTarget(record)}><Trash2 size={15}/> Uninstall</button></div></details>
       })}
     </div>}
     {fullPage && view === 'configure' && <div className="extension-configure-layout">
-      {configurable.length ? <><nav aria-label="Extension configuration">{configurable.map((entry) => <button key={`${entry.extensionId}:${entry.id}`} className={entry === selectedConfiguration ? 'active' : ''} aria-current={entry === selectedConfiguration ? 'page' : undefined} onClick={() => setConfigurationId(`${entry.extensionId}:${entry.id}`)}><strong>{entry.label}</strong><small>{entry.surface === 'migration' ? 'Import and migration' : 'Settings'}</small></button>)}</nav>{selectedConfiguration && <section className="extension-configure-panel"><header><p className="eyebrow">Extension configuration</p><h2>{selectedConfiguration.label}</h2><p>{selectedConfiguration.manifest.description}</p></header><ExtensionUiFrameV2 contribution={selectedConfiguration} dto={{ theme: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light', platform: window.neoAnkiDesktop ? 'desktop' : 'web', mode: 'settings', operation: 'additive' }}/></section>}</> : <div className="marketplace-state empty"><strong>No configurable extensions</strong><span>Extensions with settings or import tools will appear here after installation.</span><button className="secondary-button" onClick={() => setView('browse')}>Browse extensions</button></div>}
+      {configurable.length ? <><nav aria-label="Extension configuration">{configurable.map((entry) => <button key={`${entry.extensionId}:${entry.id}`} className={entry === selectedConfiguration ? 'active' : ''} aria-current={entry === selectedConfiguration ? 'page' : undefined} onClick={() => confirmConfigurationChange(`${entry.extensionId}:${entry.id}`)}><strong>{entry.label}</strong><small>{entry.surface === 'migration' ? 'Import and migration' : 'Settings'}</small></button>)}</nav>{selectedConfiguration && <section className="extension-configure-panel"><header><p className="eyebrow">Extension configuration</p><h2>{selectedConfiguration.label}</h2><p>{selectedConfiguration.description || selectedConfiguration.manifest.description}</p></header>{selectedConfiguration.surface === 'settings' ? <ExtensionSettingsForm manifest={selectedConfiguration.manifest} onDirtyChange={(dirty) => setDirtyConfigurationId(dirty ? `${selectedConfiguration.extensionId}:${selectedConfiguration.id}` : '')}/> : <ExtensionUiFrameV2 contribution={selectedConfiguration} dto={{ theme: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light', platform: window.neoAnkiDesktop ? 'desktop' : 'web', operation: 'additive' }}/>}</section>}</> : <div className="marketplace-state empty"><strong>No configurable extensions</strong><span>Extensions with settings or import tools will appear here after installation.</span><button className="secondary-button" onClick={() => changeView('browse')}>Browse extensions</button></div>}
     </div>}
     {uninstallTarget && <div className="extension-uninstall" role="alertdialog" aria-modal="true" aria-labelledby="extension-uninstall-title"><div><h3 id="extension-uninstall-title">Uninstall {uninstallTarget.manifest.name}?</h3><p>Knowledge remains available, but extension-specific presentation may use a core fallback.</p><div className="button-row"><button className="secondary-button" onClick={() => setUninstallTarget(null)}>Cancel</button><button className="secondary-button danger" disabled={busy} onClick={() => void uninstall(uninstallTarget, false)}>Uninstall and keep credentials</button><button className="primary-button danger-button" disabled={busy} onClick={() => void uninstall(uninstallTarget, true)}>Uninstall and delete credentials</button></div></div></div>}
     {diagnostics.filter((diagnostic) => !installed.some((record) => record.manifest.id === diagnostic.extensionId)).length > 0 && <p className="extension-warning" role="status"><AlertTriangle size={15} /> An extension error was isolated. Your study data remains available.</p>}

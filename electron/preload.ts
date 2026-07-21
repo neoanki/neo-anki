@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('neoAnkiDesktop', {
   extensionSaveFileV2: (token: string, request: unknown) => ipcRenderer.invoke('neo-anki:extension-save-file-v2', token, request),
   extensionOpenExternalV2: (token: string, url: string) => ipcRenderer.invoke('neo-anki:extension-open-external-v2', token, url),
   extensionSecretReadBatchV2: (token: string, keys: string[]) => ipcRenderer.invoke('neo-anki:extension-secret-read-batch-v2', token, keys),
+  extensionSecretStatusBatchV2: (token: string, keys: string[]) => ipcRenderer.invoke('neo-anki:extension-secret-status-batch-v2', token, keys),
   extensionSecretMutateBatchV2: (token: string, changes: unknown[]) => ipcRenderer.invoke('neo-anki:extension-secret-mutate-batch-v2', token, changes),
   extensionConfigReadV2: (token: string) => ipcRenderer.invoke('neo-anki:extension-config-read-v2', token),
   extensionConfigWriteV2: (token: string, value: unknown) => ipcRenderer.invoke('neo-anki:extension-config-write-v2', token, value),

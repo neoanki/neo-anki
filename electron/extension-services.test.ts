@@ -87,6 +87,8 @@ describe('extension secret mediation', () => {
       const services = new ExtensionServices(userData, secretManager, async () => new Response(), protector)
       const token = await services.claim('org.neoanki.fixture')
       await services.mutateSecretBatch(token, [{ op: 'set', key: 'provider.key', value: 'not-a-real-key' }])
+      await expect(services.secretStatusBatch(token, ['provider.key', 'provider.missing'])).resolves.toEqual({ 'provider.key': true, 'provider.missing': false })
+      expect(protector.open).not.toHaveBeenCalled()
       await expect(services.readSecretBatch(token, ['provider.key'])).resolves.toEqual({ 'provider.key': 'not-a-real-key' })
       expect(protector.seal).toHaveBeenCalledWith('not-a-real-key')
       expect(protector.open).toHaveBeenCalledOnce()

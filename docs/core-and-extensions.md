@@ -21,7 +21,8 @@ There is no internal optional-feature registry. More Card Types, Image Occlusion
 SDK 2 is the only accepted contract for package distribution:
 
 - Non-UI logic runs in a dedicated module worker. Desktop serves the exact reviewed worker entry through a same-origin gateway with `connect-src 'none'`; a lockdown prelude removes ambient network, storage, nested-worker and realtime browser APIs.
-- UI runs in an iframe with `sandbox="allow-scripts"` and without `allow-same-origin`. Its CSP denies ambient network, forms, base URLs and parent DOM/CSS access.
+- Executable review, page, create, workspace, and migration UI runs in an iframe with `sandbox="allow-scripts"` and without `allow-same-origin`. Its CSP denies ambient network, forms, base URLs and parent DOM/CSS access.
+- Configure is host-rendered from bounded declarative manifest data. It executes no extension code, has no command bridge, and limits settings to local validation plus synchronized config and device-secret persistence.
 - Workers and frames receive minimal DTO projections instead of an application context. The explicitly high-authority `content:migrate` capability is the exception: it brokers a Workspace v4 export for local conversion and accepts a staged commit only after core validation, checkpoint creation, and atomic persistence.
 - All useful effects cross typed message channels. The host rechecks the reviewed permission, extension identity, message size, queue size, timeout, cancellation and operation-specific limits.
 - Content changes use owner-scoped `WorkspacePatchV2` operations with expected revisions. Core validates the resulting Workspace v4 graph before accepting a patch; broader workspace persistence still has separately documented atomicity gaps.
@@ -35,7 +36,7 @@ SDK v2 packages are byte-reproducible and Ed25519-signed. Installation verifies 
 - Package paths, counts and compressed/expanded sizes are bounded before install; traversal and manifest/entry mismatches are rejected.
 - Same-digest reinstall is idempotent. Update/downgrade activation uses a recoverable state transition and retains provenance/rollback information during review.
 - Worker startup, messages, queues and contribution execution are bounded. Cancellation propagates to host operations.
-- UI frames cannot share the host origin, DOM, React tree, cookies or storage.
+- Executable UI frames cannot share the host origin, DOM, React tree, cookies or storage; Configure contains no extension frame.
 - A capability token is bound to the enabled extension instance and exact reviewed permission; reload, disable/re-enable, update, rollback, uninstall, and renderer teardown revoke prior claims and token-owned network work.
 - Patch ownership, expected revisions, operation count/size and the current workspace invariant set are checked before acceptance.
 - Unknown or crashing prompt behavior still falls back to a basic reviewable card; extension failure is recorded without granting broader data access.

@@ -439,6 +439,42 @@ button.image-stage { padding: 0; border: 0; background: transparent; text-align:
 .extension-configure-panel > header { margin-bottom: 16px; }
 .extension-configure-panel > header h2 { margin-bottom: 3px; }
 .extension-configure-panel > header p:last-child { max-width: 72ch; margin-bottom: 0; }
+.extension-settings-form { min-width: 0; display: grid; gap: 16px; }
+.extension-settings-help { max-width: 72ch; margin: 0; padding: 10px 12px; border-left: 3px solid var(--primary); color: var(--text-soft); background: var(--primary-soft); }
+.extension-settings-section { min-width: 0; display: grid; gap: 14px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.extension-settings-section > header h3 { margin: 0; font-size: 1rem; }
+.extension-settings-section > header p { max-width: 72ch; margin: 4px 0 0; color: var(--text-soft); }
+.extension-setting-field { min-width: 0; display: grid; gap: 5px; }
+.extension-setting-field > label, .extension-secret-heading > label { color: var(--text); font-size: .86rem; font-weight: 650; }
+.extension-setting-field > p, .extension-setting-secret > p { max-width: 72ch; margin: 0; color: var(--text-soft); font-size: .8rem; }
+.extension-setting-field > input:not([type='checkbox']), .extension-setting-field > select, .extension-setting-field > textarea, .extension-setting-secret input { width: 100%; min-height: 44px; }
+.extension-setting-field > textarea { min-height: 96px; resize: vertical; }
+.extension-setting-field [aria-invalid='true'] { border-color: var(--red); }
+.extension-setting-range { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.extension-setting-range input { min-height: 44px; }
+.extension-setting-range output { min-width: 3.5rem; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-muted); text-align: center; font-variant-numeric: tabular-nums; }
+.extension-setting-error { margin: 0; color: var(--red); font-size: .8rem; font-weight: 600; }
+.extension-setting-message { margin-top: 3px !important; }
+.extension-settings-notice { padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-muted); }
+.extension-settings-notice strong { display: block; margin-bottom: 3px; font-size: .86rem; }
+.extension-settings-notice p { margin: 0; color: var(--text-soft); font-size: .82rem; }
+.extension-settings-notice.info, .extension-settings-notice.privacy { border-color: color-mix(in srgb, var(--primary) 35%, var(--border)); background: var(--primary-soft); }
+.extension-settings-notice.warning { border-color: color-mix(in srgb, var(--amber) 45%, var(--border)); background: var(--amber-soft); }
+.extension-settings-group { min-width: 0; display: grid; gap: 10px; margin: 0; padding: 13px; border: 1px solid var(--border); border-radius: 9px; }
+.extension-settings-group > legend { padding: 0 5px; font-size: .88rem; font-weight: 700; }
+.extension-settings-group > p { margin: -2px 0 2px; color: var(--text-soft); font-size: .8rem; }
+.extension-settings-group-item { min-width: 0; display: grid; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-strong); }
+.extension-settings-group-item > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.extension-settings-item-actions { display: flex; gap: 4px; }
+.extension-settings-item-actions .icon-button { width: 44px; min-width: 44px; height: 44px; }
+.extension-settings-item-actions .icon-button.danger { color: var(--red); }
+.extension-secret-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.extension-secret-heading span { padding: 2px 8px; border-radius: 99px; color: var(--text-faint); background: var(--surface-muted); font-size: .7rem; font-weight: 650; }
+.extension-secret-heading span.configured { color: var(--green); background: var(--green-soft); }
+.extension-secret-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; }
+.extension-secret-controls button { min-height: 44px; }
+.extension-settings-savebar { position: sticky; bottom: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 -4px -4px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border)); border-radius: 9px; background: color-mix(in srgb, var(--surface-strong) 94%, transparent); box-shadow: var(--shadow); backdrop-filter: blur(12px); }
+.extension-settings-savebar > span { font-size: .8rem; font-weight: 650; }
 .extension-uninstall { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 20px; background: rgba(20,20,18,.58); }
 .extension-uninstall > div { width: min(580px, 100%); padding: 22px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-strong); box-shadow: var(--shadow); }
 .extension-uninstall h3 { margin: 0 0 6px; }
@@ -458,6 +494,12 @@ button.image-stage { padding: 0; border: 0; background: transparent; text-align:
   .extension-hub-tabs button { flex: 1 0 auto; min-height: 44px; }
   .extension-hub .marketplace-grid { grid-template-columns: 1fr; }
   .extension-configure-panel { padding: 14px; }
+  .extension-settings-section { padding: 13px; }
+  .extension-secret-controls { grid-template-columns: 1fr; }
+  .extension-secret-controls button { width: 100%; }
+  .extension-settings-savebar { align-items: stretch; flex-direction: column; }
+  .extension-settings-savebar .button-row { display: grid; grid-template-columns: 1fr 1fr; }
+  .extension-settings-savebar button { width: 100%; }
   .extension-record-meta { align-items: flex-start; flex-direction: column; }
   .extension-actions { align-items: stretch; flex-direction: column; }
   .extension-actions button { width: 100%; min-height: 44px; }
@@ -504,7 +546,7 @@ button.image-stage { padding: 0; border: 0; background: transparent; text-align:
   background: var(--surface);
 }
 
-.extension-ui-frame-v2-settings, .extension-ui-frame-v2-migration { min-height: 12rem; }
+.extension-ui-frame-v2-migration { min-height: 12rem; }
 .extension-ui-frame-v2-review { min-height: 3.5rem; height: 3.5rem; border: 0; border-radius: 0; }
 .extension-ui-frame-v2-page { min-height: 22rem; }
 

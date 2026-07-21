@@ -6,12 +6,12 @@ import type { ExtensionPackageManifest } from '../../packages/extension-sdk/src/
 const manifest: ExtensionPackageManifest = {
   format: 'neo-anki-extension', schemaVersion: 2, sdkVersion: 2,
   id: 'com.example.study-pulse', name: 'Study Pulse', version: '2.0.0', publisher: 'Example Studio', publisherKey: 'ed25519:fixture',
-  description: 'A small extension fixture.', minimumNeoAnkiVersion: '0.3.1', permissions: ['study:signals', 'ui:settings'],
-  workerEntry: 'dist/worker.js', uiEntries: [{ id: 'settings', surface: 'settings', entry: 'dist/settings.js' }],
+  description: 'A small extension fixture.', minimumNeoAnkiVersion: '0.3.1', permissions: ['study:signals', 'config:sync'],
+  workerEntry: 'dist/worker.js', settings: { schemaVersion: 1, label: 'Study Pulse', sections: [{ id: 'general', title: 'General', controls: [{ id: 'enabled', kind: 'toggle', path: '/enabled', label: 'Enabled', defaultValue: true }] }] },
   provenance: { sourceCommit: 'a'.repeat(40), coreCommit: 'b'.repeat(40), buildSystem: 'npm-ci' },
 }
 
-const files = { 'dist/worker.js': 'export {}', 'dist/settings.js': 'export {}' }
+const files = { 'dist/worker.js': 'export {}' }
 
 describe('installable extension package format', () => {
   it('is byte-reproducible across host timezones', () => {
@@ -56,35 +56,71 @@ describe('installable extension package format', () => {
   })
 
   it('rejects duplicate permissions, invalid versions, and unpinned provenance', () => {
-    expect(() => validateExtensionPackageManifest({ ...manifest, permissions: ['ui:settings', 'ui:settings'] })).toThrow('duplicates')
+    expect(() => validateExtensionPackageManifest({ ...manifest, permissions: ['config:sync', 'config:sync'] })).toThrow('duplicates')
     expect(() => validateExtensionPackageManifest({ ...manifest, version: 'tomorrow' })).toThrow('semantic versioning')
     expect(() => createExtensionPackage({ ...manifest, provenance: { ...manifest.provenance, sourceCommit: 'main' } }, files)).toThrow(/complete Git object ids/)
   })
 
   it('validates declared network domains and their permission', () => {
-    const valid = validateExtensionPackageManifest({ ...manifest, permissions: ['network:fetch', 'secrets:device', 'ui:settings'], networkDomains: ['api.example.com', '*.speech.example.com'] })
+    const valid = validateExtensionPackageManifest({ ...manifest, permissions: ['network:fetch', 'secrets:device', 'config:sync'], networkDomains: ['api.example.com', '*.speech.example.com'] })
     expect(valid.networkDomains).toEqual(['api.example.com', '*.speech.example.com'])
     expect(() => validateExtensionPackageManifest({ ...manifest, networkDomains: ['api.example.com'] })).toThrow('require network:fetch')
-    expect(() => validateExtensionPackageManifest({ ...manifest, permissions: ['network:fetch', 'ui:settings'], networkDomains: ['https://example.com/path'] })).toThrow('domains are invalid')
+    expect(() => validateExtensionPackageManifest({ ...manifest, permissions: ['network:fetch', 'config:sync'], networkDomains: ['https://example.com/path'] })).toThrow('domains are invalid')
   })
 
   it('preserves additive UI, prompt, and authoring metadata', () => {
     const validated = validateExtensionPackageManifest({
       ...manifest,
-      permissions: ['study:signals', 'study:prompt-types', 'ui:settings'],
-      uiEntries: [{ ...manifest.uiEntries![0], label: 'Speech settings', description: 'Choose voices.', helpText: 'Credentials stay on this device.', icon: 'volume-2', launchDestination: 'extensions/configure' }],
+      permissions: ['study:signals', 'study:prompt-types', 'config:sync', 'ui:page'],
+      settings: { ...manifest.settings, label: 'Speech settings', description: 'Choose voices.', helpText: 'Credentials stay on this device.', icon: 'volume-2' },
+      uiEntries: [{ id: 'page', surface: 'page', entry: 'dist/page.js', label: 'Speech tools' }],
       contributions: {
         promptTypes: [{ id: 'audio-answer', label: 'Audio answer', description: 'Recall from speech.', authoringHint: 'Attach a recording.', requiredFields: ['prompt', 'audio'] }],
-        authoringActions: [{ id: 'generate-audio', label: 'Generate offline audio', description: 'Create a portable file after saving.', defaultSelected: false, availability: 'status-required', configurationDestination: 'settings' }],
+        authoringActions: [{ id: 'generate-audio', label: 'Generate offline audio', description: 'Create a portable file after saving.', defaultSelected: false, availability: 'status-required', configurationDestination: 'extensions/configure' }],
       },
     })
-    expect(validated.uiEntries?.[0]).toMatchObject({ label: 'Speech settings', icon: 'volume-2' })
+    expect(validated.settings).toMatchObject({ label: 'Speech settings', icon: 'volume-2' })
     expect(validated.contributions?.promptTypes?.[0]).toMatchObject({ requiredFields: ['prompt', 'audio'] })
     expect(validated).toMatchObject({ minimumNeoAnkiVersion: '0.3.1' })
-    expect(validated.contributions?.authoringActions?.[0]).toMatchObject({ id: 'generate-audio', defaultSelected: false, availability: 'status-required', configurationDestination: 'settings' })
+    expect(validated.contributions?.authoringActions?.[0]).toMatchObject({ id: 'generate-audio', defaultSelected: false, availability: 'status-required', configurationDestination: 'extensions/configure' })
   })
 
   it('rejects malformed minimum app versions', () => {
     expect(() => validateExtensionPackageManifest({ ...manifest, minimumNeoAnkiVersion: 'next' })).toThrow('minimum Neo Anki version')
+  })
+
+  it('accepts bounded nested declarative settings and rejects executable settings UI', () => {
+    const validated = validateExtensionPackageManifest({
+      ...manifest,
+      permissions: ['config:sync', 'secrets:device'],
+      settings: { schemaVersion: 1, sections: [{ id: 'profiles', title: 'Profiles', controls: [
+        { id: 'privacy', kind: 'notice', text: 'Credentials stay on this device.', tone: 'privacy' },
+        { id: 'key', kind: 'secret', label: 'API key', secretKey: 'provider.api-key' },
+        { id: 'profiles-list', kind: 'group', path: '/profiles', label: 'Profiles', itemIdPath: '/id', itemLabelPath: '/name', maxItems: 50, newItem: { name: 'New profile' }, fields: [
+          { id: 'profile-name', kind: 'text', path: '/name', label: 'Name', required: true, maxLength: 100 },
+          { id: 'tracks', kind: 'group', path: '/tracks', label: 'Tracks', maxItems: 12, fields: [{ id: 'track-speed', kind: 'number', path: '/speed', label: 'Speed', min: .5, max: 2, defaultValue: 1 }] },
+        ] },
+      ] }] },
+    })
+    expect(validated.settings?.sections[0].controls).toHaveLength(3)
+    expect(() => validateExtensionPackageManifest({ ...manifest, uiEntries: [{ id: 'settings', surface: 'settings', entry: 'dist/settings.js' }] })).toThrow(/declarative settings contract/)
+    expect(() => validateExtensionPackageManifest({ ...manifest, settings: { schemaVersion: 1, sections: [{ id: 'bad', title: 'Bad', controls: [{ id: 'run', kind: 'action', command: 'process' }] }] } })).toThrow(/cannot declare actions/)
+  })
+
+  it('enforces declarative settings permissions, paths, ids, options, and group depth', () => {
+    const section = (controls: unknown[]) => ({ schemaVersion: 1, sections: [{ id: 'general', title: 'General', controls }] })
+    expect(() => validateExtensionPackageManifest({ ...manifest, permissions: [], settings: section([{ id: 'enabled', kind: 'toggle', path: '/enabled' }]) })).toThrow(/require config:sync/)
+    expect(() => validateExtensionPackageManifest({ ...manifest, permissions: ['config:sync'], settings: section([{ id: 'key', kind: 'secret', secretKey: 'provider.key' }]) })).toThrow(/require secrets:device/)
+    expect(() => validateExtensionPackageManifest({ ...manifest, settings: section([{ id: 'bad', kind: 'text', path: '/__proto__/value' }]) })).toThrow(/unsafe/)
+    expect(() => validateExtensionPackageManifest({ ...manifest, settings: section([{ id: 'same', kind: 'toggle', path: '/a' }, { id: 'same', kind: 'toggle', path: '/b' }]) })).toThrow(/duplicated/)
+    expect(() => validateExtensionPackageManifest({ ...manifest, settings: section([{ id: 'dynamic', kind: 'select', path: '/voice', options: [{ value: 'one', label: 'One' }], optionsProvider: 'voices.list' }]) })).toThrow(/not supported/)
+    expect(() => validateExtensionPackageManifest({ ...manifest, settings: section([{ id: 'many', kind: 'select', path: '/choice', options: Array.from({ length: 101 }, (_, index) => ({ value: `v${index}`, label: `Value ${index}` })) }]) })).toThrow(/between 1 and 100/)
+    expect(() => validateExtensionPackageManifest({ ...manifest, settings: section([{ id: 'outer', kind: 'group', path: '/outer', fields: [{ id: 'middle', kind: 'group', path: '/middle', fields: [{ id: 'inner', kind: 'group', path: '/inner', fields: [{ id: 'value', kind: 'text', path: '/value' }] }] }] }]) })).toThrow(/at most two levels/)
+  })
+
+  it('accepts empty text defaults and rejects more than 128 controls', () => {
+    const validated = validateExtensionPackageManifest({ ...manifest, settings: { schemaVersion: 1, sections: [{ id: 'general', title: 'General', controls: [{ id: 'optional', kind: 'text', path: '/optional', defaultValue: '' }] }] } })
+    expect((validated.settings?.sections[0].controls[0] as { defaultValue?: string }).defaultValue).toBe('')
+    expect(() => validateExtensionPackageManifest({ ...manifest, settings: { schemaVersion: 1, sections: [{ id: 'general', title: 'General', controls: Array.from({ length: 129 }, (_, index) => ({ id: `control-${index}`, kind: 'toggle', path: `/value-${index}` })) }] } })).toThrow(/at most 128 controls/)
   })
 })

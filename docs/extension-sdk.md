@@ -55,9 +55,38 @@ exposeExtensionWorker(extension)
 
 The worker receives bounded request DTOs. It has no ambient renderer DOM, workspace, cookies, IndexedDB or unrestricted network. Useful effects go through `ExtensionHostV2` RPC and are permission-checked again by core.
 
-## Sandboxed UI contract
+## Declarative settings contract
 
-Settings, review, page, create, workspace, and migration contributions run in separate opaque-origin iframes. Use `createSandboxedUiClient()` to receive the initialization DTO and invoke the paired worker through the host:
+`manifest.settings` is inert data rendered by Neo Anki under **Extensions → Configure**. It is not an iframe or UI entry, does not execute extension code, and has no action/command callback. Settings may only describe synchronized configuration and device-local credentials.
+
+```json
+{
+  "permissions": ["config:sync", "secrets:device"],
+  "settings": {
+    "schemaVersion": 1,
+    "label": "Study Signals",
+    "sections": [{
+      "id": "general",
+      "title": "General",
+      "controls": [
+        { "id": "enabled", "kind": "toggle", "path": "/enabled", "label": "Enable Study Signals", "defaultValue": true },
+        { "id": "threshold", "kind": "number", "path": "/threshold", "label": "Threshold", "min": 1, "max": 100, "requiredWhen": { "path": "/enabled", "operator": "truthy" } },
+        { "id": "token", "kind": "secret", "secretKey": "provider.token", "label": "Provider token" }
+      ]
+    }]
+  }
+}
+```
+
+Controls are `toggle`, `text`, `textarea`, `number`, `range`, `select`, `string-list`, `notice`, `secret`, and repeatable `group`. Groups may nest two levels. Stored controls use safe JSON Pointer paths; group field paths are relative to the current item. Static conditions support visibility, enabling, required-when, equality/inequality, inclusion, truthiness, and numeric comparisons. Neo Anki applies defaults only to missing declared paths, preserves undeclared config keys, validates locally, and atomically writes the complete synchronized draft only after explicit Save.
+
+Secret controls require static keys. The host reports only Configured/Not configured, and Set/Replace/Delete use the device secret broker; existing plaintext is never loaded into the renderer or synchronized config. Synchronized controls require `config:sync`; secret controls require `secrets:device`. The settings contribution itself needs no UI permission.
+
+Settings cannot declare actions, worker validation, dynamic options, commands, network requests, polling, progress, tests, generation, or arbitrary callbacks. Put imports on a migration surface and executable maintenance/generation/provider workflows on page, workspace, review, or create surfaces. Schemas are capped at 128 controls, 100 static select options, two repeatable-group levels, the 64 KiB manifest limit, and the 256 KiB synchronized-config limit.
+
+## Sandboxed executable UI contract
+
+Review, page, create, workspace, and migration contributions run in separate opaque-origin iframes. Use `createSandboxedUiClient()` to receive the initialization DTO and invoke the paired worker through the host:
 
 ```ts
 import { createSandboxedUiClient } from '@neo-anki/extension-sdk'
@@ -71,7 +100,7 @@ void createSandboxedUiClient().then(async (client) => {
 
 The frame has `sandbox="allow-scripts"` without `allow-same-origin`, an explicit no-network CSP and a transferred `MessagePort`. It cannot inspect or style the Neo Anki document. UI authors must implement semantic HTML, visible focus, keyboard operation, 16 px default text, AA contrast, reduced-motion behavior and responsive layout inside their frame.
 
-Call `applySandboxedUiAppearanceV1(client.init.appearance)` or use the variables it installs when styling the frame. In particular, use `--neo-on-primary` for text and icons placed on a `--neo-primary` background; dark themes intentionally use a light primary fill with a dark foreground. Frame height is reported from intrinsic body content so a configuration surface can grow and shrink without adding an inner scrollbar.
+Call `applySandboxedUiAppearanceV1(client.init.appearance)` or use the variables it installs when styling the frame. In particular, use `--neo-on-primary` for text and icons placed on a `--neo-primary` background; dark themes intentionally use a light primary fill with a dark foreground. Frame height is reported from intrinsic body content so an embedded surface can grow and shrink without adding an inner scrollbar.
 
 ## Permissions and host methods
 
@@ -88,7 +117,6 @@ Call `applySandboxedUiAppearanceV1(client.init.appearance)` or use the variables
 | `network:fetch` | Cancellable, bounded HTTPS requests to reviewed destinations |
 | `secrets:device` | Atomic device-local secret reads/mutations in the extension namespace |
 | `config:sync` | Bounded non-secret extension configuration synchronized as Workspace v4 data |
-| `ui:settings` | A reviewed sandboxed Settings entry |
 | `ui:review` | A reviewed sandboxed Review entry |
 | `ui:page` | A reviewed sandboxed application page |
 | `ui:create` | A reviewed sandboxed authoring entry |

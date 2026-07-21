@@ -14,7 +14,7 @@ my-extension/
     └── dashboard.ts    # optional sandboxed UI entry
 ```
 
-Install `@neo-anki/extension-sdk`. Do not depend on React or import Neo Anki source files: extension UI owns its iframe document, and all host interaction uses the SDK message contract.
+Install `@neo-anki/extension-sdk`. Do not depend on React or import Neo Anki source files: executable extension UI owns its iframe document, and all host interaction uses the SDK message contract. Configuration UI is the exception: declare it as inert `manifest.settings` data and let Neo Anki render it.
 
 ```json
 {
@@ -28,7 +28,7 @@ Install `@neo-anki/extension-sdk`. Do not depend on React or import Neo Anki sou
     "build": "neo-anki-extension build"
   },
   "dependencies": {
-    "@neo-anki/extension-sdk": "2.2.0"
+    "@neo-anki/extension-sdk": "2.3.0"
   }
 }
 ```
@@ -57,13 +57,15 @@ Use schema/sdk version 2, reverse-domain lowercase IDs, semantic versions and ex
 }
 ```
 
-The runtime identity is the reviewed manifest; extension code must not invent broader permissions or alternate entries.
+The runtime identity is the reviewed manifest; extension code must not invent broader permissions or alternate entries. A settings contribution is not a `uiEntry` and needs no UI permission. Its synchronized controls require `config:sync`; device-secret controls require `secrets:device`.
+
+Declarative settings support toggles, text/textarea, number/range, static selects, string lists, notices, device secrets, and repeatable object groups nested at most two levels. Use safe JSON Pointer paths and static cross-field conditions. Neo Anki owns defaults, validation, dirty state, Save/Discard, navigation confirmation, atomic config persistence, and credential status/mutation. Settings must never declare actions, commands, worker validation, dynamic options, network work, polling, tests, generation, or imports. Put those workflows on the appropriate page, workspace, review, create, or migration surface.
 
 ## 3. Implement the isolated entries
 
 Use `defineExtension` plus `exposeExtensionWorker` for logic. Keep requests cancellable, give every long operation a unique `operationId`, paginate `content.listNotes`, and commit bounded owner-scoped patches. Never place credentials in synchronized config, source, URLs, diagnostics or workspace content; use `host.secrets` for device-local credentials.
 
-Use `createSandboxedUiClient` for UI. The page receives a minimal initialization DTO and may call only the paired worker command bridge. It cannot reach the parent DOM or network. Render accessible, responsive HTML inside the iframe and treat every DTO as potentially stale until a host command confirms its expected revision.
+Use `createSandboxedUiClient` for executable UI. The page receives a minimal initialization DTO and may call only the paired worker command bridge. It cannot reach the parent DOM or network. Render accessible, responsive HTML inside the iframe and treat every DTO as potentially stale until a host command confirms its expected revision. Do not use this API for Configure.
 
 See [extension-sdk.md](extension-sdk.md) for permissions, limits and failure behavior.
 
