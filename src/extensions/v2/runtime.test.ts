@@ -71,7 +71,10 @@ describe('SDK v2 isolated runtimes', () => {
     expect(runtime.iframe.title).toContain('Fixture')
     expect(runtime.iframe.getAttribute('sandbox')).toBe('allow-scripts')
     expect(runtime.iframe.getAttribute('sandbox')).not.toContain('allow-same-origin')
-    expect(atob(runtime.iframe.src.split(',')[1]!)).toContain("connect-src 'none'")
+    const frameDocument = atob(runtime.iframe.src.split(',')[1]!)
+    expect(frameDocument).toContain("connect-src 'none'")
+    expect(frameDocument).toContain('<html data-theme="dark">')
+    expect(frameDocument).toContain('min-height:0!important;height:auto!important')
     runtime.close()
   })
 

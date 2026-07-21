@@ -2,7 +2,7 @@
 
 Every public claim must remain weaker than its current evidence. A passing unit test proves only its exercised case; presentation quality, an implemented primitive, or a planned release gate is not evidence that an end-to-end property holds.
 
-Status below is aligned with the July 19 comprehensive audit, its remediation ledger, and the July 21 new-user journey audit. Neo Anki 0.4.0 starts with an empty workspace, adds recoverable loading, moves extensions into a dedicated hub, and introduces additive SDK appearance and authoring contracts without broadening the compatibility, sync, mobile, or learning-effectiveness claims below.
+Status below is aligned with the July 19 comprehensive audit, its remediation ledger, and the July 21 new-user journey audit. Neo Anki 0.4.1 starts with an empty workspace, adds recoverable loading, moves extensions into a dedicated hub, and introduces additive SDK appearance and authoring contracts without broadening the compatibility, sync, mobile, or learning-effectiveness claims below.
 
 | Area | Allowed public wording | Known limit that must remain disclosed | Gate for stronger wording |
 | --- | --- | --- | --- |

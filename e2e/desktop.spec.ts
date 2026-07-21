@@ -136,9 +136,9 @@ test('installs, loads, and disables an SDK 2 extension package', async () => {
     await installedRow.locator('summary').click()
     await expect(window.getByText(/source/i).last()).toBeVisible()
     await window.getByRole('button', { name: 'Disable' }).click()
-    await expect(window.getByText(/will be disabled after reload/i)).toBeVisible()
-    await window.getByRole('button', { name: 'Reload now' }).click()
     await expect(window.getByRole('heading', { name: 'Extensions' })).toBeVisible()
+    await expect(window.getByRole('tab', { name: /Installed/ })).toHaveAttribute('aria-selected', 'true')
+    await expect(window.getByRole('status')).toContainText('Study Pulse is disabled.')
     await expect(window.getByRole('button', { name: /study pulse/i })).toHaveCount(0)
     await desktop.close()
   } finally {
@@ -167,7 +167,9 @@ test('desktop security policy permits the WebAssembly Anki importer', async () =
   try {
     const window = await firstReadyWindow(app)
     await completeFreshOnboarding(window)
-    await openMigration(window)
+    await window.getByRole('button', { name: 'Import from Anki' }).click()
+    await expect(window.getByRole('tab', { name: /Configure/ })).toHaveAttribute('aria-selected', 'true')
+    await expect(migrationFrame(window).getByLabel('Choose Anki or CSV file')).toBeVisible()
     await migrate(window, { name: 'csp.apkg', mimeType: 'application/octet-stream', buffer: await createAnkiPackage() }, false)
     await expect.poll(async () => (await readdir(join(userData, 'backups'))).some((name) => name.startsWith('import-checkpoint-'))).toBe(true)
   } finally {

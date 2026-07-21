@@ -504,7 +504,7 @@ button.image-stage { padding: 0; border: 0; background: transparent; text-align:
   background: var(--surface);
 }
 
-.extension-ui-frame-v2-settings, .extension-ui-frame-v2-migration { min-height: 34rem; }
+.extension-ui-frame-v2-settings, .extension-ui-frame-v2-migration { min-height: 12rem; }
 .extension-ui-frame-v2-review { min-height: 3.5rem; height: 3.5rem; border: 0; border-radius: 0; }
 .extension-ui-frame-v2-page { min-height: 22rem; }
 

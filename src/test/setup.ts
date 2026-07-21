@@ -17,6 +17,7 @@ if (typeof window !== 'undefined') {
   afterEach(() => {
     cleanup()
     localStorage.clear()
+    sessionStorage.clear()
   })
   Object.defineProperty(window, 'scrollTo', { value: () => undefined, writable: true })
   document.documentElement.lang = 'en'

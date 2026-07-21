@@ -2,8 +2,31 @@ import { ChevronRight, Download, ExternalLink, RefreshCw, Search, ShieldCheck, S
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MARKETPLACE_CATALOG_URL, MARKETPLACE_REPOSITORY_URL, MAX_MARKETPLACE_CATALOG_BYTES, compareMarketplaceVersions, filterMarketplaceExtensions, marketplaceCategories, parseMarketplaceCatalog, type MarketplaceCategory, type MarketplaceExtension } from '@neo-anki/extension-marketplace'
 import { safeExternalUrl } from '../lib/urls'
+import { flushPendingSaves } from '../lib/storage'
 
 const categoryLabels: Record<MarketplaceCategory, string> = { study: 'Study', authoring: 'Authoring', 'import-export': 'Import & export', planning: 'Planning', analytics: 'Analytics', accessibility: 'Accessibility', integration: 'Integrations', appearance: 'Appearance' }
+const MARKETPLACE_STATE_KEY = 'neo-anki:extensions-marketplace:v1'
+
+interface MarketplaceUiState {
+  query: string
+  category: MarketplaceCategory | 'all'
+  selectedId: string
+  scrollY: number
+  notice?: string
+}
+
+const defaultMarketplaceState = (): MarketplaceUiState => ({ query: '', category: 'all', selectedId: '', scrollY: 0 })
+const loadMarketplaceState = (): MarketplaceUiState => {
+  try {
+    const parsed = JSON.parse(window.sessionStorage.getItem(MARKETPLACE_STATE_KEY) || 'null') as Partial<MarketplaceUiState> | null
+    const rawCategory = parsed?.category
+    const category = rawCategory === 'all' || marketplaceCategories.includes(rawCategory as MarketplaceCategory) ? rawCategory as MarketplaceCategory | 'all' : 'all'
+    return { query: typeof parsed?.query === 'string' ? parsed.query : '', category, selectedId: typeof parsed?.selectedId === 'string' ? parsed.selectedId : '', scrollY: Number.isFinite(parsed?.scrollY) ? Math.max(0, Number(parsed?.scrollY)) : 0, ...(typeof parsed?.notice === 'string' ? { notice: parsed.notice } : {}) }
+  } catch { return defaultMarketplaceState() }
+}
+const saveMarketplaceState = (state: MarketplaceUiState) => {
+  try { window.sessionStorage.setItem(MARKETPLACE_STATE_KEY, JSON.stringify(state)) } catch { /* Session state is a convenience; installation must still work without it. */ }
+}
 
 const loadBrowserCatalog = async () => {
   const response = await fetch(MARKETPLACE_CATALOG_URL, { headers: { accept: 'application/json' } })
@@ -16,15 +39,18 @@ const loadBrowserCatalog = async () => {
   catch (reason) { throw new Error(reason instanceof Error ? reason.message : 'Marketplace catalog is invalid.') }
 }
 
-export const ExtensionMarketplace = ({ installed, candidateActive, onCandidate, focusExtensionId = '' }: { installed: readonly NeoAnkiInstalledExtension[]; candidateActive: boolean; onCandidate: (candidate: NeoAnkiExtensionCandidate) => void; focusExtensionId?: string }) => {
+export const ExtensionMarketplace = ({ installed, candidateActive, focusExtensionId = '' }: { installed: readonly NeoAnkiInstalledExtension[]; candidateActive: boolean; focusExtensionId?: string }) => {
   const bridge = window.neoAnkiDesktop
+  const [restoredState] = useState(loadMarketplaceState)
   const [extensions, setExtensions] = useState<MarketplaceExtension[]>([])
-  const [query, setQuery] = useState('')
-  const [category, setCategory] = useState<MarketplaceCategory | 'all'>('all')
+  const [query, setQuery] = useState(restoredState.query)
+  const [category, setCategory] = useState<MarketplaceCategory | 'all'>(restoredState.category)
   const [loading, setLoading] = useState(true)
   const [stagingId, setStagingId] = useState('')
   const [error, setError] = useState('')
-  const [selectedId, setSelectedId] = useState(focusExtensionId)
+  const [reloadPending, setReloadPending] = useState(false)
+  const [notice] = useState(restoredState.notice || '')
+  const [selectedId, setSelectedId] = useState(focusExtensionId || restoredState.selectedId)
   const detailRef = useRef<HTMLElement>(null)
 
   const load = useCallback(async () => {
@@ -40,12 +66,39 @@ export const ExtensionMarketplace = ({ installed, candidateActive, onCandidate, 
   const selected = extensions.find((extension) => extension.id === selectedId)
 
   useEffect(() => { if (selected) detailRef.current?.focus() }, [selected])
+  useEffect(() => { saveMarketplaceState({ query, category, selectedId, scrollY: window.scrollY }) }, [category, query, selectedId])
+  useEffect(() => {
+    if (loading || !restoredState.scrollY) return
+    const frame = window.requestAnimationFrame(() => window.scrollTo({ top: restoredState.scrollY, behavior: 'auto' }))
+    return () => window.cancelAnimationFrame(frame)
+  }, [loading, restoredState.scrollY])
 
-  const stage = async (extension: MarketplaceExtension) => {
+  const install = async (extension: MarketplaceExtension) => {
     if (!bridge) return
-    setStagingId(extension.id); setError('')
-    try { onCandidate(await bridge.stageMarketplaceExtension(extension.id, extension.release.version)) }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not download that marketplace extension.') }
+    let token = ''
+    let installedSuccessfully = false
+    setStagingId(extension.id); setError(''); setReloadPending(false)
+    try {
+      const candidate = await bridge.stageMarketplaceExtension(extension.id, extension.release.version)
+      token = candidate.token
+      await flushPendingSaves()
+      await bridge.installExtension(token)
+      installedSuccessfully = true
+      saveMarketplaceState({ query, category, selectedId: extension.id, scrollY: window.scrollY, notice: `${extension.name} is installed and ready.` })
+      await bridge.reloadForExtensions()
+    } catch (reason) {
+      if (token && !installedSuccessfully) await bridge.discardExtension(token).catch(() => undefined)
+      setReloadPending(installedSuccessfully)
+      setError(reason instanceof Error ? reason.message : installedSuccessfully ? 'The extension was installed, but Neo Anki could not reload.' : 'Could not install that marketplace extension.')
+    }
+    finally { setStagingId('') }
+  }
+
+  const retryReload = async () => {
+    if (!bridge) return
+    setError(''); setStagingId(selectedId || 'reload')
+    try { await flushPendingSaves(); await bridge.reloadForExtensions() }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Neo Anki could not reload.'); setReloadPending(true) }
     finally { setStagingId('') }
   }
 
@@ -57,7 +110,8 @@ export const ExtensionMarketplace = ({ installed, candidateActive, onCandidate, 
       <label><span className="sr-only">Marketplace category</span><select value={category} onChange={event => setCategory(event.target.value as MarketplaceCategory | 'all')}><option value="all">All categories</option>{marketplaceCategories.map(value => <option value={value} key={value}>{categoryLabels[value]}</option>)}</select></label>
     </div>
     {loading && <p className="marketplace-state" role="status"><RefreshCw className="spin" size={16}/> Loading approved extensions…</p>}
-    {error && <div className="marketplace-state error" role="status" aria-live="polite"><span>{error}</span><button className="text-button" onClick={() => void load()}>Retry</button></div>}
+    {notice && <p className="inline-message" role="status">{notice}</p>}
+    {error && <div className="marketplace-state error" role="alert" aria-live="assertive"><span>{error}</span><button className="text-button" onClick={() => void (reloadPending ? retryReload() : load())}>{reloadPending ? 'Reload now' : 'Retry'}</button></div>}
     {!loading && !error && !extensions.length && <div className="marketplace-state empty"><strong>No production extensions are approved yet.</strong><span>The catalog is ready for its first publisher submission.</span><a href={`${MARKETPLACE_REPOSITORY_URL}/pulls`} target="_blank" rel="noopener noreferrer">Submit through GitHub <ExternalLink size={13}/></a></div>}
     {!loading && !error && extensions.length > 0 && !visible.length && <p className="marketplace-state empty" role="status">No extensions match that search and category.</p>}
     {selected && <section ref={detailRef} tabIndex={-1} className="marketplace-detail" aria-labelledby="marketplace-detail-title">
@@ -67,7 +121,7 @@ export const ExtensionMarketplace = ({ installed, candidateActive, onCandidate, 
       <div className="marketplace-tags">{selected.categories.map((value) => <span key={value}>{categoryLabels[value]}</span>)}</div>
       <div><strong className="permission-title">Requested capabilities</strong><div className="extension-permissions">{selected.release.permissions.length ? selected.release.permissions.map((permission) => <span className="permission-chip" key={permission}>{permission}</span>) : <span className="permission-chip">No contributed capabilities</span>}</div></div>
       <div className="marketplace-release-notes"><strong>Changelog</strong><p>Review the signed release notes and source changes before updating.</p><a href={`${selected.repository}/releases/tag/v${selected.release.version}`} target="_blank" rel="noopener noreferrer">Open release notes <ExternalLink size={13}/></a></div>
-      <div className="marketplace-detail-actions">{bridge && <button className="primary-button" disabled={candidateActive || Boolean(stagingId) || installedVersions.has(selected.id) && compareMarketplaceVersions(selected.release.version, installedVersions.get(selected.id)!) <= 0} onClick={() => void stage(selected)}><Download size={16}/>{stagingId === selected.id ? 'Downloading…' : installedVersions.has(selected.id) ? 'Review update' : 'Review & install'}</button>}<a className="secondary-button" href={selected.repository} target="_blank" rel="noopener noreferrer">Review source <ExternalLink size={15}/></a></div>
+      <div className="marketplace-detail-actions">{bridge && <button className="primary-button" aria-busy={stagingId === selected.id} disabled={candidateActive || Boolean(stagingId) || installedVersions.has(selected.id) && compareMarketplaceVersions(selected.release.version, installedVersions.get(selected.id)!) <= 0} onClick={() => void install(selected)}>{stagingId === selected.id ? <RefreshCw className="spin" size={16}/> : <Download size={16}/>} {stagingId === selected.id ? 'Installing…' : installedVersions.has(selected.id) ? compareMarketplaceVersions(selected.release.version, installedVersions.get(selected.id)!) > 0 ? 'Update' : 'Installed' : 'Install'}</button>}<a className="secondary-button" href={selected.repository} target="_blank" rel="noopener noreferrer">Review source <ExternalLink size={15}/></a></div>
     </section>}
     <div className="marketplace-grid">
       {visible.map(extension => {
@@ -80,7 +134,7 @@ export const ExtensionMarketplace = ({ installed, candidateActive, onCandidate, 
           <div className="marketplace-tags">{extension.categories.map(value => <span key={value}>{categoryLabels[value]}</span>)}</div>
           <div className="marketplace-card-meta"><span>{extension.release.permissions.length} {extension.release.permissions.length === 1 ? 'capability' : 'capabilities'}</span><span>{extension.license}</span>{source && <a href={source} target="_blank" rel="noopener noreferrer">Source <ExternalLink size={12}/></a>}</div>
           <button className="secondary-button" onClick={() => setSelectedId(extension.id)}>View details <ChevronRight size={16}/></button>
-          {bridge && <small className="marketplace-desktop-note">{update ? `Update available from v${installedVersion}` : installedVersion ? 'Installed' : 'Review details before installing'}</small>}
+          {bridge && <small className="marketplace-desktop-note">{update ? `Update available from v${installedVersion}` : installedVersion ? 'Installed' : 'View details to install'}</small>}
         </article>
       })}
     </div>

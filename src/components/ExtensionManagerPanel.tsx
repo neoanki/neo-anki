@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, ExternalLink, PackagePlus, Puzzle, RefreshCw, Settings2, ShieldCheck, Trash2 } from 'lucide-react'
+import { AlertTriangle, Check, ExternalLink, PackagePlus, Puzzle, Settings2, ShieldCheck, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import type { AnyExtensionPermission } from '../../packages/extension-sdk/src/index'
 import { extensionRuntime } from '../extensions/runtime'
@@ -6,6 +6,7 @@ import { safeExternalUrl } from '../lib/urls'
 import { ExtensionMarketplace } from './ExtensionMarketplace'
 import { extensionUiContributionsV2 } from '../extensions/v2/registry'
 import { ExtensionUiFrameV2 } from '../extensions/v2/ExtensionUiFrameV2'
+import { flushPendingSaves } from '../lib/storage'
 
 const permissionLabels: Record<string, string> = {
   'study:read': 'Read a scoped study projection',
@@ -38,27 +39,34 @@ const ManifestSummary = ({ manifest, addedPermissions = [] }: { manifest: { name
 )
 
 type ExtensionHubView = 'browse' | 'installed' | 'configure'
+const EXTENSION_HUB_STATE_KEY = 'neo-anki:extensions-hub:v1'
+const loadHubState = (): { view: ExtensionHubView; configurationId: string; notice?: string } => {
+  try {
+    const parsed = JSON.parse(window.sessionStorage.getItem(EXTENSION_HUB_STATE_KEY) || 'null') as { view?: unknown; configurationId?: unknown; notice?: unknown } | null
+    return { view: parsed?.view === 'installed' || parsed?.view === 'configure' ? parsed.view : 'browse', configurationId: typeof parsed?.configurationId === 'string' ? parsed.configurationId : '', ...(typeof parsed?.notice === 'string' ? { notice: parsed.notice } : {}) }
+  } catch { return { view: 'browse', configurationId: '' } }
+}
+const saveHubState = (state: { view: ExtensionHubView; configurationId: string; notice?: string }) => {
+  try { window.sessionStorage.setItem(EXTENSION_HUB_STATE_KEY, JSON.stringify(state)) } catch { /* Reload still works when session state is unavailable. */ }
+}
 
-export const ExtensionManagerPanel = ({ fullPage = false, focusExtensionId = '' }: { fullPage?: boolean; focusExtensionId?: string }) => {
+export const ExtensionManagerPanel = ({ fullPage = false, focusExtensionId = '', openConfigurationId = '' }: { fullPage?: boolean; focusExtensionId?: string; openConfigurationId?: string }) => {
   const bridge = window.neoAnkiDesktop
+  const [restoredHubState] = useState(loadHubState)
   const safeMode = new URLSearchParams(window.location.search).get('safe-mode') === '1'
   const [installed, setInstalled] = useState<NeoAnkiInstalledExtension[]>([])
   const [candidate, setCandidate] = useState<NeoAnkiExtensionCandidate | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
-  const [reloadRequired, setReloadRequired] = useState(false)
-  const [view, setView] = useState<ExtensionHubView>('browse')
-  const [configurationId, setConfigurationId] = useState('')
+  const [message, setMessage] = useState(restoredHubState.notice || '')
+  const [view, setView] = useState<ExtensionHubView>(openConfigurationId ? 'configure' : fullPage ? restoredHubState.view : 'browse')
+  const [configurationId, setConfigurationId] = useState(openConfigurationId || restoredHubState.configurationId)
   const [uninstallTarget, setUninstallTarget] = useState<NeoAnkiInstalledExtension | null>(null)
   const diagnostics = extensionRuntime.getDiagnostics()
   const configurable = useMemo(() => extensionUiContributionsV2().filter((entry) => entry.surface === 'settings' || entry.surface === 'migration'), [])
   const selectedConfiguration = configurable.find((entry) => `${entry.extensionId}:${entry.id}` === configurationId) || configurable[0]
 
-  const refresh = async () => {
-    if (!bridge) return
-    setInstalled(await bridge.listExtensions())
-  }
+  useEffect(() => { if (fullPage) saveHubState({ view, configurationId }) }, [configurationId, fullPage, view])
 
   useEffect(() => {
     if (!bridge) return
@@ -87,22 +95,27 @@ export const ExtensionManagerPanel = ({ fullPage = false, focusExtensionId = '' 
   const installCandidate = async () => {
     if (!candidate || !bridge) return
     setBusy(true); setError('')
+    let installedSuccessfully = false
     try {
       await bridge.installExtension(candidate.token)
-      setMessage(`${candidate.manifest.name} ${candidate.currentVersion ? 'updated' : 'installed'}. Reload to activate it.`)
-      setCandidate(null); setReloadRequired(true); await refresh()
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not install that extension.') }
+      installedSuccessfully = true
+      const notice = `${candidate.manifest.name} ${candidate.currentVersion ? 'updated' : 'installed'} and ready.`
+      setCandidate(null); saveHubState({ view, configurationId, notice })
+      await flushPendingSaves(); await bridge.reloadForExtensions()
+    } catch (reason) { setError(reason instanceof Error ? reason.message : installedSuccessfully ? 'The extension was installed, but Neo Anki could not reload.' : 'Could not install that extension.') }
     finally { setBusy(false) }
   }
 
   const toggle = async (record: NeoAnkiInstalledExtension) => {
     if (!bridge) return
     setBusy(true); setError('')
+    let changed = false
     try {
       await bridge.setExtensionEnabled(record.manifest.id, !record.enabled)
-      setMessage(`${record.manifest.name} will be ${record.enabled ? 'disabled' : 'enabled'} after reload.`)
-      setReloadRequired(true); await refresh()
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not change extension state.') }
+      changed = true
+      const notice = `${record.manifest.name} is ${record.enabled ? 'disabled' : 'enabled'}.`
+      saveHubState({ view, configurationId, notice }); await flushPendingSaves(); await bridge.reloadForExtensions()
+    } catch (reason) { setError(reason instanceof Error ? reason.message : changed ? 'The extension state changed, but Neo Anki could not reload.' : 'Could not change extension state.') }
     finally { setBusy(false) }
   }
 
@@ -110,12 +123,14 @@ export const ExtensionManagerPanel = ({ fullPage = false, focusExtensionId = '' 
     if (!bridge) return
     const hasSecrets = record.manifest.permissions.includes('secrets:device')
     setBusy(true); setError('')
+    let removed = false
     try {
       await bridge.uninstallExtension(record.manifest.id, deleteSecrets)
-      setMessage(`${record.manifest.name} was uninstalled${hasSecrets ? deleteSecrets ? '; its device-local credentials were deleted' : '; its device-local credentials were retained' : ''}. Reload to finish.`)
+      removed = true
+      const notice = `${record.manifest.name} was uninstalled${hasSecrets ? deleteSecrets ? '; its device-local credentials were deleted' : '; its device-local credentials were retained' : ''}.`
       setUninstallTarget(null)
-      setReloadRequired(true); await refresh()
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not uninstall that extension.') }
+      saveHubState({ view, configurationId, notice }); await flushPendingSaves(); await bridge.reloadForExtensions()
+    } catch (reason) { setError(reason instanceof Error ? reason.message : removed ? 'The extension was removed, but Neo Anki could not reload.' : 'Could not uninstall that extension.') }
     finally { setBusy(false) }
   }
 
@@ -132,7 +147,7 @@ export const ExtensionManagerPanel = ({ fullPage = false, focusExtensionId = '' 
     {safeMode && <div className="extension-reload" role="status"><span><ShieldCheck size={17}/><span><strong>Safe mode is active</strong><small>Locally installed extensions were skipped for this launch.</small></span></span><button className="secondary-button compact" onClick={() => { window.location.search = '' }}>Restart normally</button></div>}
 
     {(!fullPage || view === 'browse') && !bridge && <p className="extension-browser-note">Browse on this device, then <a href="https://github.com/neoanki/neo-anki/releases/latest" target="_blank" rel="noopener noreferrer">get Neo Anki desktop</a> to install packages and run extension workers. The PWA keeps core study available but cannot activate desktop extensions.</p>}
-    {(!fullPage || view === 'browse') && <ExtensionMarketplace installed={installed} candidateActive={Boolean(candidate)} onCandidate={setCandidate} focusExtensionId={focusExtensionId}/>}
+    {(!fullPage || view === 'browse') && <ExtensionMarketplace installed={installed} candidateActive={Boolean(candidate)} focusExtensionId={focusExtensionId}/>}
 
     {(!fullPage || view === 'browse') && bridge && <button className="secondary-button extension-install-button" disabled={busy || Boolean(candidate)} onClick={choosePackage}><PackagePlus size={18} /> {busy ? 'Reading package…' : 'Install from file…'}</button>}
 
@@ -147,7 +162,6 @@ export const ExtensionManagerPanel = ({ fullPage = false, focusExtensionId = '' 
       <div className="button-row extension-review-actions"><button className="secondary-button" disabled={busy} onClick={() => void cancelCandidate()}>Cancel</button><button className="primary-button" disabled={busy} onClick={() => void installCandidate()}><Check size={17}/> {candidate.currentVersion ? candidate.isDowngrade ? 'Downgrade' : 'Update' : 'Install extension'}</button></div>
     </section>}
 
-    {reloadRequired && <div className="extension-reload" role="status"><span><RefreshCw size={17}/><span><strong>Reload required</strong><small>Finish applying extension changes.</small></span></span><button className="secondary-button compact" onClick={() => void bridge?.reloadForExtensions()}>Reload now</button></div>}
     {error && <p className="extension-error" role="alert">{error} Try the package again or verify it with the SDK CLI.</p>}
     {message && <p className="inline-message" role="status">{message}</p>}
 
