@@ -112,7 +112,14 @@ export class WorkspaceStore {
     this.statusValue = { path: this.dbPath, recoveredFromBackup: opened.recovered, recoveryError: opened.error, recoverySourcePath: opened.recoverySourcePath, migratedLegacyData: false }
     this.configure()
     this.initializeSchema()
-    this.statusValue.migratedLegacyData = this.migrateLegacyJsonIfNeeded()
+    if (!this.statusValue.recoveryError) {
+      try { this.statusValue.migratedLegacyData = this.migrateLegacyJsonIfNeeded() }
+      catch (error) {
+        const legacyPath = join(this.userDataRoot, LEGACY_FILE)
+        this.statusValue.recoveryError = `The legacy workspace could not be migrated. The original JSON was preserved. ${error instanceof Error ? error.message : ''}`.trim()
+        this.statusValue.recoverySourcePath = existsSync(legacyPath) ? legacyPath : undefined
+      }
+    }
   }
 
   private openRecoverableDatabase(): { db: DatabaseSync; recovered: boolean; error?: string; recoverySourcePath?: string } {
@@ -135,20 +142,14 @@ export class WorkspaceStore {
         renameSync(this.dbPath, recoverySourcePath)
       }
       const automatic = this.automaticBackupPathsSync()
-      const rejected: string[] = []
-      for (const candidate of automatic) {
-        try {
-          copyFileSync(candidate, this.dbPath)
-          const recovered = openAndCheck()
-          if (!this.loadFromDatabase(recovered)) { recovered.close(); throw new Error('Backup has no workspace.') }
-          return { db: recovered, recovered: true, error: rejected.length ? `${rejected.length} newer automatic backup${rejected.length === 1 ? '' : 's'} failed validation before recovery.` : undefined, recoverySourcePath }
-        } catch (error) { rejected.push(error instanceof Error ? error.message : 'Unknown backup error.') }
-      }
+      // Never replace a damaged workspace silently. Even a valid backup can be
+      // older than the source and therefore discard newer knowledge. Recovery
+      // remains blocked until the user explicitly exports, restores, or resets.
       rmSync(this.dbPath, { force: true })
       return {
         db: new DatabaseSync(this.dbPath),
         recovered: false,
-        error: `The workspace database could not be opened${automatic.length ? ` or recovered from ${automatic.length} automatic backup${automatic.length === 1 ? '' : 's'}` : ''}. The damaged file was preserved. ${initialError instanceof Error ? initialError.message : ''}`.trim(),
+        error: `The workspace database could not be opened. The damaged file was preserved.${automatic.length ? ` ${automatic.length} automatic backup${automatic.length === 1 ? ' is' : 's are'} available for explicit restore.` : ''} ${initialError instanceof Error ? initialError.message : ''}`.trim(),
         recoverySourcePath,
       }
     }
@@ -706,6 +707,9 @@ export class WorkspaceStore {
     } finally { this.db.exec('DETACH DATABASE restore_source') }
     // Full parsing catches semantic corruption that SQLite's integrity check cannot see.
     this.load()
+    this.statusValue.recoveryError = undefined
+    this.statusValue.recoverySourcePath = undefined
+    this.statusValue.recoveredFromBackup = true
   }
 
   private automaticBackupPathsSync() {
@@ -718,7 +722,7 @@ export class WorkspaceStore {
   async createAutomaticBackup(reason = 'auto') {
     if (!this.hasWorkspace()) return null
     const now = new Date()
-    const destination = join(this.backupRoot, `auto-${localDateKey(now)}-${now.toISOString().replace(/[:.]/g, '-')}-${reason}.neoanki-backup`)
+    const destination = join(this.backupRoot, `auto-${localDateKey(now)}-${now.toISOString().replace(/[:.]/g, '-')}-${reason}-${randomUUID()}.neoanki-backup`)
     await this.exportBackup(destination)
     const entries = (await readdir(this.backupRoot)).filter((name) => /^auto-.*\.neoanki-backup$/.test(name)).sort().reverse()
     await Promise.all(entries.slice(MAX_AUTOMATIC_BACKUPS).map((name) => rm(join(this.backupRoot, name), { force: true })))
@@ -763,17 +767,17 @@ export class WorkspaceStore {
     try { syncDirectory(root) } catch { /* Directory fsync is unavailable on some platforms. */ }
   }
 
-  async maybeCreateDailyBackup() {
-    const latest = this.automaticBackupPathsSync()[0]
-    if (latest) {
-      const stamp = basename(latest).slice(5, 15)
-      if (stamp === localDateKey(new Date())) return null
-    }
-    return this.createAutomaticBackup()
+  async createRollingBackup() { return this.createAutomaticBackup() }
+
+  suggestedBackupRestorePath() {
+    return this.automaticBackupPathsSync()[0] || this.backupRoot
   }
 
   clear() {
     this.transaction(() => this.db.exec('DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; DELETE FROM assets; DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM workspace_meta; DELETE FROM workspace_v4; DELETE FROM patch_receipts;'))
+    this.statusValue.recoveryError = undefined
+    this.statusValue.recoverySourcePath = undefined
+    this.statusValue.recoveredFromBackup = false
   }
 
   close() { this.db.close() }

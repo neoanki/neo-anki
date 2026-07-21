@@ -1,10 +1,14 @@
 # Install Neo Anki on macOS
 
-Neo Anki's macOS release artifacts are currently unsigned and not notarized. Developer ID signing and notarization are optional future improvements, not release or CI requirements.
+Neo Anki's supported macOS release artifacts are Developer ID signed and notarized. macOS should open them without an unidentified-developer or malware-verification override.
+
+Version 0.4.2 and older macOS artifacts are legacy unsigned builds and do not satisfy this policy. Wait for a newer signed release instead of bypassing Gatekeeper.
 
 1. Open the [latest release](https://github.com/neoanki/neo-anki/releases/latest) and download the macOS DMG.
 2. Open the DMG and drag Neo Anki to Applications.
-3. Control-click Neo Anki, choose **Open**, then confirm **Open** when macOS shows the unidentified-developer warning.
+3. Open Neo Anki from Applications.
+
+If macOS says it cannot verify Neo Anki, stop. That artifact does not satisfy the current release policy; do not bypass Gatekeeper. Report the version and filename on the issue tracker and use a newer signed release when available.
 
 Neo Anki stores its desktop workspace under `~/Library/Application Support/Neo Anki/` and keeps automatic recovery backups beside it. Installing a newer release preserves that directory; removing the application does not erase it.
 

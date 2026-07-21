@@ -1,8 +1,18 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const installedArtifactTests = [
+  /installed-core-audit\.spec\.ts/,
+  /released-artifacts\.desktop\.spec\.ts/,
+  /release-acceptance\.spec\.ts/,
+  /blackbox-ux\.spec\.ts/,
+]
+
 export default defineConfig({
   testDir: './e2e',
-  testIgnore: /desktop\.spec\.ts/,
+  testIgnore: [
+    /desktop\.spec\.ts/,
+    ...installedArtifactTests,
+  ],
   fullyParallel: true,
   retries: 1,
   reporter: [['list'], ['html', { open: 'never' }]],
@@ -13,8 +23,8 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'firefox', use: { ...devices['Desktop Firefox'] }, testIgnore: [/desktop\.spec\.ts/, /mobile\.spec\.ts/] },
-    { name: 'webkit', use: { ...devices['Desktop Safari'] }, testIgnore: [/desktop\.spec\.ts/, /mobile\.spec\.ts/] },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] }, testIgnore: [/desktop\.spec\.ts/, /mobile\.spec\.ts/, ...installedArtifactTests] },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] }, testIgnore: [/desktop\.spec\.ts/, /mobile\.spec\.ts/, ...installedArtifactTests] },
     { name: 'mobile', use: { ...devices['iPhone 13'] }, testMatch: /mobile\.spec\.ts/ },
   ],
   webServer: {

@@ -9,6 +9,8 @@ export const useModalDialog = <T extends HTMLElement = HTMLElement>(onClose: () 
     if (options.dirty && !window.confirm(options.dirtyMessage || 'Discard unsaved changes?')) return
     onClose()
   }, [onClose, options.dirty, options.dirtyMessage])
+  const requestCloseRef = useRef(requestClose)
+  useEffect(() => { requestCloseRef.current = requestClose }, [requestClose])
 
   useEffect(() => {
     returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -19,7 +21,7 @@ export const useModalDialog = <T extends HTMLElement = HTMLElement>(onClose: () 
     const first = dialog.querySelector<HTMLElement>('[data-autofocus], input, textarea, select, button:not([aria-label^="Close"])')
     window.requestAnimationFrame(() => (first || dialog).focus())
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { event.preventDefault(); requestClose(); return }
+      if (event.key === 'Escape') { event.preventDefault(); requestCloseRef.current(); return }
       if (event.key !== 'Tab') return
       const controls = [...dialog.querySelectorAll<HTMLElement>(focusable)].filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true')
       if (!controls.length) { event.preventDefault(); dialog.focus(); return }
@@ -34,7 +36,7 @@ export const useModalDialog = <T extends HTMLElement = HTMLElement>(onClose: () 
       document.body.style.overflow = previousOverflow
       window.requestAnimationFrame(() => returnFocus.current?.focus())
     }
-  }, [requestClose])
+  }, [])
 
   const onBackdropMouseDown = (event: React.MouseEvent<HTMLElement>) => { if (event.target === event.currentTarget) requestClose() }
   return [dialogRef, requestClose, onBackdropMouseDown] as const

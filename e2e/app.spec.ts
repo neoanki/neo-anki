@@ -52,6 +52,31 @@ test('creates core forward prompts without optional extensions', async ({ page }
   await expect(created.getByRole('button', { name: 'Basic' })).toBeVisible()
 })
 
+test('preserves an unfinished knowledge draft across an automatic reload', async ({ page }) => {
+  await startWith(page)
+  await page.getByRole('button', { name: /new item/i }).click()
+  await page.getByLabel('Prompt', { exact: true }).fill('Draft retained across extension reload?')
+  await page.getByLabel('Answer', { exact: true }).fill('Yes, in session-scoped draft storage.')
+  await page.getByLabel('Extra context').fill('Do not lose this context either.')
+  await page.getByLabel('Collection').fill('Reload acceptance')
+  await page.getByLabel('Tags').fill('draft, reload')
+
+  await page.reload()
+
+  await expect(page.getByRole('heading', { name: 'New knowledge' })).toBeVisible()
+  await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('Draft retained across extension reload?')
+  await expect(page.getByLabel('Answer', { exact: true })).toHaveValue('Yes, in session-scoped draft storage.')
+  await expect(page.getByLabel('Extra context')).toHaveValue('Do not lose this context either.')
+  await expect(page.getByLabel('Collection')).toHaveValue('Reload acceptance')
+  await expect(page.getByLabel('Tags')).toHaveValue('draft, reload')
+
+  await page.getByRole('button', { name: 'Add knowledge item' }).click()
+  await expect(page.getByRole('status')).toContainText('safe new-material queue')
+  await page.reload()
+  await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('')
+  await expect(page.getByLabel('Answer', { exact: true })).toHaveValue('')
+})
+
 test('core forward review reveals the answer before grading', async ({ page }) => {
   const data = onboarded()
   data.items = [data.items[0]]

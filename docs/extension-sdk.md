@@ -71,6 +71,8 @@ void createSandboxedUiClient().then(async (client) => {
 
 The frame has `sandbox="allow-scripts"` without `allow-same-origin`, an explicit no-network CSP and a transferred `MessagePort`. It cannot inspect or style the Neo Anki document. UI authors must implement semantic HTML, visible focus, keyboard operation, 16 px default text, AA contrast, reduced-motion behavior and responsive layout inside their frame.
 
+Call `applySandboxedUiAppearanceV1(client.init.appearance)` or use the variables it installs when styling the frame. In particular, use `--neo-on-primary` for text and icons placed on a `--neo-primary` background; dark themes intentionally use a light primary fill with a dark foreground. Frame height is reported from intrinsic body content so a configuration surface can grow and shrink without adding an inner scrollbar.
+
 ## Permissions and host methods
 
 | Permission | Reviewed capability |

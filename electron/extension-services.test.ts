@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { ExtensionServices } from './extension-services.js'
 import type { ExtensionManager } from './extension-manager.js'
 
@@ -65,5 +68,30 @@ describe('extension network mediation', () => {
     await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce())
     services.cancel(token, 'generation-1')
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+  })
+})
+
+describe('extension secret mediation', () => {
+  it('uses an injected disposable protector without calling the system credential backend', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'neoanki-extension-secrets-'))
+    const secretManager = {
+      requireEnabled: vi.fn(async () => ({ schemaVersion: 2, sdkVersion: 2, id: 'org.neoanki.fixture', permissions: ['secrets:device'] })),
+      requirePermission: vi.fn(async () => ({ schemaVersion: 2, sdkVersion: 2, id: 'org.neoanki.fixture', permissions: ['secrets:device'] })),
+    } as unknown as ExtensionManager
+    const protector = {
+      available: vi.fn(() => true),
+      seal: vi.fn((value: string) => new TextEncoder().encode(`test:${value}`)),
+      open: vi.fn((value: Uint8Array) => new TextDecoder().decode(value).slice(5)),
+    }
+    try {
+      const services = new ExtensionServices(userData, secretManager, async () => new Response(), protector)
+      const token = await services.claim('org.neoanki.fixture')
+      await services.mutateSecretBatch(token, [{ op: 'set', key: 'provider.key', value: 'not-a-real-key' }])
+      await expect(services.readSecretBatch(token, ['provider.key'])).resolves.toEqual({ 'provider.key': 'not-a-real-key' })
+      expect(protector.seal).toHaveBeenCalledWith('not-a-real-key')
+      expect(protector.open).toHaveBeenCalledOnce()
+      const stored = await readFile(join(userData, 'extensions', 'data', 'org.neoanki.fixture', 'secrets.json'), 'utf8')
+      expect(stored).not.toContain('not-a-real-key')
+    } finally { await rm(userData, { recursive: true, force: true }) }
   })
 })

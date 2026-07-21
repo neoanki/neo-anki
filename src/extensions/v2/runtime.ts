@@ -13,6 +13,7 @@ const MAX_MESSAGE_BYTES = 512 * 1024 * 1024
 const MAX_PENDING = 100
 const DEFAULT_TIMEOUT_MS = 15_000
 const START_TIMEOUT_MS = 5_000
+const MAX_UI_FRAME_HEIGHT = 24_000
 
 interface WorkerLike {
   postMessage(message: unknown): void
@@ -156,7 +157,9 @@ export const createSandboxedExtensionUiV2 = (manifest: ExtensionManifestV2, cont
   iframe.referrerPolicy = 'no-referrer'
   iframe.className = `extension-ui-frame-v2 extension-ui-frame-v2-${contribution.surface}`
   const escapedEntry = entry.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
-  const frameDocument = `<!doctype html><html data-theme="${init.theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src file: neoanki-extension: blob: http://127.0.0.1:* http://localhost:*; style-src 'unsafe-inline'; img-src data: blob:; media-src blob: neoanki-media:; connect-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'"><style>html,body,#root{margin:0;min-height:0!important;height:auto!important;font:16px/1.5 system-ui,sans-serif}</style></head><body><div id="root"></div><script type="module" src="${escapedEntry}"></script></body></html>`
+  const escapedLocale = init.locale.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  const escapedTitle = `${manifest.name}: ${contribution.label || contributionId}`.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  const frameDocument = `<!doctype html><html lang="${escapedLocale}" data-theme="${init.theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapedTitle}</title><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src file: neoanki-extension: blob: http://127.0.0.1:* http://localhost:*; style-src 'unsafe-inline'; img-src data: blob:; media-src blob: neoanki-media:; connect-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'"><style>html,body,#root{margin:0;min-height:0!important;height:auto!important;font:16px/1.5 system-ui,sans-serif}</style></head><body><div id="root"></div><script type="module" src="${escapedEntry}"></script></body></html>`
   iframe.src = `data:text/html;base64,${btoa(frameDocument)}`
   const channel = new MessageChannel(); channel.port1.start()
   let closed = false
@@ -173,7 +176,7 @@ export const createSandboxedExtensionUiV2 = (manifest: ExtensionManifestV2, cont
       }
       if (message.type === 'event' && message.name === 'resize') {
         const requested = Number((message.payload as { height?: unknown } | undefined)?.height)
-        if (Number.isFinite(requested)) onLifecycle?.({ type: 'resize', height: Math.max(96, Math.min(2400, requested)) })
+        if (Number.isFinite(requested)) onLifecycle?.({ type: 'resize', height: Math.max(96, Math.min(MAX_UI_FRAME_HEIGHT, requested)) })
         return
       }
       if (message.type !== 'host-call' || !message.id || !message.name || !hostCall) return
