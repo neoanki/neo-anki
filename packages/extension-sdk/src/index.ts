@@ -153,11 +153,15 @@ export const applySandboxedUiAppearanceV1 = (appearance: SandboxedUiAppearanceV1
   for (const [name, read] of Object.entries(appearanceVariables)) root.style.setProperty(name, read(appearance))
   root.dataset.neoDensity = appearance.spacing.density
   root.dataset.neoReducedMotion = String(appearance.reducedMotion)
-  root.style.colorScheme = appearance.colors.background.toLowerCase().startsWith('#1') || appearance.colors.background.toLowerCase().startsWith('#2') ? 'dark' : 'light'
+  const hex = appearance.colors.background.trim().match(/^#([\da-f]{3}|[\da-f]{6})$/i)?.[1]
+  const normalized = hex?.length === 3 ? [...hex].map((value) => value + value).join('') : hex
+  const channels = normalized ? [0, 2, 4].map((offset) => Number.parseInt(normalized.slice(offset, offset + 2), 16) / 255) : []
+  const luminance = channels.length === 3 ? channels.map((value) => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index]!, 0) : 1
+  root.style.colorScheme = luminance < .35 ? 'dark' : 'light'
   if (!document.getElementById('neo-anki-extension-base-styles')) {
     const style = document.createElement('style')
     style.id = 'neo-anki-extension-base-styles'
-    style.textContent = `html,body{margin:0;min-height:100%;font:var(--neo-font-size)/var(--neo-line-height) var(--neo-font-family);color:var(--neo-text);background:var(--neo-background)}*{box-sizing:border-box}button,input,textarea,select{font:inherit;color:inherit}button,input,textarea,select{min-height:2.75rem;border:1px solid var(--neo-border-strong);border-radius:var(--neo-radius-sm);background:var(--neo-surface-strong)}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.5}button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid var(--neo-focus);outline-offset:2px}@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}`
+    style.textContent = `html,body{margin:0;min-height:0!important;height:auto!important;font:var(--neo-font-size)/var(--neo-line-height) var(--neo-font-family);color:var(--neo-text);background:var(--neo-background)}*{box-sizing:border-box}button,input,textarea,select{font:inherit;color:inherit}button,input,textarea,select{min-height:2.75rem;border:1px solid var(--neo-border-strong);border-radius:var(--neo-radius-sm);background:var(--neo-surface-strong)}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.5}button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid var(--neo-focus);outline-offset:2px}@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}`
     document.head.append(style)
   }
 }
@@ -213,6 +217,7 @@ export const exposeExtensionWorkerV2 = (extension: NeoAnkiExtensionV2) => {
 export const exposeSandboxedUiV2 = (onInit: (init: SandboxedUiInit, port: MessagePort) => void | Promise<void>) => {
   globalThis.addEventListener('message', (event: MessageEvent<SandboxedUiInit>) => {
     if (event.data?.type !== 'neo-anki:init-ui-v2' || !event.ports[0]) return
+    document.documentElement.dataset.theme = event.data.theme
     if (event.data.appearance) applySandboxedUiAppearanceV1(event.data.appearance)
     const port = event.ports[0]; port.start()
     void Promise.resolve(onInit(event.data, port)).then(() => port.postMessage({ protocol: 2, type: 'ready' } satisfies SandboxedUiMessageV2)).catch((error) => port.postMessage({ protocol: 2, type: 'error', payload: { message: error instanceof Error ? error.message : 'Extension UI failed.' } } satisfies SandboxedUiMessageV2))
@@ -224,6 +229,7 @@ export const createSandboxedUiClientV2 = () => new Promise<SandboxedUiClientV2>(
   globalThis.addEventListener('message', (event: MessageEvent<SandboxedUiInit>) => {
     const init = event.data; const port = event.ports[0]
     if (init?.type !== 'neo-anki:init-ui-v2' || !port) return
+    document.documentElement.dataset.theme = init.theme
     if (init.appearance) applySandboxedUiAppearanceV1(init.appearance)
     const pending = new Map<string, { resolve(value: unknown): void; reject(error: Error): void }>()
     const listeners = new Set<(name: string, payload: unknown) => void>()
@@ -238,6 +244,7 @@ export const createSandboxedUiClientV2 = () => new Promise<SandboxedUiClientV2>(
         } else entry.resolve(message.payload)
       } else if (message.type === 'event' && message.name) {
         if (message.name === 'appearance') applySandboxedUiAppearanceV1(message.payload as SandboxedUiAppearanceV1)
+        if (message.name === 'theme' && (message.payload === 'light' || message.payload === 'dark')) document.documentElement.dataset.theme = message.payload
         for (const listener of listeners) listener(message.name, message.payload)
       }
     }

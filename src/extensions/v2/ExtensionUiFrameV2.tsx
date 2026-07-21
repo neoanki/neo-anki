@@ -17,7 +17,7 @@ const currentAppearance = (): { theme: 'light' | 'dark'; appearance: SandboxedUi
     appearance: {
       version: 1,
       colors: {
-        background: cssValue(styles, '--surface', theme === 'dark' ? '#242320' : '#fbfaf7'),
+        background: cssValue(styles, '--bg', theme === 'dark' ? '#1b1a18' : '#f4f1ea'),
         surface: cssValue(styles, '--surface', theme === 'dark' ? '#242320' : '#fbfaf7'),
         surfaceStrong: cssValue(styles, '--surface-strong', theme === 'dark' ? '#2d2b27' : '#ffffff'),
         surfaceMuted: cssValue(styles, '--surface-muted', theme === 'dark' ? '#33312d' : '#eeebe3'),

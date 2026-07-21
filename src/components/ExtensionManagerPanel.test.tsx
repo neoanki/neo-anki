@@ -21,11 +21,12 @@ const manifest: ExtensionPackageManifest = {
   provenance: { sourceCommit: 'a'.repeat(40), buildSystem: 'fixture' },
 }
 
-afterEach(() => { window.neoAnkiDesktop = undefined })
+afterEach(() => { window.neoAnkiDesktop = undefined; window.sessionStorage.clear() })
 
 describe('extension manager', () => {
-  it('reviews permissions and trust before installing a local package', async () => {
+  it('reviews a local package, installs it, and reloads automatically', async () => {
     const installExtension = vi.fn(async () => ({ manifest, enabled: true, directory: 'fixture', digest: 'a'.repeat(64), installedAt: '', updatedAt: '' }))
+    const reloadForExtensions = vi.fn(async () => undefined)
     window.neoAnkiDesktop = {
       isDesktop: true,
       rendererReady: () => undefined,
@@ -50,7 +51,7 @@ describe('extension manager', () => {
       discardExtension: async () => undefined,
       setExtensionEnabled: async () => undefined,
       uninstallExtension: async () => undefined,
-      reloadForExtensions: async () => undefined,
+      reloadForExtensions,
       claimExtensionCapability: async () => 'token',
       extensionNetworkFetch: async () => ({ status: 200, statusText: 'OK', headers: {}, bodyBase64: '' }),
       syncStatus: async () => ({ configured: false, pendingOperations: 0, conflicts: [] }),
@@ -75,8 +76,8 @@ describe('extension manager', () => {
     expect(within(review).getByText(/valid signature proves package integrity/i)).toBeVisible()
     await userEvent.click(screen.getByRole('button', { name: 'Install extension' }))
     expect(installExtension).toHaveBeenCalledWith('review-token')
-    expect(await screen.findByText(/reload to activate it/i)).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Reload now' })).toBeVisible()
+    expect(reloadForExtensions).toHaveBeenCalledOnce()
+    expect(window.sessionStorage.getItem('neo-anki:extensions-hub:v1')).toContain('Fixture Extension installed and ready.')
   })
 
   it('shows every declared network destination during install review', async () => {
