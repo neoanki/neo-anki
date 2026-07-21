@@ -8,17 +8,35 @@ import { useApp } from '../state/AppContext'
 import type { ExtensionAuthoringActionStatusV1, KnowledgeDraftV1 } from '../../packages/extension-sdk/src/index.js'
 import type { Citation, CreateKnowledgeInput, MediaAsset, OcclusionRect, PromptVariant } from '../types'
 
+interface RetainedCreateDraft {
+  variants: PromptVariant[]
+  prompt: string
+  answer: string
+  context: string
+  collection: string
+  tags: string
+  citations: Array<Omit<Citation, 'id'>>
+  assets: MediaAsset[]
+  occlusions: OcclusionRect[]
+  selectedActions: string[]
+}
+
+let retainedCreateDraft: RetainedCreateDraft | null = null
+const extensionReturnKey = 'neoanki:extensions:return:v1'
+const markExtensionReturnToCreate = () => window.sessionStorage.setItem(extensionReturnKey, JSON.stringify({ route: 'create', createdAt: Date.now() }))
+
 export const CreatePage = () => {
-  const { data, addItem } = useApp()
-  const [variants, setVariants] = useState<PromptVariant[]>(['forward'])
-  const [prompt, setPrompt] = useState('')
-  const [answer, setAnswer] = useState('')
-  const [context, setContext] = useState('')
-  const [collection, setCollection] = useState('')
-  const [tags, setTags] = useState('')
-  const [citations, setCitations] = useState<Array<Omit<Citation, 'id'>>>([{ title: '', url: '' }])
-  const [assets, setAssets] = useState<MediaAsset[]>([])
-  const [occlusions, setOcclusions] = useState<OcclusionRect[]>([])
+  const { data, addItem, navigate } = useApp()
+  const initialDraft = useMemo(() => retainedCreateDraft, [])
+  const [variants, setVariants] = useState<PromptVariant[]>(() => initialDraft?.variants || ['forward'])
+  const [prompt, setPrompt] = useState(() => initialDraft?.prompt || '')
+  const [answer, setAnswer] = useState(() => initialDraft?.answer || '')
+  const [context, setContext] = useState(() => initialDraft?.context || '')
+  const [collection, setCollection] = useState(() => initialDraft?.collection || '')
+  const [tags, setTags] = useState(() => initialDraft?.tags || '')
+  const [citations, setCitations] = useState<Array<Omit<Citation, 'id'>>>(() => initialDraft?.citations || [{ title: '', url: '' }])
+  const [assets, setAssets] = useState<MediaAsset[]>(() => initialDraft?.assets || [])
+  const [occlusions, setOcclusions] = useState<OcclusionRect[]>(() => initialDraft?.occlusions || [])
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const [attempted, setAttempted] = useState(false)
@@ -26,7 +44,7 @@ export const CreatePage = () => {
   const [saveError, setSaveError] = useState('')
   const [actionResultMessage, setActionResultMessage] = useState('')
   const authoringActions = useMemo(() => extensionAuthoringActionsV2(), [])
-  const [selectedActions, setSelectedActions] = useState<Set<string>>(() => new Set(authoringActions.filter((action) => action.defaultSelected).map((action) => `${action.extensionId}:${action.id}`)))
+  const [selectedActions, setSelectedActions] = useState<Set<string>>(() => new Set(initialDraft?.selectedActions || authoringActions.filter((action) => action.defaultSelected).map((action) => `${action.extensionId}:${action.id}`)))
   const [actionStatuses, setActionStatuses] = useState<Map<string, ExtensionAuthoringActionStatusV1>>(new Map())
   const [failedAction, setFailedAction] = useState<{ extensionId: string; actionId: string; itemId: string; idempotencyKey: string; draft: KnowledgeDraftV1 } | null>(null)
   const findings = useMemo(() => prompt.trim() && (promptTouched || attempted) ? analyzeCardHealth(prompt, answer) : [], [prompt, answer, promptTouched, attempted])
@@ -40,6 +58,10 @@ export const CreatePage = () => {
   const draft: KnowledgeDraftV1 = useMemo(() => ({ prompt: prompt.trim(), answer: answer.trim(), context: context.trim(), collection: collection.trim(), tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean), selectedPromptTypes: [...variants], mediaIds: assets.map((asset) => asset.id) }), [answer, assets, collection, context, prompt, tags, variants])
 
   useEffect(() => {
+    retainedCreateDraft = { variants, prompt, answer, context, collection, tags, citations, assets, occlusions, selectedActions: [...selectedActions] }
+  }, [answer, assets, citations, collection, context, occlusions, prompt, selectedActions, tags, variants])
+
+  useEffect(() => {
     let current = true
     const timer = window.setTimeout(() => { void authoringActionStatusesV2(draft).then((statuses) => {
       if (!current) return
@@ -51,14 +73,21 @@ export const CreatePage = () => {
 
   const toggleVariant = (variant: PromptVariant) => setVariants((current) => current.includes(variant) ? current.filter((value) => value !== variant) : [...current, variant])
   const selectPromptType = (id: string) => setVariants((current) => current.includes(id) ? current : [...current, id])
-  const clearDraft = () => { setPrompt(''); setAnswer(''); setContext(''); setTags(''); setAssets([]); setOcclusions([]); setCitations([{ title: '', url: '' }]); setAttempted(false); setPromptTouched(false) }
+  const clearDraft = () => {
+    retainedCreateDraft = null
+    setPrompt(''); setAnswer(''); setContext(''); setTags(''); setAssets([]); setOcclusions([]); setCitations([{ title: '', url: '' }]); setAttempted(false); setPromptTouched(false)
+  }
+  const configureAction = (extensionId: string) => {
+    markExtensionReturnToCreate()
+    navigate(`extensions:${extensionId}`)
+  }
   const retryAuthoringAction = async () => {
     if (!failedAction) return
     setSaving(true); setSaveError('')
     try {
       const result = await executeAuthoringActionV2(failedAction.extensionId, failedAction.actionId, failedAction.itemId, failedAction.idempotencyKey, failedAction.draft)
       if (result && typeof result === 'object' && typeof (result as { message?: unknown }).message === 'string') setActionResultMessage((result as { message: string }).message)
-      setFailedAction(null); setSaved(true); window.setTimeout(() => setSaved(false), 2500)
+      setFailedAction(null); clearDraft(); setSaved(true); window.setTimeout(() => setSaved(false), 2500)
     } catch (error) { setSaveError(`Knowledge saved, but the extension action still failed: ${error instanceof Error ? error.message : 'Try again from the knowledge item.'}`) }
     finally { setSaving(false) }
   }
@@ -88,7 +117,6 @@ export const CreatePage = () => {
       setSaving(false)
       return
     }
-    clearDraft()
     for (const action of authoringActions.filter((candidate) => { const key = `${candidate.extensionId}:${candidate.id}`; return selectedActions.has(key) && actionStatuses.get(key)?.available !== false })) {
       const idempotencyKey = `${itemId}:${action.extensionId}:${action.id}`
       try {
@@ -103,7 +131,7 @@ export const CreatePage = () => {
       }
     }
     setSaving(false)
-    setFailedAction(null); setSaved(true)
+    setFailedAction(null); clearDraft(); setSaved(true)
     window.setTimeout(() => setSaved(false), 2500)
   }
 
@@ -126,10 +154,10 @@ export const CreatePage = () => {
           if (result.selectPromptType) selectPromptType(result.selectPromptType)
         }} />)}
 
-        {authoringActions.length > 0 && <fieldset className="sub-editor authoring-actions"><legend>After adding</legend>{authoringActions.map((action) => { const key = `${action.extensionId}:${action.id}`; const status = actionStatuses.get(key); const unavailable = action.availability === 'status-required' && status?.available !== true; return <label className={`authoring-action${unavailable ? ' disabled' : ''}`} key={key}><input type="checkbox" checked={selectedActions.has(key)} disabled={unavailable} onChange={(event) => setSelectedActions((current) => { const next = new Set(current); if (event.target.checked) next.add(key); else next.delete(key); return next })}/><span><strong>{action.label}</strong>{action.description && <small>{action.description}</small>}{status?.selectionLabel && <small>{status.selectionLabel}</small>}{unavailable && <small>{status?.reason || 'Checking configuration…'}</small>}<small>Provided by {action.extensionName}</small></span></label> })}</fieldset>}
+        {authoringActions.length > 0 && <fieldset className="sub-editor authoring-actions"><legend>After adding</legend>{authoringActions.map((action) => { const key = `${action.extensionId}:${action.id}`; const status = actionStatuses.get(key); const unavailable = action.availability === 'status-required' && status?.available !== true; return <div className={`authoring-action${unavailable ? ' unavailable' : ''}`} key={key}><label><input type="checkbox" checked={selectedActions.has(key)} disabled={unavailable} onChange={(event) => setSelectedActions((current) => { const next = new Set(current); if (event.target.checked) next.add(key); else next.delete(key); return next })}/><span><strong>{action.label}</strong>{action.description && <small>{action.description}</small>}{status?.selectionLabel && <small>{status.selectionLabel}</small>}{unavailable && <small className="authoring-action-reason">{status?.reason || 'Checking configuration…'}</small>}<small>Provided by {action.extensionName}</small></span></label>{unavailable && action.configurationDestination && <button type="button" className="secondary-button compact" onClick={() => configureAction(action.extensionId)}>Set up {action.extensionName}</button>}</div> })}</fieldset>}
 
         {saveError && <div className="inline-message error" role="alert"><span>{saveError}</span>{failedAction && <button type="button" className="text-button" disabled={saving} onClick={() => void retryAuthoringAction()}>Retry extension action</button>}</div>}
-        <div className="editor-footer"><p><Sparkles size={17}/> New practice prompts enter only when the time forecast has room.</p><button className="primary-button" type="submit" disabled={saving || !prompt.trim() || !answer.trim() || !variants.length}><Plus size={19}/> {saving ? 'Adding…' : selectedActions.size && authoringActions.some((action) => { const key = `${action.extensionId}:${action.id}`; return selectedActions.has(key) && actionStatuses.get(key)?.available !== false && /audio/i.test(action.label) }) ? 'Add knowledge & generate audio' : 'Add knowledge item'}</button></div>
+        <div className="editor-footer"><p><Sparkles size={17}/> New practice prompts enter only when the time forecast has room.</p><button className="primary-button" type="submit" disabled={saving || Boolean(failedAction) || !prompt.trim() || !answer.trim() || !variants.length}><Plus size={19}/> {saving ? 'Adding…' : selectedActions.size && authoringActions.some((action) => { const key = `${action.extensionId}:${action.id}`; return selectedActions.has(key) && actionStatuses.get(key)?.available !== false && /audio/i.test(action.label) }) ? 'Add knowledge & generate audio' : 'Add knowledge item'}</button></div>
         {saved && <div className="save-toast" role="status"><Check size={18}/> {actionResultMessage || 'Added to your safe new-material queue.'}</div>}
       </form>
       <aside className="create-preview"><div className="preview-heading"><span><Eye size={18}/> Live preview</span><span>{variants.length} practice prompt{variants.length === 1 ? '' : 's'}</span></div><div className="mini-review-card"><p>Prompt</p><h2>{(clozeSelected ? prompt.replace(/{{c\d+::(.*?)(?:::.*?)?}}/g, '[ … ]') : prompt) || 'Your prompt will appear here.'}</h2>{answer && <div className="preview-answer"><p>Answer</p><strong>{answer}</strong></div>}</div><div className="health-card"><div><Sparkles size={18}/><strong>Prompt health</strong></div>{!prompt.trim() && <p>Start writing to get local quality checks.</p>}{prompt.trim() && !promptTouched && !attempted && <p>Quality checks appear after you finish editing the prompt.</p>}{prompt.trim() && (promptTouched || attempted) && findings.length === 0 && <p className="healthy"><Check size={16}/> Clear and appropriately sized.</p>}{findings.map((finding) => <p key={finding.code}>{finding.message} <small>{finding.suggestion}</small></p>)}{prompt.trim() && (promptTouched || attempted) && duplicates.length > 0 && <p>Possible duplicate: “{duplicates[0].prompt}”</p>}</div></aside>
