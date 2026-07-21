@@ -43,9 +43,10 @@ export const observeRuntimeFailures = (page: Page) => {
 export const stopElectron = async (application: ElectronApplication | undefined) => {
   if (!application) return
   const child = application.process()
-  if (child.exitCode !== null) return
+  if (child.exitCode !== null || child.signalCode !== null) return
+  const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()))
   child.kill('SIGKILL')
-  await new Promise<void>((resolve) => child.once('exit', () => resolve()))
+  await Promise.race([exited, new Promise<void>((resolve) => setTimeout(resolve, 5_000))])
 }
 
 export interface QaEvidenceManifest {

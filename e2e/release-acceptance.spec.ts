@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { sha256File, writeQaEvidence } from './support/qa'
+import { sha256File, stopElectron, writeQaEvidence } from './support/qa'
 
 const executablePath = process.env.NEO_ANKI_RELEASE_APP || ''
 const ttsPackage = process.env.NEO_ANKI_RELEASE_TTS_PACKAGE || ''
@@ -43,14 +43,6 @@ const readyWindow = async (application: ElectronApplication) => {
     return false
   }, { timeout: 30_000, intervals: [100, 250, 500, 1_000] }).toBe(true)
   return ready!
-}
-
-const stop = async (application: ElectronApplication | undefined) => {
-  if (!application) return
-  const process = application.process()
-  if (process.exitCode !== null) return
-  process.kill('SIGKILL')
-  await new Promise<void>((resolve) => process.once('exit', () => resolve()))
 }
 
 const observeRendererFailures = (page: Page) => {
@@ -152,7 +144,7 @@ test('released app completes and persists the clean core journey', async () => {
     await captureScreenshotEvidence(page, 'core-review-complete.png')
     expect(failures).toEqual([])
 
-    await stop(application)
+    await stopElectron(application)
     application = await launch(userData)
     page = await readyWindow(application)
     const restartFailures = observeRendererFailures(page)
@@ -172,7 +164,7 @@ test('released app completes and persists the clean core journey', async () => {
       runtimeFailures: [...failures, ...restartFailures],
     })
   } finally {
-    await stop(application)
+    await stopElectron(application)
     await rm(userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 })
   }
 })
@@ -216,7 +208,7 @@ test('released TTS package exposes setup from authoring without losing the draft
       runtimeFailures: failures,
     })
   } finally {
-    await stop(application)
+    await stopElectron(application)
     await rm(userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 })
   }
 })
