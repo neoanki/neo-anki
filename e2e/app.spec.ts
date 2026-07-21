@@ -37,36 +37,28 @@ test('daily time changes the automatically planned workload', async ({ page }) =
   expect(count(sixty)).toBeGreaterThan(count(ten))
 })
 
-test('creates typed and image-occlusion prompts from the visual builder', async ({ page }) => {
+test('creates core forward prompts without optional extensions', async ({ page }) => {
   await startWith(page)
   await page.getByRole('button', { name: /new item/i }).click()
-  await page.getByRole('button', { name: 'Typed answer' }).click()
-  await page.getByLabel('Prompt or cloze sentence').fill('What shape is highlighted?')
-  await page.getByLabel('Answer').fill('A square')
-  await page.locator('input[type=file][accept="image/*,audio/*"]').setInputFiles({ name: 'diagram.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100"><rect width="200" height="100" fill="white"/><rect x="60" y="20" width="60" height="60" fill="blue"/></svg>') })
-  const stage = page.getByRole('button', { name: 'Choose first mask corner' })
-  await stage.click({ position: { x: 45, y: 20 } })
-  await page.getByRole('button', { name: 'Choose second mask corner' }).click({ position: { x: 125, y: 80 } })
-  await expect(page.getByLabel('Mask 1 label')).toBeVisible()
-  await page.getByLabel('Mask 1 label').fill('Blue square')
+  await page.getByLabel('Prompt or cloze sentence').fill('What is the stable core prompt?')
+  await page.getByLabel('Answer').fill('Forward recall')
   await page.getByRole('button', { name: /add knowledge/i }).click()
   await expect(page.getByRole('status')).toContainText('safe new-material queue')
   await page.getByRole('button', { name: 'Library' }).first().click()
-  await expect(page.getByText('What shape is highlighted?')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'typed' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'image-occlusion' })).toBeVisible()
+  const created = page.locator('.library-row').filter({ hasText: 'What is the stable core prompt?' })
+  await expect(created).toBeVisible()
+  await expect(created.getByRole('button', { name: 'forward' })).toBeVisible()
 })
 
-test('typed review compares the answer before grading', async ({ page }) => {
+test('core forward review reveals the answer before grading', async ({ page }) => {
   const data = onboarded()
   data.items = [data.items[0]]
-  data.cards = [{ ...data.cards[0], itemId: data.items[0].id, variant: 'typed' }]
+  data.cards = [{ ...data.cards[0], itemId: data.items[0].id, variant: 'forward' }]
   data.reviews = []
   await startWith(page, data)
   await page.locator('button.study-button').click()
-  await page.getByLabel('Type your answer').fill(data.items[0].answer)
-  await page.getByRole('button', { name: /check answer/i }).click()
-  await expect(page.getByText('Exact match')).toBeVisible()
+  await page.getByRole('button', { name: /reveal answer/i }).click()
+  await expect(page.getByText(data.items[0].answer, { exact: true })).toBeVisible()
   await page.locator('button.grade-button.recalled').click()
   await expect(page.getByRole('heading', { name: /enough for this session/i })).toBeVisible()
 })
@@ -164,23 +156,11 @@ test('switches unrelated categories at an explicit block boundary', async ({ pag
   await expect(page.getByRole('button', { name: /begin (spanish|japanese)/i })).toBeVisible()
 })
 
-test('goals, saved views, and pack updates are manageable', async ({ page }) => {
+test('browser shell keeps extracted workspace tools out of core', async ({ page }) => {
   await startWith(page)
   await page.getByRole('button', { name: 'Plans' }).first().click()
-  await page.getByLabel('Name').fill('Spanish exam')
-  await page.getByLabel(/search terms/i).fill('spanish')
-  await page.getByRole('button', { name: 'Add' }).click()
-  await expect(page.getByText('Spanish exam')).toBeVisible()
-  await page.getByRole('tab', { name: /saved views/i }).click()
-  await page.getByLabel('Name').fill('Only Spanish')
-  await page.getByLabel(/search terms/i).fill('spanish')
-  await page.getByRole('button', { name: 'Add' }).click()
-  await expect(page.getByText('Only Spanish')).toBeVisible()
-  await page.getByRole('tab', { name: /shared packs/i }).click()
-  const manifest = { format: 'neo-anki-pack', schemaVersion: 1, id: 'demo', name: 'Demo pack', description: '', author: 'Neo', version: '1.0.0', license: 'CC0', items: [{ sourceId: 'one', prompt: 'Pack prompt?', answer: 'Pack answer', context: '', collection: 'Demo', tags: [] }] }
-  await page.locator('input[type=file][accept="application/json"]').setInputFiles({ name: 'pack.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(manifest)) })
-  await expect(page.getByText('Demo pack')).toBeVisible()
-  await expect(page.getByRole('status')).toContainText('scheduling was preserved')
+  await expect(page.getByRole('heading', { name: 'No workspace tools installed' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: /saved views|shared packs/i })).toHaveCount(0)
 })
 
 test('settings presents only isolated SDK 2 packages as extensions', async ({ page }) => {
@@ -192,11 +172,11 @@ test('settings presents only isolated SDK 2 packages as extensions', async ({ pa
   await expect(page.getByText('Built-in modules', { exact: true })).toHaveCount(0)
 })
 
-test('malformed migration failures are announced as errors without changing the workspace', async ({ page }) => {
+test('browser settings directs migration to installable extensions', async ({ page }) => {
   await startWith(page)
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await page.locator('input[type=file][accept=".json,.csv,.apkg,.colpkg"]').setInputFiles({ name: 'broken.apkg', mimeType: 'application/zip', buffer: Buffer.from('not a complete package') })
-  await expect(page.getByRole('alert')).toContainText(/complete ZIP package/i)
+  await expect(page.locator('input[type=file][accept*=".apkg"]')).toHaveCount(0)
+  await expect(page.getByText(/installable package/i)).toBeVisible()
   await page.getByRole('button', { name: 'Close settings' }).click()
   await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible()
 })

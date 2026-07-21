@@ -15,7 +15,7 @@ import type { WorkspacePatchV2 } from '../packages/compatibility-domain/src/inde
 const APP_SCHEME = 'neoanki'
 const EXTENSION_SCHEME = 'neoanki-extension'
 const MEDIA_SCHEME = 'neoanki-media'
-const EXTENSION_WORKER_LOCKDOWN = ';(()=>{for(const name of ["fetch","XMLHttpRequest","WebSocket","EventSource","WebTransport","RTCPeerConnection","Worker","SharedWorker","BroadcastChannel","indexedDB","caches","importScripts"]){try{Object.defineProperty(globalThis,name,{value:undefined,writable:false,configurable:false})}catch{try{globalThis[name]=undefined}catch{}}}})();\n'
+const EXTENSION_WORKER_LOCKDOWN = ';(()=>{const fatal=(event)=>{try{postMessage({protocol:2,type:"fatal",message:String(event?.message||event?.reason?.message||event?.reason||"Extension worker failed during startup.").slice(0,500)})}catch{}};addEventListener("error",fatal);addEventListener("unhandledrejection",fatal);for(const name of ["fetch","XMLHttpRequest","WebSocket","EventSource","WebTransport","RTCPeerConnection","Worker","SharedWorker","BroadcastChannel","indexedDB","caches","importScripts"]){try{Object.defineProperty(globalThis,name,{value:undefined,writable:false,configurable:false})}catch{try{globalThis[name]=undefined}catch{}}}})();\n'
 const devServerUrl = process.env.VITE_DEV_SERVER_URL
 const hideWindowForE2E = process.env.NEO_ANKI_E2E_HEADLESS === '1'
 const rendererStartupTimeoutMs = process.env.NEO_ANKI_STARTUP_TIMEOUT_MS ? Math.max(500, Number(process.env.NEO_ANKI_STARTUP_TIMEOUT_MS) || 12_000) : 12_000
@@ -397,7 +397,7 @@ const registerAppProtocol = () => {
         const source = await extensionManager.readWorkerEntry(id, entry, digest)
         return new Response(Buffer.concat([Buffer.from(EXTENSION_WORKER_LOCKDOWN), Buffer.from(source)]), { headers: {
           'Content-Type': 'text/javascript; charset=utf-8',
-          'Content-Security-Policy': "default-src 'none'; script-src 'none'; connect-src 'none'; worker-src 'none'; child-src 'none'; object-src 'none'; base-uri 'none'",
+          'Content-Security-Policy': "default-src 'none'; script-src 'wasm-unsafe-eval'; connect-src 'none'; worker-src 'none'; child-src 'none'; object-src 'none'; base-uri 'none'",
           'Cache-Control': 'no-store',
           'X-Content-Type-Options': 'nosniff',
         } })

@@ -57,7 +57,7 @@ export class ExtensionWorkerRuntimeV2 {
   private pending = new Map<string, { resolve(value: WorkerContributionResponse): void; reject(error: Error): void; timeout: number }>()
   private closed = false
 
-  constructor(readonly manifest: ExtensionManifestV2, workerUrl: string, private readonly host: ExtensionHostV2, factory: WorkerFactory = (url) => new Worker(url, { type: 'module', name: `neo-anki:${manifest.id}` })) {
+  constructor(readonly manifest: ExtensionManifestV2, workerUrl: string, private readonly host: ExtensionHostV2, factory: WorkerFactory = (url) => new Worker(url, { name: `neo-anki:${manifest.id}` })) {
     if (manifest.schemaVersion !== 2 || manifest.sdkVersion !== 2) throw new Error('SDK v2 runtime requires a schema-v2 manifest.')
     this.worker = factory(safeUrl(workerUrl))
     this.ready = new Promise<void>((resolve, reject) => { this.readyResolve = resolve; this.readyReject = reject })
@@ -67,6 +67,7 @@ export class ExtensionWorkerRuntimeV2 {
         bounded(event.data)
         const message = event.data
         if (!message || message.protocol !== 2) throw new Error('Extension sent an invalid protocol message.')
+        if ((message as unknown as { type?: string }).type === 'fatal') throw new Error(`Extension worker ${manifest.id} failed: ${String((message as unknown as { message?: string }).message || 'unknown startup error')}`)
         if (message.type === 'ready') {
           if (message.extensionId !== manifest.id) throw new Error('Worker identity does not match its reviewed manifest.')
           window.clearTimeout(startup); this.readyResolve(); return
@@ -75,7 +76,7 @@ export class ExtensionWorkerRuntimeV2 {
         if (message.type === 'response') this.handleResponse(message.response)
       } catch (error) { this.fail(error instanceof Error ? error : new Error('Extension protocol failed.')) }
     })
-    const crashed = () => this.fail(new Error(`Extension worker ${manifest.id} crashed.`))
+    const crashed = (event: Event) => { const message = (event as ErrorEvent).message; this.fail(new Error(`Extension worker ${manifest.id} crashed${message ? `: ${message}` : '.'}`)) }
     this.worker.addEventListener('error', crashed); this.worker.addEventListener('messageerror', crashed)
   }
 

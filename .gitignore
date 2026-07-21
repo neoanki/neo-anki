@@ -15,3 +15,4 @@ vite.config.d.ts
 .neo-anki-test-data
 .expo/
 examples/study-pulse-extension/build/
+test-extensions/

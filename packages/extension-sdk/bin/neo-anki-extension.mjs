@@ -38,7 +38,7 @@ const compile = async () => {
   const files = {}
   for (const entry of project.entries) {
     const result = await build({
-      entryPoints: [entry.source], bundle: true, format: 'esm', platform: 'browser', target: 'es2022', jsx: 'automatic', minify: false, sourcemap: false,
+      entryPoints: [entry.source], bundle: true, format: 'esm', platform: 'browser', target: 'es2022', jsx: 'automatic', minify: false, sourcemap: false, loader: { '.wasm': 'dataurl' },
       plugins: [browserNodeShimPlugin],
       outfile: basename(entry.packagePath), write: false, logLevel: 'silent',
     })

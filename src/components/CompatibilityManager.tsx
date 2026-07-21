@@ -56,7 +56,9 @@ export const CompatibilityManager = () => {
 
   const chooseDeck = (source: WorkspaceDocumentV4, id: string) => {
     setDeckId(id)
-    setDeck(structuredClone(source.workspace.decks.find((value) => value.id === id) || null))
+    const selected = source.workspace.decks.find((value) => value.id === id) || null
+    setDeck(structuredClone(selected))
+    if (selected) choosePreset(source, selected.presetId)
   }
 
   useEffect(() => {
