@@ -57,7 +57,7 @@ export class ExtensionWorkerRuntimeV2 {
   private pending = new Map<string, { resolve(value: WorkerContributionResponse): void; reject(error: Error): void; timeout: number }>()
   private closed = false
 
-  constructor(readonly manifest: ExtensionManifestV2, workerUrl: string, private readonly host: ExtensionHostV2, factory: WorkerFactory = (url) => new Worker(url, { name: `neo-anki:${manifest.id}` })) {
+  constructor(readonly manifest: ExtensionManifestV2, workerUrl: string, private readonly host: ExtensionHostV2, factory: WorkerFactory = (url) => new Worker(url, { type: 'module', name: `neo-anki:${manifest.id}` })) {
     if (manifest.schemaVersion !== 2 || manifest.sdkVersion !== 2) throw new Error('SDK v2 runtime requires a schema-v2 manifest.')
     this.worker = factory(safeUrl(workerUrl))
     this.ready = new Promise<void>((resolve, reject) => { this.readyResolve = resolve; this.readyReject = reject })

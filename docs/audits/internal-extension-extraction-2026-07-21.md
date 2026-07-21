@@ -7,13 +7,13 @@ The bundled-module inventory contained eight entries. All eight now live in dedi
 | Former bundled module | Result | Repository / next stable seam |
 | --- | --- | --- |
 | Card Timer | Extracted and marketplace-listed | [`neoanki/neoanki-card-timer`](https://github.com/neoanki/neoanki-card-timer) · `config:sync`, `ui:settings`, `ui:review` |
-| Memory Insights | Extracted and marketplace-listed with a narrower read-only collection view | [`neoanki/neoanki-insights`](https://github.com/neoanki/neoanki-insights) · `content:read`, `ui:page`; add a privacy-reviewed aggregate-history API before restoring historical recall charts |
-| Prompt Types | Extracted and marketplace-listed | [`neoanki/neoanki-prompt-types`](https://github.com/neoanki/neoanki-prompt-types) · manifest-declared `study:prompt-types`; core keeps only the basic forward fallback |
+| Collection Insights | Extracted and marketplace-listed with a narrower read-only collection view | [`neoanki/neoanki-insights`](https://github.com/neoanki/neoanki-insights) · `content:read`, `ui:page`; add a privacy-reviewed aggregate-history API before restoring historical recall charts |
+| More Card Types | Extracted and marketplace-listed | [`neoanki/neoanki-prompt-types`](https://github.com/neoanki/neoanki-prompt-types) · manifest-declared `study:prompt-types`; core keeps only the basic forward fallback |
 | Image Occlusion | Extracted and marketplace-listed | [`neoanki/neoanki-image-occlusion`](https://github.com/neoanki/neoanki-image-occlusion) · `study:prompt-types`, `ui:create`; opaque-origin, keyboard-operable authoring UI |
-| Anki & CSV Interoperability | Extracted; commit authority remains core | [`neoanki/neoanki-interoperability`](https://github.com/neoanki/neoanki-interoperability) · `content:migrate`, `ui:migration`; core validates, checkpoints, and atomically commits |
-| Recovery Policies | Extracted and marketplace-listed | [`neoanki/neoanki-recovery-policies`](https://github.com/neoanki/neoanki-recovery-policies) · bounded `study:queue-policies`; core keeps eligibility and budget invariants |
-| Goals & Saved Views | Extracted and marketplace-listed | [`neoanki/neoanki-workspace`](https://github.com/neoanki/neoanki-workspace) · `study:signals`, `config:sync`, `ui:workspace` |
-| Shared Packs | Extracted and marketplace-listed | [`neoanki/neoanki-shared-packs`](https://github.com/neoanki/neoanki-shared-packs) · strict pack schemas, owner-scoped atomic patches, field-level three-way merge, preserved conflicts, `ui:workspace` |
+| Anki & CSV Import/Export | Extracted; commit authority remains core | [`neoanki/neoanki-interoperability`](https://github.com/neoanki/neoanki-interoperability) · `content:migrate`, `ui:migration`; core validates, checkpoints, and atomically commits |
+| Review Priorities | Extracted and marketplace-listed | [`neoanki/neoanki-recovery-policies`](https://github.com/neoanki/neoanki-recovery-policies) · bounded `study:queue-policies`; core keeps eligibility and budget invariants |
+| Goals & Saved Searches | Extracted and marketplace-listed | [`neoanki/neoanki-workspace`](https://github.com/neoanki/neoanki-workspace) · `study:signals`, `config:sync`, `ui:workspace` |
+| Learning Packs | Extracted and marketplace-listed | [`neoanki/neoanki-shared-packs`](https://github.com/neoanki/neoanki-shared-packs) · strict pack schemas, owner-scoped atomic patches, field-level three-way merge, preserved conflicts, `ui:workspace` |
 
 Each extracted repository preserves subtree history from its former core directory, has repository-scoped signing credentials, and releases independently from the host.
 
@@ -28,7 +28,7 @@ The internal registry no longer exists. New optional features must target SDK 2 
 | Candidate | Recommendation | Reason / prerequisite |
 | --- | --- | --- |
 | Appearance packs and review decorations | Extract next | Can fit sandboxed UI and synchronized config; require semantic theme tokens and reduced-motion rules. |
-| Alternative queue policies | Extract with Recovery Policies | High optionality and low data authority once the scoring DTO exists. |
+| Alternative queue policies | Extract with Review Priorities | High optionality and low data authority once the scoring DTO exists. |
 | OCR, PDF extraction, web clipping | Extension-only | Optional heavyweight parsing/network dependencies should not enter core; use media creation plus owner-scoped patches. |
 | External knowledge connectors | Extension-only | Network destinations, credentials, and privacy disclosures belong in reviewed manifests. |
 | Optional import/export formats | Extension-only after migration broker | Parsing dependencies can release independently while core retains preflight and atomic commit authority. |

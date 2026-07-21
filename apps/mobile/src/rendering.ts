@@ -18,7 +18,7 @@ export const cachedTtsAudioHtml = (document: WorkspaceDocumentV4, noteId: string
     if (track.side !== side || !assetId || seen.has(assetId) || !assets.has(assetId) || !urls.has(assetId)) continue
     seen.add(assetId); controls.push(`<div class="tts-track"><small>${escapeHtml(provider)} TTS</small><audio controls preload="metadata" aria-label="Play ${escapeHtml(provider)} TTS audio"><source src="${escapeHtml(urls.get(assetId)!)}"></audio></div>`)
   }
-  return controls.length ? `<section class="tts-audio" aria-label="Cached NeoAnki TTS audio">${controls.join('')}</section>` : ''
+  return controls.length ? `<section class="tts-audio" aria-label="Saved Text to Speech audio">${controls.join('')}</section>` : ''
 }
 
 export const buildMobileCardRendering = async (database: MobileDatabase, document: WorkspaceDocumentV4, card: Card): Promise<MobileCardRendering> => {

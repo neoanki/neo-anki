@@ -28,6 +28,17 @@ class FakeWorker {
 }
 
 describe('SDK v2 isolated runtimes', () => {
+  it('launches compiled extension workers as ES modules', () => {
+    const worker = new FakeWorker()
+    const WorkerMock = vi.fn(function WorkerConstructor() { return worker })
+    vi.stubGlobal('Worker', WorkerMock)
+    const runtime = new ExtensionWorkerRuntimeV2(manifest(), 'blob:https://neoanki.test/module-worker', host())
+    worker.emit({ protocol: 2, type: 'ready', extensionId: manifest().id })
+    expect(WorkerMock).toHaveBeenCalledWith('blob:https://neoanki.test/module-worker', { type: 'module', name: `neo-anki:${manifest().id}` })
+    runtime.close()
+    vi.unstubAllGlobals()
+  })
+
   it('executes bounded worker contributions and rejects malformed signals', async () => {
     const worker = new FakeWorker(); const runtime = new ExtensionWorkerRuntimeV2(manifest(), 'blob:https://neoanki.test/worker', host(), () => worker as never)
     worker.emit({ protocol: 2, type: 'ready', extensionId: manifest().id })

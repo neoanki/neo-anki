@@ -19,7 +19,7 @@ Three directly reproduced failures make the current state unsuitable for release
 2. Two rapid overlapping autosaves can conflict on an already-inserted review and silently leave the later review unpersisted.
 3. Deleting a reviewed item fails the Workspace v4 invariant because Trash removes its cards but retains reviews that must reference live cards.
 
-The same split model propagates into sync, extensions, shared packs, mobile, import/export, and analytics. Fixing isolated screens before resolving authority and transaction semantics will create more compatibility code and more data-loss paths. The first stabilization milestone should therefore establish one lossless domain authority and one serialized persistence command path.
+The same split model propagates into sync, extensions, learning packs, mobile, import/export, and analytics. Fixing individual screens before resolving authority and transaction semantics will create more compatibility code and more data-loss paths. The first stabilization milestone should therefore establish one lossless domain authority and one serialized persistence command path.
 
 ### Release blockers at a glance
 
@@ -50,11 +50,11 @@ The same split model propagates into sync, extensions, shared packs, mobile, imp
 - Web and Electron application code under `src/` and `electron/`
 - Native Expo client under `apps/mobile/`
 - Workspace compatibility domain, renderer, extension SDK, sync protocol/client/service packages
-- Built-in trusted modules, Shared Packs, Browser Tab Sync, and the bundled Study Pulse SDK 2 example
+- Built-in trusted modules, Learning Packs, Browser Tab Sync, and the bundled Study Pulse SDK 2 example
 - Anki current/legacy import, export, source retention, and oracle tests
 - Persistence, sync, security boundaries, accessibility, usability, performance, pedagogy, tests, CI, release, and documentation
 
-The separately maintained NeoAnki TTS repository was not present in this workspace and was **not re-audited**. Its historical assessment remains in the earlier audit, but its current code and compatibility cannot be asserted here. “Extensions” in this report means the extension platform and extensions/modules present in this repository.
+The separately maintained Text to Speech repository was not present in this workspace and was **not re-audited**. Its historical assessment remains in the earlier audit, but its current code and compatibility cannot be asserted here. “Extensions” in this report means the extension platform and extensions/modules present in this repository.
 
 ### Method
 
@@ -499,7 +499,7 @@ These tests should be added first and must fail against the audited state where 
 | Delete/restore conflicts | Multi-device offline permutations converge and restoration is expressible |
 | Extension lifecycle | Install, capability call, reload, crash, re-enable, update, rollback, and uninstall |
 | Extension patch replay | Same idempotency key across concurrent delivery and process restart applies once |
-| Shared packs | Reviewed content deletion/conflict/restore and multi-ordinal cloze remain valid |
+| Learning Packs | Reviewed content deletion/conflict/restore and multi-ordinal cloze remain valid |
 | Mobile persistence | Local edits + foreground sync + process death + full disk never silently regress document version |
 | Repeat Anki import | Exact, content-modified, schedule-modified, media-modified, and repacked sources update rather than duplicate |
 | Large Anki import | Bounded memory/disk, cancellation, predictable preflight rejection, oracle verification |

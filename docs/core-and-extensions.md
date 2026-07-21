@@ -14,7 +14,7 @@ The kernel is intended to own the invariants whose failure could corrupt a works
 - Extension package review, signatures, lifecycle recovery, capability issuance, bounded host services and safe mode.
 - Encrypted sync protocol application, conflict presentation and explicit resolution.
 
-There is no internal optional-feature registry. Prompt Types, Image Occlusion, Anki & CSV Interoperability, Recovery Policies, Goals & Saved Views, Shared Packs, Memory Insights, and Card Timer all ship only as independently released, signed SDK 2 packages. The former Browser Tab Sync experiment was removed because whole-document last-writer merging could not preserve Workspace v4 deletion and graph invariants.
+There is no internal optional-feature registry. More Card Types, Image Occlusion, Anki & CSV Import/Export, Review Priorities, Goals & Saved Searches, Learning Packs, Collection Insights, Card Timer, and Text to Speech all ship as independently released, signed SDK 2 packages. The former Browser Tab Sync experiment was removed because whole-document last-writer merging could not preserve Workspace v4 deletion and graph invariants.
 
 ## Installable SDK 2 packages
 

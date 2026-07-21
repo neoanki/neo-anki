@@ -31,6 +31,6 @@ Marketplace discovery uses the public `neoanki/extensions` catalog, but the rend
 
 SDK v2 non-UI logic is not loaded as a package URL or blob under the renderer’s ordinary CSP. The main process serves the exact reviewed worker entry through `neoanki://app/__extension-worker.js` with a no-network CSP and a lockdown prelude that removes ambient fetch, sockets, storage, nested workers and realtime APIs. SDK v2 UI uses opaque-origin `sandbox="allow-scripts"` frames with `connect-src 'none'`; data and effects cross bounded message channels only.
 
-Core contains no trusted optional-feature registry. Prompt types, image occlusion, Anki/CSV interoperability, recovery policies, goals/views, shared packs, Card Timer, and Memory Insights all cross the same signed SDK 2 package boundary as third-party extensions.
+Core contains no trusted optional-feature registry. More Card Types, Image Occlusion, Anki & CSV Import/Export, Review Priorities, Goals & Saved Searches, Learning Packs, Card Timer, Collection Insights, and Text to Speech all cross the same signed SDK 2 package boundary as third-party extensions.
 
 The main process independently watches renderer startup. If extension loading prevents the renderer from reporting ready, Neo Anki destroys only the failed window and opens a fresh safe-mode window without locally installed extensions. The database and main process remain open, the incident is recorded in the privacy-limited diagnostic log, and Settings lets the user restart normally after disabling or removing the package.

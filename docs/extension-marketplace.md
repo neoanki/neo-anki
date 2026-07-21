@@ -2,7 +2,7 @@
 
 NeoAnki apps discover extensions from the review-gated [`neoanki/extensions`](https://github.com/neoanki/extensions) repository. Its `main` branch is the approved catalog and the stable application endpoint is `https://raw.githubusercontent.com/neoanki/extensions/main/catalog.json`.
 
-As of July 21, 2026, the catalog includes nine independently released packages: Card Timer, Image Occlusion, Memory Insights, Anki & CSV Interoperability, Prompt Types, Recovery Policies, Shared Packs, NeoAnki TTS, and Goals & Saved Views. Neo Anki desktop v0.3.0 includes marketplace discovery and the install runtime. Browser and mobile discovery is browse-only.
+As of July 21, 2026, the catalog includes nine independently released packages: Card Timer, Collection Insights, Text to Speech, More Card Types, Image Occlusion, Anki & CSV Import/Export, Review Priorities, Goals & Saved Searches, and Learning Packs. Neo Anki desktop includes marketplace discovery and installation. Browser and mobile discovery is browse-only.
 
 ## Approval mechanism
 
