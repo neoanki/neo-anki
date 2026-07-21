@@ -19,12 +19,14 @@ const navigateWithVisiblePrimaryButton = async (page: Parameters<typeof test>[0]
 
 test('onboarding establishes a daily time contract', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: /what are you bringing/i })).toBeVisible()
-  await page.getByRole('button', { name: /create a fresh workspace/i }).click()
+  await expect(page.getByRole('heading', { name: /how would you like to begin/i })).toBeVisible()
+  await page.getByRole('button', { name: /start fresh/i }).click()
   await expect(page.getByRole('heading', { name: /how much time can learning reliably have/i })).toBeVisible()
   await page.getByRole('button', { name: /45 minutes/i }).click()
-  await page.getByRole('button', { name: /build my first plan/i }).click()
-  await expect(page.getByRole('heading', { name: /45 min available/i })).toBeVisible()
+  await page.getByRole('button', { name: /create workspace/i }).click()
+  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /add something you want to remember/i })).toBeVisible()
+  await expect(page.getByLabel('Daily target')).toHaveValue('45')
 })
 
 test('daily time changes the automatically planned workload', async ({ page }) => {
@@ -33,21 +35,21 @@ test('daily time changes the automatically planned workload', async ({ page }) =
   const ten = await page.locator('.study-launcher-copy').textContent()
   await page.getByLabel('Daily target').selectOption('60')
   const sixty = await page.locator('.study-launcher-copy').textContent()
-  const count = (text: string | null) => Number(text?.match(/(\d+) new prompts/)?.[1] || 0)
+  const count = (text: string | null) => Number(text?.match(/(\d+) new practice prompts?/)?.[1] || 0)
   expect(count(sixty)).toBeGreaterThan(count(ten))
 })
 
 test('creates core forward prompts without optional extensions', async ({ page }) => {
   await startWith(page)
   await page.getByRole('button', { name: /new item/i }).click()
-  await page.getByLabel('Prompt or cloze sentence').fill('What is the stable core prompt?')
+  await page.getByLabel('Prompt').fill('What is the stable core prompt?')
   await page.getByLabel('Answer').fill('Forward recall')
   await page.getByRole('button', { name: /add knowledge/i }).click()
   await expect(page.getByRole('status')).toContainText('safe new-material queue')
   await page.getByRole('button', { name: 'Library' }).first().click()
   const created = page.locator('.library-row').filter({ hasText: 'What is the stable core prompt?' })
   await expect(created).toBeVisible()
-  await expect(created.getByRole('button', { name: 'forward' })).toBeVisible()
+  await expect(created.getByRole('button', { name: 'Basic' })).toBeVisible()
 })
 
 test('core forward review reveals the answer before grading', async ({ page }) => {
@@ -102,7 +104,7 @@ test('large libraries render in bounded accessible pages', async ({ page }) => {
   await startWith(page, data)
   await page.getByRole('button', { name: 'Library' }).first().click()
   await expect(page.locator('.library-list article')).toHaveCount(100)
-  await expect(page.getByText('Showing 100 of 205 matching notes.')).toBeVisible()
+  await expect(page.getByText('Showing 100 of 205 matching knowledge items.')).toBeVisible()
   await page.getByRole('button', { name: 'Show 100 more' }).click()
   await expect(page.locator('.library-list article')).toHaveCount(200)
   await page.getByRole('button', { name: 'Show 5 more' }).click()
@@ -145,7 +147,7 @@ test('switches unrelated categories at an explicit block boundary', async ({ pag
   data.items = data.items.filter((item) => itemIds.has(item.id)).map((item, index) => ({ ...item, collection: index < 3 ? 'Spanish' : 'Japanese' }))
   await startWith(page, data)
   const firstBlockText = await page.locator('.block-preview-row').first().textContent()
-  const firstBlockCount = Number(firstBlockText?.match(/(\d+) prompts/)?.[1] || 0)
+  const firstBlockCount = Number(firstBlockText?.match(/(\d+) practice prompts?/)?.[1] || 0)
   expect(firstBlockCount).toBeGreaterThan(0)
   await page.locator('button.study-button').click()
   for (let index = 0; index < firstBlockCount; index += 1) {
@@ -158,27 +160,32 @@ test('switches unrelated categories at an explicit block boundary', async ({ pag
 
 test('browser shell keeps extracted workspace tools out of core', async ({ page }) => {
   await startWith(page)
-  await page.getByRole('button', { name: 'Plans' }).first().click()
-  await expect(page.getByRole('heading', { name: 'No workspace tools installed' })).toBeVisible()
-  await expect(page.getByRole('tab', { name: /saved searches|learning packs/i })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Plans' })).toHaveCount(0)
+  await navigateWithVisiblePrimaryButton(page, 'Extensions')
+  await expect(page.getByRole('heading', { name: 'Extensions' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Configure 0' })).toBeVisible()
 })
 
-test('settings presents only isolated SDK 2 packages as extensions', async ({ page }) => {
+test('extensions are managed outside core settings', async ({ page }) => {
   await startWith(page)
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await expect(page.getByText('Extensions', { exact: true })).toBeVisible()
-  await expect(page.getByText(/every extension shown here is a signed, installable package/i)).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: /browse|installed|configure/i })).toHaveCount(0)
   await expect(page.locator('.extension-row')).toHaveCount(0)
-  await expect(page.getByText('Built-in modules', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Close settings' }).click()
+  await navigateWithVisiblePrimaryButton(page, 'Extensions')
+  await expect(page.getByRole('tab', { name: 'Browse' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: /installed 0/i })).toBeVisible()
 })
 
-test('browser settings directs migration to installable extensions', async ({ page }) => {
+test('browser directs migration to the full-screen extensions hub', async ({ page }) => {
   await startWith(page)
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await expect(page.locator('input[type=file][accept*=".apkg"]')).toHaveCount(0)
-  await expect(page.getByText(/installable package/i)).toBeVisible()
   await page.getByRole('button', { name: 'Close settings' }).click()
-  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible()
+  await navigateWithVisiblePrimaryButton(page, 'Extensions')
+  await expect(page.getByRole('heading', { name: 'Extensions' })).toBeVisible()
+  await expect(page.getByText(/get Neo Anki desktop/i)).toBeVisible()
 })
 
 test('production shell is accessible and cached for offline use', async ({ page, context, browserName }) => {

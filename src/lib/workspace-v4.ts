@@ -206,10 +206,10 @@ export const refreshWorkspaceDocumentV4FromProjection = (data: AppData, previous
     workspace.noteTypes.push(neoType)
   }
   const envelopeById = new Map(workspace.sourceEnvelopes.map((value) => [value.id, value]))
-  const syncLegacy = (entity: { id: string; sourceEnvelopeId?: string }, legacy: Record<string, unknown>) => {
+  const syncLegacy = (entity: { id: string; profileId?: string; sourceEnvelopeId?: string }, legacy: Record<string, unknown>) => {
     let envelope = entity.sourceEnvelopeId ? envelopeById.get(entity.sourceEnvelopeId) : undefined
     if (!envelope) {
-      envelope = { id: `source:neo-v3:${entity.id}`, revision: 1, createdAt: now, updatedAt: now, profileId: profile.id, format: 'neo-v3', sourceId: entity.id, schemaVersion: '3', opaque: { legacy: structuredClone(legacy) } }
+      envelope = { id: `source:neo-v3:${entity.id}`, revision: 1, createdAt: now, updatedAt: now, profileId: entity.profileId || profile.id, format: 'neo-v3', sourceId: entity.id, schemaVersion: '3', opaque: { legacy: structuredClone(legacy) } }
       while (envelopeById.has(envelope.id)) envelope.id = `source:neo-v3:${entity.id}:${crypto.randomUUID()}`
       workspace.sourceEnvelopes.push(envelope)
       envelopeById.set(envelope.id, envelope)
@@ -237,13 +237,15 @@ export const refreshWorkspaceDocumentV4FromProjection = (data: AppData, previous
     }
     return false
   }
-  const decksByName = new Map(workspace.decks.filter((value) => value.profileId === profile.id).map((value) => [value.name, value]))
-  const deckFor = (name: string) => {
-    let deck = decksByName.get(name)
+  const decksByProfileAndName = new Map(workspace.decks.map((value) => [`${value.profileId}\u0000${value.name}`, value]))
+  const deckFor = (name: string, profileId = profile.id) => {
+    const key = `${profileId}\u0000${name}`
+    let deck = decksByProfileAndName.get(key)
     if (!deck) {
-      deck = { id: `deck:neo:${crypto.randomUUID()}`, revision: 1, createdAt: now, updatedAt: now, profileId: profile.id, name, presetId: preset!.id }
+      const profilePreset = workspace.presets.find((value) => value.profileId === profileId) || preset!
+      deck = { id: `deck:neo:${crypto.randomUUID()}`, revision: 1, createdAt: now, updatedAt: now, profileId, name, presetId: profilePreset.id }
       workspace.decks.push(deck)
-      decksByName.set(name, deck)
+      decksByProfileAndName.set(key, deck)
     }
     return deck
   }
@@ -305,7 +307,7 @@ export const refreshWorkspaceDocumentV4FromProjection = (data: AppData, previous
     }
     const updateCard = () => {
       entity!.noteId = item.id
-      const cardDeck = deckFor(card.deckName || item.collection)
+      const cardDeck = deckFor(card.deckName || item.collection, entity!.profileId)
       entity!.deckId = cardDeck.id
       entity!.presetId = cardDeck.presetId
       entity!.suspended = card.suspended

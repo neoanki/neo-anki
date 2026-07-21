@@ -2,7 +2,7 @@
 
 A TypeScript-first, device-first desktop spaced-repetition app that plans learning around a daily time budget instead of a fixed new-card quota.
 
-> **Pre-1.0 status:** Neo Anki is an actively developed preview, not a drop-in Anki replacement. Desktop v0.3.1 is published; browser hosting, mobile stores, and hosted sync still have additional release gates. Check the notes attached to a published release for the behavior in its binaries, and keep independent backups of important collections.
+> **Pre-1.0 status:** Neo Anki is an actively developed preview, not a drop-in Anki replacement. Desktop v0.4.0 is published; browser hosting, mobile stores, and hosted sync still have additional release gates. Check the notes attached to a published release for the behavior in its binaries, and keep independent backups of important collections.
 
 ## Current source-tree capabilities
 
@@ -17,7 +17,7 @@ A TypeScript-first, device-first desktop spaced-repetition app that plans learni
 - Electron desktop application with integrated macOS window chrome, native menus and shortcuts, a study queue and card browser, canonical Workspace v4 SQLite persistence, content-addressed media, serialized saves, recovery backups, native backup restore/export, and light/dark themes. See the [claim evidence register](docs/claim-evidence.md) for the tested durability boundary.
 - Every optional feature formerly under the internal extension registry now ships from its own public repository as an independently released, signed SDK 2 package; none are compiled into the renderer bundle.
 - Installable `.neoanki-extension` packages use SDK 2 exclusively. Packages are signed, logic runs in workers, UI runs in sandboxed iframes, and schema/SDK 1 packages are rejected before installation. Lifecycle tests cover reload, disable/re-enable, update, rollback, uninstall, cancellation, and recovery.
-- Desktop v0.3.1 includes the public review-gated [extension marketplace](docs/extension-marketplace.md), with nine independently released packages. Web and mobile can browse the same catalog; only desktop has an install runtime.
+- Desktop v0.4.0 includes the public review-gated [extension marketplace](docs/extension-marketplace.md), with nine independently released packages. Web and mobile can browse the same catalog; only desktop has an install runtime.
 - An offline-capable browser client and an Expo/React Native iOS and Android client share Workspace v4, FSRS, and encrypted-sync packages. These are source capabilities, not claims of hosted-service readiness, real-device validation, or application-store availability.
 - Main-process startup recovery that automatically reopens without local extensions if a package blocks renderer readiness.
 
@@ -25,7 +25,17 @@ The implemented boundary is documented in [docs/core-and-extensions.md](docs/cor
 
 Maintainers should follow [docs/releasing.md](docs/releasing.md) for release checksums, SBOMs, provenance attestations, manual updates, platform warnings, and rollback.
 
-## Run the desktop app
+## Install the desktop app
+
+Download the current macOS, Windows, or Linux build from the [latest GitHub release](https://github.com/neoanki/neo-anki/releases/latest). Follow the short platform guide for installation and unsigned-build warnings:
+
+- [macOS](docs/install-macos.md)
+- [Windows](docs/install-windows.md)
+- [Linux](docs/install-linux.md)
+
+On first launch, **Start fresh** creates an empty local workspace. Add your first knowledge item from Today, or open Extensions to install import, prompt-type, audio, planning, and sharing features. Keep an independent backup of important collections while Neo Anki remains pre-1.0.
+
+## Develop the desktop app
 
 ```bash
 npm install

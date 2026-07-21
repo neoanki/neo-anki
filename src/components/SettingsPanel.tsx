@@ -2,11 +2,8 @@ import { ArchiveRestore, Bug, Database, Download, Moon, RotateCcw, Sun, Trash2, 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useApp } from '../state/AppContext'
 import { downloadBackup, getStorageStatus, parseBackup } from '../lib/storage'
-import { ExtensionManagerPanel } from './ExtensionManagerPanel'
 import { UpdatePanel } from './UpdatePanel'
 import { useModalDialog } from './useModalDialog'
-import { extensionUiContributionsV2 } from '../extensions/v2/registry'
-import { ExtensionUiFrameV2 } from '../extensions/v2/ExtensionUiFrameV2'
 import { CompatibilityManager } from './CompatibilityManager'
 import { SyncPanel } from './SyncPanel'
 
@@ -24,8 +21,6 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
   const [recoveryFiles, setRecoveryFiles] = useState<MigrationRecoveryFile[]>([])
   const [busyAction, setBusyAction] = useState<'backup' | 'restore' | 'diagnostics' | 'import' | ''>('')
   const storage = getStorageStatus()
-  const isolatedSettingsPanels = extensionUiContributionsV2('settings')
-  const isolatedMigrationPanels = extensionUiContributionsV2('migration')
   const [dialogRef, requestClose, onBackdropMouseDown] = useModalDialog(onClose)
   const showMessage = (text: string, error = false) => { setMessage(text); setMessageIsError(error) }
   const loadRecoveryFiles = useCallback(async () => await window.neoAnkiDesktop?.listMigrationRecoveryFiles?.() || [], [])
@@ -135,8 +130,8 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
 
         <div className="setting-block">
           <strong>Learning safeguards</strong>
-          <p>Separate sibling prompts and flag repeatedly lapsed cards for repair instead of silently turning poor prompts into endless workload.</p>
-          <label className="check-row"><input aria-label="Bury siblings for the rest of the day" type="checkbox" checked={data.settings.burySiblings} onChange={(event) => setLearningSafeguards({ burySiblings: event.target.checked })} /><span><strong>Bury siblings for the rest of the day</strong><small>After grading one card, related cards wait until the next local day.</small></span></label>
+          <p>Separate sibling prompts and flag repeatedly lapsed practice prompts for repair instead of silently turning poor prompts into endless workload.</p>
+          <label className="check-row"><input aria-label="Bury siblings for the rest of the day" type="checkbox" checked={data.settings.burySiblings} onChange={(event) => setLearningSafeguards({ burySiblings: event.target.checked })} /><span><strong>Bury siblings for the rest of the day</strong><small>After grading one practice prompt, related prompts wait until the next local day.</small></span></label>
           <div className="field-grid"><label className="form-field"><span>Leech lapse threshold</span><input type="number" min="1" max="100" value={data.settings.leechThreshold} onChange={(event) => setLearningSafeguards({ leechThreshold: Math.max(1, Math.min(100, Number(event.target.value) || 8)) })} /></label><label className="form-field"><span>Leech action</span><select value={data.settings.leechAction} onChange={(event) => setLearningSafeguards({ leechAction: event.target.value as 'flag' | 'suspend' })}><option value="flag">Flag for repair</option><option value="suspend">Flag and suspend</option></select></label></div>
         </div>
 
@@ -163,18 +158,14 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
           {message && <p className={messageIsError ? 'inline-message error' : 'inline-message'} role={messageIsError ? 'alert' : 'status'}>{message}</p>}
         </div>
 
-        {isolatedSettingsPanels.map((contribution) => <div className="setting-block" key={`${contribution.extensionId}:${contribution.id}`}><strong>{contribution.label}</strong><ExtensionUiFrameV2 contribution={contribution} dto={{ theme: data.settings.theme, platform: window.neoAnkiDesktop ? 'desktop' : 'web' }} /></div>)}
-        {isolatedMigrationPanels.map((contribution) => <div className="setting-block" key={`${contribution.extensionId}:${contribution.id}`}><strong>{contribution.label}</strong><ExtensionUiFrameV2 contribution={contribution} dto={{ mode: 'settings', operation: 'additive' }} /></div>)}
-
         <UpdatePanel />
-        <ExtensionManagerPanel />
 
         <div className="danger-zone">
           <div>
-            <strong>Reset workspace</strong>
-            <p>Back up the current workspace automatically, then restore the sample collection.</p>
+            <strong>Erase workspace</strong>
+            <p>Create a recovery backup or checkpoint, then start with an empty workspace.</p>
           </div>
-          <button className="text-button danger" onClick={() => window.confirm('Reset the complete Neo Anki workspace? A recovery backup will be created first.') && resetData()}><RotateCcw size={17} /> Reset</button>
+          <button className="text-button danger" onClick={() => window.confirm('Erase the complete Neo Anki workspace and start empty? A recovery backup or checkpoint will be created first.') && resetData()}><RotateCcw size={17} /> Erase and start empty</button>
         </div>
         </>
       </section>

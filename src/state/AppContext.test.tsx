@@ -75,7 +75,10 @@ const CustomStudyProbe = () => {
 }
 
 describe('workspace safety actions', () => {
-  beforeEach(() => localStorage.clear())
+  beforeEach(() => {
+    localStorage.clear()
+    localStorage.setItem('neo-anki:data:v1', JSON.stringify(createSeedData()))
+  })
   afterEach(() => { window.neoAnkiDesktop = undefined })
   it('restores exact scheduling after review undo and preserves trashed content', async () => {
     render(<AppProvider><SafetyProbe /></AppProvider>)
@@ -96,6 +99,9 @@ describe('workspace safety actions', () => {
   })
 
   it('buries siblings, flags leeches without forced suspension, and reverses both on undo', async () => {
+    const source = createSeedData()
+    source.cards.push({ ...source.cards[0], id: 'sibling-card', fsrs: structuredClone(source.cards[0].fsrs) })
+    localStorage.setItem('neo-anki:data:v1', JSON.stringify(source))
     render(<AppProvider><PedagogyProbe /></AppProvider>)
     await userEvent.click(screen.getByRole('button', { name: 'Configure' }))
     await userEvent.click(screen.getByRole('button', { name: 'Lapse' }))

@@ -1,16 +1,37 @@
 import type { KnowledgeItemProjection, WorkspacePatchV2 } from '@neo-anki/compatibility-domain'
 
-export type ExtensionPermissionV2 = 'study:read' | 'study:signals' | 'study:prompt-types' | 'study:queue-policies' | 'content:read' | 'content:patch-own' | 'content:migrate' | 'media:create' | 'network:fetch' | 'secrets:device' | 'config:sync' | 'ui:settings' | 'ui:review' | 'ui:page' | 'ui:create' | 'ui:workspace' | 'ui:migration'
+export type ExtensionPermissionV2 = 'study:read' | 'study:signals' | 'study:prompt-types' | 'study:queue-policies' | 'content:read' | 'content:patch-own' | 'content:migrate' | 'media:create' | 'files:save' | 'ui:open-external' | 'network:fetch' | 'secrets:device' | 'config:sync' | 'ui:settings' | 'ui:review' | 'ui:page' | 'ui:create' | 'ui:workspace' | 'ui:migration'
 export type ExtensionUiSurfaceV2 = 'settings' | 'review' | 'page' | 'create' | 'workspace' | 'migration'
-export interface ExtensionPromptTypeContributionV2 { id: string; label: string }
+export type ExtensionPromptRequiredFieldV2 = 'prompt' | 'answer' | 'audio' | 'image' | 'occlusions'
+export interface ExtensionPromptTypeContributionV2 { id: string; label: string; description?: string; authoringHint?: string; requiredFields?: ExtensionPromptRequiredFieldV2[] }
 export interface ExtensionQueuePolicyContributionV2 { id: string; label: string }
 export interface ExtensionLibraryPresetContributionV2 { id: string; label: string }
+export interface ExtensionAuthoringActionContributionV2 {
+  id: string
+  label: string
+  description?: string
+  defaultSelected?: boolean
+  availability?: 'always' | 'status-required'
+  configurationDestination?: string
+}
+
+export interface ExtensionUiEntryV2 {
+  id: string
+  surface: ExtensionUiSurfaceV2
+  entry: string
+  /** Host-rendered product copy. Older packages may omit every metadata field. */
+  label?: string
+  description?: string
+  helpText?: string
+  icon?: string
+  launchDestination?: string
+}
 
 export interface ExtensionManifestV2 {
   format: 'neo-anki-extension'; schemaVersion: 2; sdkVersion: 2; id: string; name: string; version: string; publisher: string; publisherKey: string
-  description?: string; homepage?: string; permissions: ExtensionPermissionV2[]; networkDomains?: string[]; workerEntry?: string
-  uiEntries?: Array<{ id: string; surface: ExtensionUiSurfaceV2; entry: string }>
-  contributions?: { promptTypes?: ExtensionPromptTypeContributionV2[]; queuePolicies?: ExtensionQueuePolicyContributionV2[]; libraryPresets?: ExtensionLibraryPresetContributionV2[] }
+  description?: string; homepage?: string; minimumNeoAnkiVersion?: string; permissions: ExtensionPermissionV2[]; networkDomains?: string[]; workerEntry?: string
+  uiEntries?: ExtensionUiEntryV2[]
+  contributions?: { promptTypes?: ExtensionPromptTypeContributionV2[]; queuePolicies?: ExtensionQueuePolicyContributionV2[]; libraryPresets?: ExtensionLibraryPresetContributionV2[]; authoringActions?: ExtensionAuthoringActionContributionV2[] }
   provenance: { sourceCommit: string; coreCommit?: string; buildSystem: string }
 }
 
@@ -36,19 +57,38 @@ export interface ExtensionHostV2 {
 }
 
 export type ExtensionPromptInputV2 = { prompt: string; answer: string; context: string; collection: string; tags: string[]; citations: Array<{ id?: string; title: string; url?: string }>; mediaIds: string[]; occlusions: Array<{ id: string; x: number; y: number; width: number; height: number; label?: string }>; assets?: Array<{ id: string; filename: string; mimeType: string; dataUrl: string; altText?: string }>; variants?: string[] }
+export interface KnowledgeDraftV1 { prompt: string; answer: string; context: string; collection: string; tags: string[]; selectedPromptTypes: string[]; mediaIds: string[] }
+export interface ExtensionAuthoringActionStatusV1 { available: boolean; configured: boolean; reason?: string; selectionLabel?: string }
+export interface ExtensionPromptValidationV2 { valid: boolean; fieldErrors: Partial<Record<ExtensionPromptRequiredFieldV2, string>> }
 export type ExtensionCardInputV2 = { id: string; itemId: string; variant: string; occlusionId?: string; promptData?: Record<string, unknown>; estimatedSeconds: number; suspended: boolean; dueAt: string; difficulty: number; lapses: number }
 export type ExtensionRenderedCardV2 = { prompt: string; answer: string; context: string; typed: boolean; mediaId?: string; occlusionId?: string; citations: Array<{ id: string; title: string; url?: string }> }
 export type WorkerContributionRequest =
   | { type: 'planning-signals'; request: ScopedStudyDto }
   | { type: 'prompt-create'; requestId: string; promptTypeId: string; input: ExtensionPromptInputV2 }
+  | { type: 'prompt-validate'; requestId: string; promptTypeId: string; input: ExtensionPromptInputV2 }
   | { type: 'prompt-render'; requestId: string; promptTypeId: string; item: ExtensionPromptInputV2; card: ExtensionCardInputV2 }
   | { type: 'prompt-compare'; requestId: string; promptTypeId: string; attempt: string; expected: string }
   | { type: 'queue-score'; requestId: string; policyId: string; candidates: Array<{ card: ExtensionCardInputV2; overdueDays: number; extensionBoost: number }> }
   | { type: 'library-presets'; requestId: string }
+  | { type: 'authoring-action'; requestId: string; actionId: string; itemId: string; idempotencyKey: string; draft: KnowledgeDraftV1 }
+  | { type: 'authoring-action-status'; requestId: string; actionId: string; draft: KnowledgeDraftV1 }
   | { type: 'command'; requestId: string; commandId: string; payload: unknown }
   | { type: 'cancel'; operationId: string }
 export type WorkerContributionResponse = { type: 'planning-signals'; requestId: string; signals: Array<{ itemId: string; score: number; reason: string }> } | { type: 'patch'; requestId: string; patch: WorkspacePatchV2 } | { type: 'result'; requestId: string; value: unknown } | { type: 'error'; requestId: string; code: string; message: string }
-export interface SandboxedUiInit { type: 'neo-anki:init-ui-v2'; extensionId: string; contributionId: string; locale: string; theme: 'light' | 'dark'; dto: unknown }
+export interface SandboxedUiAppearanceV1 {
+  version: 1
+  colors: {
+    background: string; surface: string; surfaceStrong: string; surfaceMuted: string
+    text: string; textSoft: string; textFaint: string; border: string; borderStrong: string
+    primary: string; primaryHover: string; primarySoft: string; success: string; successSoft: string
+    warning: string; warningSoft: string; danger: string; dangerSoft: string; focus: string
+  }
+  typography: { fontFamily: string; fontSize: string; lineHeight: string }
+  spacing: { unit: string; density: 'comfortable' | 'compact' }
+  radii: { small: string; medium: string; large: string }
+  reducedMotion: boolean
+}
+export interface SandboxedUiInit { type: 'neo-anki:init-ui-v2'; extensionId: string; contributionId: string; locale: string; theme: 'light' | 'dark'; appearance?: SandboxedUiAppearanceV1; dto: unknown }
 export interface NeoAnkiExtensionV2 { manifest: ExtensionManifestV2; handle?(request: WorkerContributionRequest, host: ExtensionHostV2): Promise<WorkerContributionResponse> }
 export const defineExtensionV2 = <T extends NeoAnkiExtensionV2>(extension: T): T => extension
 
@@ -72,7 +112,54 @@ export interface SandboxedUiMessageV2 {
 export interface SandboxedUiClientV2 {
   readonly init: SandboxedUiInit
   call<T = unknown>(name: 'command', payload: { commandId: string; payload?: unknown }): Promise<T>
+  call<T = unknown>(name: 'files.save', payload: { filename: string; mimeType: string; text?: string; bytes?: Uint8Array }): Promise<T>
+  call<T = unknown>(name: 'ui.openExternal', payload: { url: string }): Promise<T>
   onEvent(listener: (name: string, payload: unknown) => void): () => void
+  reportHeight(height?: number): void
+}
+
+const appearanceVariables: Record<string, (appearance: SandboxedUiAppearanceV1) => string> = {
+  '--neo-background': (value) => value.colors.background,
+  '--neo-surface': (value) => value.colors.surface,
+  '--neo-surface-strong': (value) => value.colors.surfaceStrong,
+  '--neo-surface-muted': (value) => value.colors.surfaceMuted,
+  '--neo-text': (value) => value.colors.text,
+  '--neo-text-soft': (value) => value.colors.textSoft,
+  '--neo-text-faint': (value) => value.colors.textFaint,
+  '--neo-border': (value) => value.colors.border,
+  '--neo-border-strong': (value) => value.colors.borderStrong,
+  '--neo-primary': (value) => value.colors.primary,
+  '--neo-primary-hover': (value) => value.colors.primaryHover,
+  '--neo-primary-soft': (value) => value.colors.primarySoft,
+  '--neo-success': (value) => value.colors.success,
+  '--neo-success-soft': (value) => value.colors.successSoft,
+  '--neo-warning': (value) => value.colors.warning,
+  '--neo-warning-soft': (value) => value.colors.warningSoft,
+  '--neo-danger': (value) => value.colors.danger,
+  '--neo-danger-soft': (value) => value.colors.dangerSoft,
+  '--neo-focus': (value) => value.colors.focus,
+  '--neo-font-family': (value) => value.typography.fontFamily,
+  '--neo-font-size': (value) => value.typography.fontSize,
+  '--neo-line-height': (value) => value.typography.lineHeight,
+  '--neo-space': (value) => value.spacing.unit,
+  '--neo-radius-sm': (value) => value.radii.small,
+  '--neo-radius-md': (value) => value.radii.medium,
+  '--neo-radius-lg': (value) => value.radii.large,
+}
+
+/** Apply host-owned semantic tokens without giving an extension access to host DOM or CSS. */
+export const applySandboxedUiAppearanceV1 = (appearance: SandboxedUiAppearanceV1, root: HTMLElement = document.documentElement) => {
+  if (appearance.version !== 1) return
+  for (const [name, read] of Object.entries(appearanceVariables)) root.style.setProperty(name, read(appearance))
+  root.dataset.neoDensity = appearance.spacing.density
+  root.dataset.neoReducedMotion = String(appearance.reducedMotion)
+  root.style.colorScheme = appearance.colors.background.toLowerCase().startsWith('#1') || appearance.colors.background.toLowerCase().startsWith('#2') ? 'dark' : 'light'
+  if (!document.getElementById('neo-anki-extension-base-styles')) {
+    const style = document.createElement('style')
+    style.id = 'neo-anki-extension-base-styles'
+    style.textContent = `html,body{margin:0;min-height:100%;font:var(--neo-font-size)/var(--neo-line-height) var(--neo-font-family);color:var(--neo-text);background:var(--neo-background)}*{box-sizing:border-box}button,input,textarea,select{font:inherit;color:inherit}button,input,textarea,select{min-height:2.75rem;border:1px solid var(--neo-border-strong);border-radius:var(--neo-radius-sm);background:var(--neo-surface-strong)}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.5}button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid var(--neo-focus);outline-offset:2px}@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}`
+    document.head.append(style)
+  }
 }
 
 const transportScope = () => globalThis as typeof globalThis & { postMessage(message: unknown): void; addEventListener(type: 'message', listener: (event: MessageEvent<WorkerTransportMessageV2>) => void): void }
@@ -126,6 +213,7 @@ export const exposeExtensionWorkerV2 = (extension: NeoAnkiExtensionV2) => {
 export const exposeSandboxedUiV2 = (onInit: (init: SandboxedUiInit, port: MessagePort) => void | Promise<void>) => {
   globalThis.addEventListener('message', (event: MessageEvent<SandboxedUiInit>) => {
     if (event.data?.type !== 'neo-anki:init-ui-v2' || !event.ports[0]) return
+    if (event.data.appearance) applySandboxedUiAppearanceV1(event.data.appearance)
     const port = event.ports[0]; port.start()
     void Promise.resolve(onInit(event.data, port)).then(() => port.postMessage({ protocol: 2, type: 'ready' } satisfies SandboxedUiMessageV2)).catch((error) => port.postMessage({ protocol: 2, type: 'error', payload: { message: error instanceof Error ? error.message : 'Extension UI failed.' } } satisfies SandboxedUiMessageV2))
   })
@@ -136,6 +224,7 @@ export const createSandboxedUiClientV2 = () => new Promise<SandboxedUiClientV2>(
   globalThis.addEventListener('message', (event: MessageEvent<SandboxedUiInit>) => {
     const init = event.data; const port = event.ports[0]
     if (init?.type !== 'neo-anki:init-ui-v2' || !port) return
+    if (init.appearance) applySandboxedUiAppearanceV1(init.appearance)
     const pending = new Map<string, { resolve(value: unknown): void; reject(error: Error): void }>()
     const listeners = new Set<(name: string, payload: unknown) => void>()
     port.onmessage = (messageEvent: MessageEvent<SandboxedUiMessageV2>) => {
@@ -147,9 +236,18 @@ export const createSandboxedUiClientV2 = () => new Promise<SandboxedUiClientV2>(
           const detail = message.payload as { message?: unknown } | undefined
           entry.reject(new Error(typeof detail?.message === 'string' ? detail.message : 'Extension host call failed.'))
         } else entry.resolve(message.payload)
-      } else if (message.type === 'event' && message.name) for (const listener of listeners) listener(message.name, message.payload)
+      } else if (message.type === 'event' && message.name) {
+        if (message.name === 'appearance') applySandboxedUiAppearanceV1(message.payload as SandboxedUiAppearanceV1)
+        for (const listener of listeners) listener(message.name, message.payload)
+      }
     }
     port.start()
+    const reportHeight = (height = Math.max(document.body?.scrollHeight || 0, document.documentElement.scrollHeight)) => port.postMessage({ protocol: 2, type: 'event', name: 'resize', payload: { height } } satisfies SandboxedUiMessageV2)
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(() => reportHeight())
+      observer.observe(document.documentElement)
+    }
+    port.postMessage({ protocol: 2, type: 'ready' } satisfies SandboxedUiMessageV2)
     resolve({
       init,
       call: (name, payload) => new Promise((resolveCall, rejectCall) => {
@@ -157,6 +255,7 @@ export const createSandboxedUiClientV2 = () => new Promise<SandboxedUiClientV2>(
         port.postMessage({ protocol: 2, type: 'host-call', id, name, payload } satisfies SandboxedUiMessageV2)
       }),
       onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener) },
+      reportHeight,
     })
   }, { once: true })
 })

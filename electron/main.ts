@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, safeStorage, session, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
-import { readFile } from 'node:fs/promises'
-import { join, relative, resolve, sep } from 'node:path'
+import { readFile, writeFile } from 'node:fs/promises'
+import { basename, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ExtensionManager } from './extension-manager.js'
 import { MarketplaceClient } from './marketplace-client.js'
@@ -51,7 +51,7 @@ app.on('second-instance', () => {
   mainWindow.focus()
 })
 
-type DesktopDestination = 'today' | 'library' | 'create' | 'plans' | 'insights' | 'settings'
+type DesktopDestination = 'today' | 'library' | 'create' | 'extensions' | 'settings'
 
 const sendDestination = (destination: DesktopDestination) => mainWindow?.webContents.send('neo-anki:navigate', destination)
 
@@ -88,8 +88,7 @@ const installApplicationMenu = () => {
       submenu: [
         { label: 'Today', accelerator: 'CmdOrCtrl+1', click: () => sendDestination('today') },
         { label: 'Library', accelerator: 'CmdOrCtrl+2', click: () => sendDestination('library') },
-        { label: 'Plans', accelerator: 'CmdOrCtrl+3', click: () => sendDestination('plans') },
-        { label: 'Insights', accelerator: 'CmdOrCtrl+4', click: () => sendDestination('insights') },
+        { label: 'Extensions', accelerator: 'CmdOrCtrl+3', click: () => sendDestination('extensions') },
       ],
     },
     { label: 'View', submenu: [{ role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
@@ -146,7 +145,7 @@ const registerDesktopIpc = () => {
     try {
       assertTrustedSender(event)
       const status = workspaceStore.status()
-      event.returnValue = { data: workspaceStore.load(), storagePath: status.path, recoveredFromBackup: status.recoveredFromBackup, migratedLegacyData: status.migratedLegacyData, error: status.recoveryError }
+      event.returnValue = { data: workspaceStore.load(), storagePath: status.path, recoveredFromBackup: status.recoveredFromBackup, migratedLegacyData: status.migratedLegacyData, error: status.recoveryError, recoverySourcePath: status.recoverySourcePath }
     } catch (error) {
       event.returnValue = { data: null, storagePath: '', recoveredFromBackup: false, error: error instanceof Error ? error.message : 'Could not load data.' }
     }
@@ -168,6 +167,19 @@ const registerDesktopIpc = () => {
     if (result.canceled || !result.filePath) return { canceled: true }
     await saveQueue.catch(() => undefined)
     await workspaceStore.exportBackup(result.filePath)
+    return { canceled: false, path: result.filePath }
+  })
+
+  ipcMain.handle('neo-anki:export-recovery-source', async (event) => {
+    assertTrustedSender(event)
+    const options = {
+      title: 'Export Preserved Neo Anki Workspace',
+      defaultPath: `neo-anki-recovery-${new Date().toISOString().slice(0, 10)}.sqlite`,
+      filters: [{ name: 'Neo Anki recovery database', extensions: ['sqlite'] }],
+    }
+    const result = mainWindow ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options)
+    if (result.canceled || !result.filePath) return { canceled: true }
+    await workspaceStore.exportRecoverySource(result.filePath)
     return { canceled: false, path: result.filePath }
   })
 
@@ -290,6 +302,17 @@ const registerDesktopIpc = () => {
     await extensionManager.setEnabled(id, enabled)
   })
 
+  ipcMain.handle('neo-anki:confirm-extension-activation', async (event, id: string) => {
+    assertTrustedSender(event)
+    await extensionManager.confirmActivation(id)
+  })
+
+  ipcMain.handle('neo-anki:rollback-extension-activation', async (event, id: string) => {
+    assertTrustedSender(event)
+    extensionServices.release(id)
+    return extensionManager.rollbackActivation(id)
+  })
+
   ipcMain.handle('neo-anki:uninstall-extension', async (event, id: string, deleteSecrets: boolean) => {
     assertTrustedSender(event)
     extensionServices.release(id)
@@ -318,6 +341,28 @@ const registerDesktopIpc = () => {
   ipcMain.handle('neo-anki:extension-create-media-v2', async (event, token: string, request: { filename: string; mimeType: string; bytes: Uint8Array; altText?: string }) => {
     assertTrustedSender(event); const extensionId = await extensionServices.authorize(token, 'media:create')
     return workspaceStore.createExtensionMedia(extensionId, request)
+  })
+  ipcMain.handle('neo-anki:extension-save-file-v2', async (event, token: string, request: { filename?: unknown; mimeType?: unknown; text?: unknown; bytes?: unknown }) => {
+    assertTrustedSender(event)
+    await extensionServices.authorize(token, 'files:save')
+    const filename = typeof request?.filename === 'string' ? basename(request.filename).slice(0, 180) : ''
+    if (!filename || filename === '.' || filename === '..') throw new Error('The extension provided an invalid export filename.')
+    const text = typeof request.text === 'string' ? request.text : undefined
+    const bytes = request.bytes instanceof Uint8Array ? request.bytes : undefined
+    if ((text === undefined) === (bytes === undefined)) throw new Error('The extension must export either text or bytes.')
+    const payload = text !== undefined ? Buffer.from(text, 'utf8') : Buffer.from(bytes!)
+    if (payload.byteLength > 512 * 1024 * 1024) throw new Error('The extension export exceeds 512 MB.')
+    const result = mainWindow ? await dialog.showSaveDialog(mainWindow, { defaultPath: filename }) : await dialog.showSaveDialog({ defaultPath: filename })
+    if (result.canceled || !result.filePath) return { canceled: true }
+    await writeFile(result.filePath, payload, { mode: 0o600 })
+    return { canceled: false, path: result.filePath }
+  })
+  ipcMain.handle('neo-anki:extension-open-external-v2', async (event, token: string, rawUrl: string) => {
+    assertTrustedSender(event)
+    await extensionServices.authorize(token, 'ui:open-external')
+    const url = new URL(String(rawUrl))
+    if (!['https:', 'mailto:'].includes(url.protocol)) throw new Error('Extensions may open only HTTPS or email links.')
+    await shell.openExternal(url.toString())
   })
   ipcMain.handle('neo-anki:extension-secret-read-batch-v2', (event, token: string, keys: string[]) => { assertTrustedSender(event); return extensionServices.readSecretBatch(token, keys) })
   ipcMain.handle('neo-anki:extension-secret-mutate-batch-v2', (event, token: string, changes) => { assertTrustedSender(event); return extensionServices.mutateSecretBatch(token, changes) })
@@ -477,7 +522,7 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
     seal: (value) => new Uint8Array(safeStorage.encryptString(value)),
     open: (value) => safeStorage.decryptString(Buffer.from(value)),
   })
-  extensionManager = new ExtensionManager(app.getPath('userData'))
+  extensionManager = new ExtensionManager(app.getPath('userData'), app.getVersion())
   marketplaceClient = new MarketplaceClient(extensionManager, (url, init) => net.fetch(url, init), app.getVersion())
   extensionServices = new ExtensionServices(app.getPath('userData'), extensionManager)
   const installPath = process.argv.find((value) => value.startsWith('--install-extension='))?.slice('--install-extension='.length)

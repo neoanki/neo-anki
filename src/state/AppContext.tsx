@@ -3,7 +3,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { AppData, CreateKnowledgeInput, DailyPlan, KnowledgeItem, RecoveryStrategy, ReviewRating, Route, SessionRequest, StudySession } from '../types'
 import { makeEmptyFSRSCard, scheduleReview, serializeFSRSCard } from '../lib/fsrs'
 import { buildCustomStudySession, buildDailyPlan, buildStudySession } from '../lib/planner'
-import { adoptPersistedData, clearStoredData, flushPendingSaves, loadData, saveData } from '../lib/storage'
+import { adoptPersistedData, clearStoredData, downloadBackup, exportRecoverySource, flushPendingSaves, loadWorkspaceData, saveData, unlockPersistence, type WorkspaceLoadFailure } from '../lib/storage'
+import { createDemoWorkspaceData, createEmptyWorkspaceData } from '../data/seed'
 import { extensionRuntime } from '../extensions/runtime'
 import { mergeImportGraph } from '../lib/import-merge'
 import { createExtensionCardsV2, planningSignalsForItemV2, refreshExtensionPlanningSignalsV2, scoreQueuePolicyV2 } from '../extensions/v2/registry'
@@ -52,6 +53,7 @@ const prepareLargePlannerInput = async (data: AppData, now: Date, signal: AbortS
 
 interface AppContextValue {
   data: AppData
+  workspaceLoadFailure: WorkspaceLoadFailure | null
   route: Route
   plan: ReturnType<typeof buildDailyPlan>
   planning: boolean
@@ -59,6 +61,10 @@ interface AppContextValue {
   persistenceError: string
   persistenceState: 'saving' | 'saved' | 'failed'
   retryPersistence: () => Promise<void>
+  retryWorkspaceLoad: () => void
+  exportWorkspaceRecoverySource: () => Promise<{ canceled: boolean; path?: string }>
+  startEmptyAfterRecovery: () => Promise<void>
+  loadDemoWorkspace: () => void
   navigate: (route: Route) => void
   startSession: (request: SessionRequest) => void
   startCustomSession: (cardIds: string[], reschedule: boolean) => void
@@ -94,7 +100,9 @@ interface AppContextValue {
 const AppContext = createContext<AppContextValue | null>(null)
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
-  const [data, setRenderedData] = useState<AppData>(() => loadData())
+  const [initialLoad] = useState(() => loadWorkspaceData())
+  const [data, setRenderedData] = useState<AppData>(() => initialLoad.ok ? initialLoad.data : createEmptyWorkspaceData())
+  const [workspaceLoadFailure, setWorkspaceLoadFailure] = useState<WorkspaceLoadFailure | null>(() => initialLoad.ok ? null : initialLoad.failure)
   const dataRef = useRef(data)
   const setData = useCallback((update: SetStateAction<AppData>) => {
     const next = typeof update === 'function' ? update(dataRef.current) : update
@@ -110,6 +118,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const corePatchQueue = useRef<Promise<void>>(Promise.resolve())
 
   useEffect(() => {
+    if (workspaceLoadFailure) return
     // An explicitly awaited mutation can advance dataRef before React runs an
     // older render's passive effect. Never let that stale render enqueue a
     // regressive desktop snapshot after the newer mutation has committed.
@@ -120,7 +129,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       if (current) { setPersistenceError(error instanceof Error ? error.message : 'Neo Anki could not save your latest changes.'); setPersistenceState('failed') }
     })
     return () => { current = false }
-  }, [data])
+  }, [data, workspaceLoadFailure])
 
   useEffect(() => {
     const restoreRoute = () => setRoute(safeRouteFromLocation())
@@ -141,23 +150,42 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [])
 
+  const applyWorkspaceLoad = useCallback((result: ReturnType<typeof loadWorkspaceData>) => {
+    if (!result.ok) { setWorkspaceLoadFailure(result.failure); return }
+    dataRef.current = result.data
+    setRenderedData(result.data)
+    setWorkspaceLoadFailure(null)
+  }, [])
+
+  const retryWorkspaceLoad = useCallback(() => applyWorkspaceLoad(loadWorkspaceData()), [applyWorkspaceLoad])
+  const exportWorkspaceRecoverySource = useCallback(() => exportRecoverySource(), [])
+  const startEmptyAfterRecovery = useCallback(async () => {
+    if (!window.neoAnkiDesktop) {
+      const exported = await exportRecoverySource()
+      if (exported.canceled) return
+    }
+    await clearStoredData()
+    window.location.reload()
+  }, [])
+
   useEffect(() => {
     const update = (event: Event) => { const next = (event as CustomEvent<AppData>).detail; adoptPersistedData(next); setData(next) }
-    const reload = () => { const loaded = loadData(); setData(loaded) }
+    const reload = () => applyWorkspaceLoad(loadWorkspaceData())
     window.addEventListener('neo-anki:workspace-updated-v4', update)
     window.addEventListener('neo-anki:workspace-reload-requested', reload)
     return () => { window.removeEventListener('neo-anki:workspace-updated-v4', update); window.removeEventListener('neo-anki:workspace-reload-requested', reload) }
-  }, [setData])
+  }, [applyWorkspaceLoad, setData])
 
   useEffect(() => {
     document.documentElement.dataset.theme = data.settings.theme
   }, [data.settings.theme])
 
   useEffect(() => {
+    if (workspaceLoadFailure) return
     let current = true
     void refreshExtensionPlanningSignalsV2(data).then(() => { if (current) setExtensionSignalRevision((value) => value + 1) }).catch((error) => extensionRuntime.reportDiagnostic('extension-host-v2', 'planning-signals', error))
     return () => { current = false }
-  }, [data])
+  }, [data, workspaceLoadFailure])
 
   const directPlan = useMemo(
     () => { void extensionSignalRevision; return data.cards.length < LARGE_PLANNER_CARD_THRESHOLD ? buildDailyPlan(data.cards, data.reviews, data.settings, new Date(), data.items, {
@@ -238,11 +266,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }
 
   const completeOnboarding = (minutes: number) => {
-    setData((current) => ({
-      ...current,
-      settings: { ...current.settings, dailyMinutes: minutes, onboardingComplete: true },
-      updatedAt: new Date().toISOString(),
-    }))
+    const empty = createEmptyWorkspaceData()
+    empty.settings = { ...empty.settings, theme: dataRef.current.settings.theme, dailyMinutes: minutes, onboardingComplete: true }
+    empty.updatedAt = new Date().toISOString()
+    setData(empty)
+  }
+
+  const loadDemoWorkspace = () => {
+    if (dataRef.current.items.length || dataRef.current.cards.length || dataRef.current.reviews.length || dataRef.current.assets.length) return
+    const demo = createDemoWorkspaceData()
+    demo.settings = { ...demo.settings, ...dataRef.current.settings, onboardingComplete: true }
+    demo.updatedAt = new Date().toISOString()
+    setData(demo)
   }
 
   const addItem = async (input: CreateKnowledgeInput) => {
@@ -262,7 +297,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       updatedAt: now,
     }
     const cardSeeds = await createExtensionCardsV2(input)
-    setData((current) => ({
+    const current = dataRef.current
+    const next: AppData = {
       ...current,
       items: [item, ...current.items],
       assets: [...input.assets, ...current.assets.filter((asset) => !input.assets.some((candidate) => candidate.id === asset.id))],
@@ -283,7 +319,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         ...current.cards,
       ],
       updatedAt: now,
-    }))
+    }
+    setData(next)
+    setPersistenceState('saving')
+    try {
+      await saveData(next)
+      setPersistenceError('')
+      setPersistenceState('saved')
+    } catch (error) {
+      setPersistenceError(error instanceof Error ? error.message : 'Neo Anki could not save this knowledge item.')
+      setPersistenceState('failed')
+      throw error
+    }
     return itemId
   }
 
@@ -572,13 +619,31 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setData((current) => mergeImportGraph(current, imported).data)
   }
 
-  const replaceData = (nextData: AppData) => setData(nextData)
+  const replaceData = (nextData: AppData) => { unlockPersistence(nextData); setWorkspaceLoadFailure(null); setData(nextData) }
   const resetData = () => {
-    void clearStoredData().then(() => window.location.reload())
+    void (async () => {
+      if (!window.neoAnkiDesktop) {
+        const checkpoint = await downloadBackup(dataRef.current)
+        if (checkpoint.canceled) return
+      }
+      const empty = createEmptyWorkspaceData()
+      empty.settings = { ...empty.settings, ...dataRef.current.settings, onboardingComplete: true }
+      empty.updatedAt = new Date().toISOString()
+      await clearStoredData()
+      unlockPersistence(empty)
+      setData(empty)
+      await saveData(empty)
+      window.location.hash = '#/today'
+      window.location.reload()
+    })().catch((error) => {
+      setPersistenceError(error instanceof Error ? error.message : 'Neo Anki could not erase this workspace safely.')
+      setPersistenceState('failed')
+    })
   }
 
   const value: AppContextValue = {
     data,
+    workspaceLoadFailure,
     route,
     plan,
     planning,
@@ -586,6 +651,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     persistenceError,
     persistenceState,
     retryPersistence,
+    retryWorkspaceLoad,
+    exportWorkspaceRecoverySource,
+    startEmptyAfterRecovery,
+    loadDemoWorkspace,
     navigate,
     startSession,
     startCustomSession,

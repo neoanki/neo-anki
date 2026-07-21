@@ -2,8 +2,9 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import axe from 'axe-core'
+import { State } from 'ts-fsrs'
 import { App } from './App'
-import { createSeedData } from './data/seed'
+import { createEmptyWorkspaceData, createSeedData } from './data/seed'
 import { AppProvider } from './state/AppContext'
 import { buildDailyPlan } from './lib/planner'
 import type { PlannerWorkerPayload } from './lib/planner-worker-client'
@@ -27,17 +28,31 @@ const renderApp = (onboarded = true) => {
 }
 
 describe('application workflows', () => {
-  beforeEach(() => localStorage.clear())
+  beforeEach(() => { localStorage.clear(); window.location.hash = '#/today' })
   afterEach(() => { vi.unstubAllGlobals(); window.neoAnkiDesktop = undefined })
   it('onboards around time instead of a fixed new-card count', async () => {
     renderApp(false)
-    expect(screen.getByRole('heading', { name: /what are you bringing/i })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: /create a fresh workspace/i }))
+    expect(screen.getByRole('heading', { name: /how would you like to begin/i })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /start fresh/i }))
     expect(screen.getByRole('heading', { name: /how much time can learning reliably have/i })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /30 minutes/i }))
-    await userEvent.click(screen.getByRole('button', { name: /build my first plan/i }))
+    await userEvent.click(screen.getByRole('button', { name: /create workspace/i }))
     expect(screen.getByRole('heading', { name: 'Today' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /30 min available/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /add something you want to remember/i })).toBeInTheDocument()
+  })
+
+  it('blocks editing and autosave when stored browser data is unreadable', async () => {
+    localStorage.setItem('neo-anki:data:v1', '{unreadable')
+    const write = vi.spyOn(Storage.prototype, 'setItem')
+    render(<AppProvider><App /></AppProvider>)
+
+    expect(screen.getByRole('heading', { name: 'Your workspace needs attention.' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Export original data' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Restore backup' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Start empty' })).toBeInTheDocument()
+    await new Promise((resolve) => window.setTimeout(resolve, 0))
+    expect(write).not.toHaveBeenCalled()
   })
 
   it('plans large workspaces through the cancellable background worker path', async () => {
@@ -48,19 +63,19 @@ describe('application workflows', () => {
     vi.stubGlobal('Worker', PlannerWorkerFixture)
     render(<AppProvider><App /></AppProvider>)
     expect(screen.getByText(/planning this large workspace/i)).toBeInTheDocument()
-    expect(await screen.findByText(/reviews and \d+ new prompts are ready/i, {}, { timeout: 10_000 })).toBeInTheDocument()
+    expect(await screen.findByText(/reviews are ready, with \d+ new practice prompts/i, {}, { timeout: 10_000 })).toBeInTheDocument()
   })
 
   it('creates basic knowledge and exposes it in the library', async () => {
     renderApp()
     await userEvent.click(screen.getByRole('button', { name: /new item/i }))
-    await userEvent.type(await screen.findByLabelText('Prompt or cloze sentence'), 'What is the testing pyramid?')
+    await userEvent.type(await screen.findByLabelText('Prompt'), 'What is the testing pyramid?')
     await userEvent.type(screen.getByLabelText('Answer'), 'Unit, integration, and end-to-end tests')
-    await userEvent.click(screen.getByRole('button', { name: /add knowledge/i }))
+    await userEvent.click(screen.getByRole('button', { name: 'Add knowledge item' }))
     expect(screen.getByRole('status')).toHaveTextContent(/safe new-material queue/i)
     await userEvent.click(screen.getAllByRole('button', { name: 'Library' })[0])
     const row = (await screen.findByText('What is the testing pyramid?')).closest('article')!
-    expect(within(row).getByRole('button', { name: 'forward' })).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'Basic' })).toBeInTheDocument()
   })
 
   it('enables editor save only after the controlled draft has changed', async () => {
@@ -106,11 +121,52 @@ describe('application workflows', () => {
     expect(saved.flatMap((changes) => changes.upsert.items)).toContainEqual(expect.objectContaining({ prompt: expect.stringContaining(' persisted') }))
   })
 
-  it('keeps optional workspace tools out of a fresh core install', async () => {
+  it('keeps optional workspace tools out of primary navigation in a fresh core install', async () => {
     renderApp()
-    await userEvent.click(screen.getAllByRole('button', { name: 'Plans' })[0])
-    expect(await screen.findByRole('heading', { name: 'No workspace tools installed' })).toBeInTheDocument()
-    expect(screen.getByText(/marketplace/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Plans' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Extensions' }).length).toBeGreaterThan(0)
+  })
+
+  it('distinguishes caught-up Today from an empty workspace and shows the next due time', async () => {
+    const data = createSeedData(); data.settings.onboardingComplete = true
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    data.cards = data.cards.map((card) => ({ ...card, suspended: false, buriedUntil: undefined, fsrs: { ...card.fsrs, state: State.Review, due: tomorrow } }))
+    localStorage.setItem('neo-anki:data:v1', JSON.stringify(data))
+    render(<AppProvider><App /></AppProvider>)
+    expect(await screen.findByRole('heading', { name: 'You’re caught up' })).toBeInTheDocument()
+    expect(screen.getByText(/next practice prompt is due/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /add knowledge item/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /browse extensions/i })).toBeInTheDocument()
+  })
+
+  it('identifies a session filter that excludes otherwise available practice', async () => {
+    const data = createSeedData(); data.settings.onboardingComplete = true
+    const card = data.cards.find((candidate) => candidate.fsrs.state === State.New) || data.cards[0]
+    const item = data.items.find((candidate) => candidate.id === card.itemId)!
+    data.items = [item]
+    data.cards = [{ ...card, suspended: false, buriedUntil: undefined, fsrs: { ...card.fsrs, state: State.New, due: new Date().toISOString() } }]
+    data.reviews = []
+    localStorage.setItem('neo-anki:data:v1', JSON.stringify(data))
+    render(<AppProvider><App /></AppProvider>)
+    await userEvent.selectOptions(await screen.findByLabelText('Mode'), 'urgent')
+    expect(screen.getByText(/No practice prompts match “Reviews only.”/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reset session settings' })).toBeInTheDocument()
+  })
+
+  it('separates an empty Library from a filtered Library', async () => {
+    const empty = createEmptyWorkspaceData(); empty.settings.onboardingComplete = true
+    localStorage.setItem('neo-anki:data:v1', JSON.stringify(empty))
+    const first = render(<AppProvider><App /></AppProvider>)
+    await userEvent.click(screen.getAllByRole('button', { name: 'Library' })[0])
+    expect(screen.getByRole('heading', { name: 'Your Library is empty' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add your first knowledge item' })).toBeInTheDocument()
+    first.unmount()
+
+    localStorage.clear(); renderApp()
+    await userEvent.click(screen.getAllByRole('button', { name: 'Library' })[0])
+    await userEvent.type(screen.getByLabelText('Search knowledge'), 'no result can match this')
+    expect(screen.getByRole('heading', { name: 'No matching knowledge items' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument()
   })
 
   it('has no automatically detectable serious accessibility violations on Today', async () => {

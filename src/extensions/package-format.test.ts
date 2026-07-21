@@ -6,7 +6,7 @@ import type { ExtensionPackageManifest } from '../../packages/extension-sdk/src/
 const manifest: ExtensionPackageManifest = {
   format: 'neo-anki-extension', schemaVersion: 2, sdkVersion: 2,
   id: 'com.example.study-pulse', name: 'Study Pulse', version: '2.0.0', publisher: 'Example Studio', publisherKey: 'ed25519:fixture',
-  description: 'A small extension fixture.', permissions: ['study:signals', 'ui:settings'],
+  description: 'A small extension fixture.', minimumNeoAnkiVersion: '0.3.1', permissions: ['study:signals', 'ui:settings'],
   workerEntry: 'dist/worker.js', uiEntries: [{ id: 'settings', surface: 'settings', entry: 'dist/settings.js' }],
   provenance: { sourceCommit: 'a'.repeat(40), coreCommit: 'b'.repeat(40), buildSystem: 'npm-ci' },
 }
@@ -66,5 +66,25 @@ describe('installable extension package format', () => {
     expect(valid.networkDomains).toEqual(['api.example.com', '*.speech.example.com'])
     expect(() => validateExtensionPackageManifest({ ...manifest, networkDomains: ['api.example.com'] })).toThrow('require network:fetch')
     expect(() => validateExtensionPackageManifest({ ...manifest, permissions: ['network:fetch', 'ui:settings'], networkDomains: ['https://example.com/path'] })).toThrow('domains are invalid')
+  })
+
+  it('preserves additive UI, prompt, and authoring metadata', () => {
+    const validated = validateExtensionPackageManifest({
+      ...manifest,
+      permissions: ['study:signals', 'study:prompt-types', 'ui:settings'],
+      uiEntries: [{ ...manifest.uiEntries![0], label: 'Speech settings', description: 'Choose voices.', helpText: 'Credentials stay on this device.', icon: 'volume-2', launchDestination: 'extensions/configure' }],
+      contributions: {
+        promptTypes: [{ id: 'audio-answer', label: 'Audio answer', description: 'Recall from speech.', authoringHint: 'Attach a recording.', requiredFields: ['prompt', 'audio'] }],
+        authoringActions: [{ id: 'generate-audio', label: 'Generate offline audio', description: 'Create a portable file after saving.', defaultSelected: false, availability: 'status-required', configurationDestination: 'settings' }],
+      },
+    })
+    expect(validated.uiEntries?.[0]).toMatchObject({ label: 'Speech settings', icon: 'volume-2' })
+    expect(validated.contributions?.promptTypes?.[0]).toMatchObject({ requiredFields: ['prompt', 'audio'] })
+    expect(validated).toMatchObject({ minimumNeoAnkiVersion: '0.3.1' })
+    expect(validated.contributions?.authoringActions?.[0]).toMatchObject({ id: 'generate-audio', defaultSelected: false, availability: 'status-required', configurationDestination: 'settings' })
+  })
+
+  it('rejects malformed minimum app versions', () => {
+    expect(() => validateExtensionPackageManifest({ ...manifest, minimumNeoAnkiVersion: 'next' })).toThrow('minimum Neo Anki version')
   })
 })

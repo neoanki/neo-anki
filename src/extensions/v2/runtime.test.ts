@@ -74,4 +74,18 @@ describe('SDK v2 isolated runtimes', () => {
     expect(atob(runtime.iframe.src.split(',')[1]!)).toContain("connect-src 'none'")
     runtime.close()
   })
+
+  it('reports the sandbox readiness handshake to the host frame', async () => {
+    const lifecycle = vi.fn()
+    const runtime = createSandboxedExtensionUiV2(manifest(['ui:settings']), 'settings', 'blob:https://neoanki.test/settings', { locale: 'en', theme: 'light', dto: {} }, undefined, lifecycle)
+    document.body.append(runtime.iframe)
+    const target = runtime.iframe.contentWindow!
+    vi.spyOn(target, 'postMessage').mockImplementation(((_message: unknown, _origin: string, transfer?: Transferable[]) => {
+      const port = transfer?.[0] as MessagePort | undefined
+      port?.postMessage({ protocol: 2, type: 'ready' })
+    }) as typeof target.postMessage)
+    runtime.iframe.dispatchEvent(new Event('load'))
+    await vi.waitFor(() => expect(lifecycle).toHaveBeenCalledWith({ type: 'ready' }))
+    runtime.close()
+  })
 })

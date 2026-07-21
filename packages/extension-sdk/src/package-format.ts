@@ -7,7 +7,7 @@ export const MAX_EXTENSION_PACKAGE_BYTES = 12 * 1024 * 1024
 export const MAX_EXTENSION_UNPACKED_BYTES = 32 * 1024 * 1024
 export const MAX_EXTENSION_FILES = 128
 
-export const extensionPermissions: ExtensionPermissionV2[] = ['study:read', 'study:signals', 'study:prompt-types', 'study:queue-policies', 'content:read', 'content:patch-own', 'content:migrate', 'media:create', 'network:fetch', 'secrets:device', 'config:sync', 'ui:settings', 'ui:review', 'ui:page', 'ui:create', 'ui:workspace', 'ui:migration']
+export const extensionPermissions: ExtensionPermissionV2[] = ['study:read', 'study:signals', 'study:prompt-types', 'study:queue-policies', 'content:read', 'content:patch-own', 'content:migrate', 'media:create', 'files:save', 'ui:open-external', 'network:fetch', 'secrets:device', 'config:sync', 'ui:settings', 'ui:review', 'ui:page', 'ui:create', 'ui:workspace', 'ui:migration']
 
 const permissionSet = new Set<string>(extensionPermissions)
 const extensionIdPattern = /^[a-z0-9]+(?:[.-][a-z0-9]+)+$/
@@ -59,6 +59,8 @@ export const validateExtensionPackageManifest = (value: unknown): ExtensionPacka
   if (!extensionIdPattern.test(id)) throw new Error('Extension id must use lowercase reverse-domain notation.')
   const version = requireText(candidate.version, 'version', 64)
   if (!semverPattern.test(version)) throw new Error('Extension version must be valid semantic versioning.')
+  const minimumNeoAnkiVersion = candidate.minimumNeoAnkiVersion ? requireText(candidate.minimumNeoAnkiVersion, 'minimumNeoAnkiVersion', 64) : undefined
+  if (minimumNeoAnkiVersion && !semverPattern.test(minimumNeoAnkiVersion)) throw new Error('Extension minimum Neo Anki version must use valid semantic versioning.')
   const permissions = candidate.permissions as ExtensionPermissionV2[] | undefined
   if (!Array.isArray(permissions) || permissions.some((permission) => !permissionSet.has(permission))) throw new Error('Extension manifest contains an unknown permission.')
   if (new Set(permissions).size !== permissions.length) throw new Error('Extension permissions must not contain duplicates.')
@@ -77,11 +79,18 @@ export const validateExtensionPackageManifest = (value: unknown): ExtensionPacka
     if (!Array.isArray(networkDomains) || networkDomains.length > 32 || networkDomains.some((domain) => typeof domain !== 'string' || !networkDomainPattern.test(domain))) throw new Error('Extension network domains are invalid.')
     if (!permissions.includes('network:fetch') && networkDomains.length) throw new Error('Extension network domains require network:fetch.')
   }
-  const common = { format: 'neo-anki-extension' as const, id, name: requireText(candidate.name, 'name', 80), version, publisher: requireText(candidate.publisher, 'publisher', 100), description: candidate.description ? requireText(candidate.description, 'description', 300) : undefined, homepage: homepage || undefined, networkDomains: networkDomains ? [...new Set(networkDomains.map((domain) => domain.toLowerCase()))] : undefined }
+  const common = { format: 'neo-anki-extension' as const, id, name: requireText(candidate.name, 'name', 80), version, minimumNeoAnkiVersion, publisher: requireText(candidate.publisher, 'publisher', 100), description: candidate.description ? requireText(candidate.description, 'description', 300) : undefined, homepage: homepage || undefined, networkDomains: networkDomains ? [...new Set(networkDomains.map((domain) => domain.toLowerCase()))] : undefined }
   const v2 = candidate
   const workerEntry = v2.workerEntry ? normalizeExtensionPath(requireText(v2.workerEntry, 'workerEntry', 240)) : undefined
   if (workerEntry && !/\.(?:js|mjs)$/.test(workerEntry)) throw new Error('Extension worker entry must be a JavaScript module.')
-  const uiEntries = v2.uiEntries?.map((entry) => ({ id: requireText(entry.id, 'uiEntries.id', 80), surface: entry.surface, entry: normalizeExtensionPath(requireText(entry.entry, 'uiEntries.entry', 240)) }))
+  const uiEntries = v2.uiEntries?.map((entry) => ({
+    id: requireText(entry.id, 'uiEntries.id', 80), surface: entry.surface, entry: normalizeExtensionPath(requireText(entry.entry, 'uiEntries.entry', 240)),
+    label: entry.label ? requireText(entry.label, 'uiEntries.label', 80) : undefined,
+    description: entry.description ? requireText(entry.description, 'uiEntries.description', 240) : undefined,
+    helpText: entry.helpText ? requireText(entry.helpText, 'uiEntries.helpText', 300) : undefined,
+    icon: entry.icon ? requireText(entry.icon, 'uiEntries.icon', 48) : undefined,
+    launchDestination: entry.launchDestination ? requireText(entry.launchDestination, 'uiEntries.launchDestination', 128) : undefined,
+  }))
   if (uiEntries?.some((entry) => !['settings', 'review', 'page', 'create', 'workspace', 'migration'].includes(entry.surface) || !/\.(?:js|mjs)$/.test(entry.entry))) throw new Error('Extension UI entries are invalid.')
   const surfacePermission = { settings: 'ui:settings', review: 'ui:review', page: 'ui:page', create: 'ui:create', workspace: 'ui:workspace', migration: 'ui:migration' } as const
   if (uiEntries?.some((entry) => !permissions.includes(surfacePermission[entry.surface]))) throw new Error('Extension UI entries require their matching UI permission.')
@@ -98,10 +107,24 @@ export const validateExtensionPackageManifest = (value: unknown): ExtensionPacka
     const entry = value as { id?: unknown; label?: unknown }
     return { id: requireText(entry.id, `${field}.id`, 80), label: requireText(entry.label, `${field}.label`, 80) }
   }) : (() => { throw new Error(`Extension ${field} contributions are invalid.`) })()
+  const promptTypes = contributions?.promptTypes === undefined ? undefined : Array.isArray(contributions.promptTypes) && contributions.promptTypes.length <= 64 ? contributions.promptTypes.map((value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Extension promptTypes contributions are invalid.')
+    const entry = value as { id?: unknown; label?: unknown; description?: unknown; authoringHint?: unknown; requiredFields?: unknown }
+    const requiredFields = entry.requiredFields === undefined ? undefined : Array.isArray(entry.requiredFields) && entry.requiredFields.length <= 5 && entry.requiredFields.every((field) => ['prompt', 'answer', 'audio', 'image', 'occlusions'].includes(String(field))) ? [...new Set(entry.requiredFields)] as Array<'prompt' | 'answer' | 'audio' | 'image' | 'occlusions'> : (() => { throw new Error('Extension promptTypes.requiredFields is invalid.') })()
+    return { id: requireText(entry.id, 'promptTypes.id', 80), label: requireText(entry.label, 'promptTypes.label', 80), description: entry.description ? requireText(entry.description, 'promptTypes.description', 240) : undefined, authoringHint: entry.authoringHint ? requireText(entry.authoringHint, 'promptTypes.authoringHint', 300) : undefined, requiredFields }
+  }) : (() => { throw new Error('Extension promptTypes contributions are invalid.') })()
+  const authoringActions = contributions?.authoringActions === undefined ? undefined : Array.isArray(contributions.authoringActions) && contributions.authoringActions.length <= 64 ? contributions.authoringActions.map((value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Extension authoringActions contributions are invalid.')
+    const entry = value as { id?: unknown; label?: unknown; description?: unknown; defaultSelected?: unknown; availability?: unknown; configurationDestination?: unknown }
+    if (entry.defaultSelected !== undefined && typeof entry.defaultSelected !== 'boolean') throw new Error('Extension authoringActions.defaultSelected is invalid.')
+    if (entry.availability !== undefined && entry.availability !== 'always' && entry.availability !== 'status-required') throw new Error('Extension authoringActions.availability is invalid.')
+    return { id: requireText(entry.id, 'authoringActions.id', 80), label: requireText(entry.label, 'authoringActions.label', 80), description: entry.description ? requireText(entry.description, 'authoringActions.description', 240) : undefined, defaultSelected: entry.defaultSelected as boolean | undefined, availability: entry.availability as 'always' | 'status-required' | undefined, configurationDestination: entry.configurationDestination ? requireText(entry.configurationDestination, 'authoringActions.configurationDestination', 128) : undefined }
+  }) : (() => { throw new Error('Extension authoringActions contributions are invalid.') })()
   const normalizedContributions = contributions ? {
-    promptTypes: parseContributions(contributions.promptTypes, 'promptTypes'),
+    promptTypes,
     queuePolicies: parseContributions(contributions.queuePolicies, 'queuePolicies'),
     libraryPresets: parseContributions(contributions.libraryPresets, 'libraryPresets'),
+    authoringActions,
   } : undefined
   for (const values of Object.values(normalizedContributions || {})) if (values && new Set(values.map((entry) => entry.id)).size !== values.length) throw new Error('Extension contribution ids must be unique within their type.')
   if (normalizedContributions?.promptTypes?.length && !permissions.includes('study:prompt-types')) throw new Error('Prompt type contributions require study:prompt-types.')

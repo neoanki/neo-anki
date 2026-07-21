@@ -33,6 +33,7 @@ interface WorkspaceStoreStatus {
   path: string
   recoveredFromBackup: boolean
   recoveryError?: string
+  recoverySourcePath?: string
   migratedLegacyData: boolean
 }
 
@@ -108,13 +109,13 @@ export class WorkspaceStore {
     this.dbPath = join(userDataRoot, DATABASE_FILE)
     const opened = this.openRecoverableDatabase()
     this.db = opened.db
-    this.statusValue = { path: this.dbPath, recoveredFromBackup: opened.recovered, recoveryError: opened.error, migratedLegacyData: false }
+    this.statusValue = { path: this.dbPath, recoveredFromBackup: opened.recovered, recoveryError: opened.error, recoverySourcePath: opened.recoverySourcePath, migratedLegacyData: false }
     this.configure()
     this.initializeSchema()
     this.statusValue.migratedLegacyData = this.migrateLegacyJsonIfNeeded()
   }
 
-  private openRecoverableDatabase(): { db: DatabaseSync; recovered: boolean; error?: string } {
+  private openRecoverableDatabase(): { db: DatabaseSync; recovered: boolean; error?: string; recoverySourcePath?: string } {
     const openAndCheck = () => {
       const db = new DatabaseSync(this.dbPath)
       const result = db.prepare('PRAGMA quick_check').get() as Record<string, unknown> | undefined
@@ -128,7 +129,11 @@ export class WorkspaceStore {
     }
     try { return { db: openAndCheck(), recovered: false } }
     catch (initialError) {
-      if (existsSync(this.dbPath)) renameSync(this.dbPath, join(this.userDataRoot, `neo-anki.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}.sqlite`))
+      let recoverySourcePath: string | undefined
+      if (existsSync(this.dbPath)) {
+        recoverySourcePath = join(this.userDataRoot, `neo-anki.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}.sqlite`)
+        renameSync(this.dbPath, recoverySourcePath)
+      }
       const automatic = this.automaticBackupPathsSync()
       const rejected: string[] = []
       for (const candidate of automatic) {
@@ -136,7 +141,7 @@ export class WorkspaceStore {
           copyFileSync(candidate, this.dbPath)
           const recovered = openAndCheck()
           if (!this.loadFromDatabase(recovered)) { recovered.close(); throw new Error('Backup has no workspace.') }
-          return { db: recovered, recovered: true, error: rejected.length ? `${rejected.length} newer automatic backup${rejected.length === 1 ? '' : 's'} failed validation before recovery.` : undefined }
+          return { db: recovered, recovered: true, error: rejected.length ? `${rejected.length} newer automatic backup${rejected.length === 1 ? '' : 's'} failed validation before recovery.` : undefined, recoverySourcePath }
         } catch (error) { rejected.push(error instanceof Error ? error.message : 'Unknown backup error.') }
       }
       rmSync(this.dbPath, { force: true })
@@ -144,6 +149,7 @@ export class WorkspaceStore {
         db: new DatabaseSync(this.dbPath),
         recovered: false,
         error: `The workspace database could not be opened${automatic.length ? ` or recovered from ${automatic.length} automatic backup${automatic.length === 1 ? '' : 's'}` : ''}. The damaged file was preserved. ${initialError instanceof Error ? initialError.message : ''}`.trim(),
+        recoverySourcePath,
       }
     }
   }
@@ -662,6 +668,16 @@ export class WorkspaceStore {
   async exportBackup(destination: string) {
     await rm(destination, { force: true })
     await backupDatabase(this.db, destination, { rate: 256 })
+  }
+
+  async exportRecoverySource(destination: string) {
+    const source = this.statusValue.recoverySourcePath
+    if (source && existsSync(source)) {
+      copyFileSync(source, destination)
+      syncFile(destination)
+      return
+    }
+    await this.exportBackup(destination)
   }
 
   private validateBackup(source: string) {

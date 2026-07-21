@@ -5,13 +5,17 @@ import { dirname, join, relative, resolve, sep } from 'node:path'
 import type { ExtensionManifestV2 as ExtensionPackageManifest, ExtensionPermissionV2 as AnyExtensionPermission } from '../packages/extension-sdk/src/index.js'
 import { createExtensionPackage, EXTENSION_SIGNATURE_PATH, normalizeExtensionPath, parseExtensionPackage, parseExtensionPackageSignature, type ParsedExtensionPackage } from '../packages/extension-sdk/src/package-format.js'
 
-interface ExtensionStateEntry {
+interface ExtensionStateSnapshot {
   manifest: ExtensionPackageManifest
   enabled: boolean
   directory: string
   digest: string
   installedAt: string
   updatedAt: string
+}
+interface ExtensionStateEntry extends ExtensionStateSnapshot {
+  previous?: ExtensionStateSnapshot
+  pendingActivation?: boolean
 }
 
 interface ExtensionState {
@@ -82,7 +86,7 @@ const verifyPackageSignature = (parsed: ParsedExtensionPackage) => {
 export class ExtensionManager {
   private staged = new Map<string, StagedPackage>()
 
-  constructor(private readonly userDataRoot: string) {}
+  constructor(private readonly userDataRoot: string, private readonly appVersion?: string) {}
 
   private root() { return join(this.userDataRoot, 'extensions') }
   private packagesRoot() { return join(this.root(), 'packages') }
@@ -131,6 +135,7 @@ export class ExtensionManager {
   async stage(bytes: Uint8Array): Promise<ExtensionInstallCandidate> {
     const parsed = parseExtensionPackage(bytes)
     verifyPackageSignature(parsed)
+    if (this.appVersion && parsed.manifest.minimumNeoAnkiVersion && compareExtensionVersions(this.appVersion, parsed.manifest.minimumNeoAnkiVersion) < 0) throw new Error(`${parsed.manifest.name} requires Neo Anki ${parsed.manifest.minimumNeoAnkiVersion} or later.`)
     const digest = createHash('sha256').update(bytes).digest('hex')
     const state = await this.loadState()
     const current = state.extensions[parsed.manifest.id]
@@ -169,7 +174,7 @@ export class ExtensionManager {
     const temporaryRoot = join(this.packagesRoot(), parsed.manifest.id, `.install-${randomUUID()}`)
 
     if (previous?.digest === digest && previous.directory === directory && existsSync(finalRoot)) {
-      state.extensions[parsed.manifest.id] = { ...previous, manifest: parsed.manifest, enabled: true, updatedAt: timestamp }
+      state.extensions[parsed.manifest.id] = { ...previous, manifest: parsed.manifest, enabled: true, updatedAt: timestamp, pendingActivation: true }
       await this.saveState(state)
       return (await this.list()).find((entry) => entry.manifest.id === parsed.manifest.id)!
     }
@@ -194,9 +199,10 @@ export class ExtensionManager {
         digest,
         installedAt: previous?.installedAt || timestamp,
         updatedAt: timestamp,
+        pendingActivation: true,
+        ...(previous ? { previous: previous.previous || { manifest: previous.manifest, enabled: previous.enabled, directory: previous.directory, digest: previous.digest, installedAt: previous.installedAt, updatedAt: previous.updatedAt } } : {}),
       }
       await this.saveState(state)
-      if (previous && previous.directory !== directory) await rm(join(this.packagesRoot(), parsed.manifest.id, previous.directory), { recursive: true, force: true })
       if (displacedRoot) await rm(displacedRoot, { recursive: true, force: true })
     } catch (error) {
       await rm(temporaryRoot, { recursive: true, force: true })
@@ -221,6 +227,29 @@ export class ExtensionManager {
     entry.enabled = enabled
     entry.updatedAt = new Date().toISOString()
     await this.saveState(state)
+  }
+
+  async confirmActivation(id: string) {
+    const state = await this.loadState()
+    const entry = state.extensions[id]
+    if (!entry?.pendingActivation) return
+    const previousDirectory = entry.previous?.directory
+    delete entry.previous
+    delete entry.pendingActivation
+    await this.saveState(state)
+    if (previousDirectory && previousDirectory !== entry.directory) await rm(join(this.packagesRoot(), id, previousDirectory), { recursive: true, force: true })
+  }
+
+  async rollbackActivation(id: string) {
+    const state = await this.loadState()
+    const entry = state.extensions[id]
+    if (!entry?.pendingActivation) return false
+    const failedDirectory = entry.directory
+    if (entry.previous) state.extensions[id] = { ...entry.previous, enabled: true, updatedAt: new Date().toISOString() }
+    else delete state.extensions[id]
+    await this.saveState(state)
+    if (failedDirectory !== state.extensions[id]?.directory) await rm(join(this.packagesRoot(), id, failedDirectory), { recursive: true, force: true })
+    return true
   }
 
   async requireEnabled(id: string) {

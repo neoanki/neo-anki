@@ -15,7 +15,7 @@ const examples = [
   ['What is progressive disclosure?', 'Showing complexity only when it becomes relevant.', 'Product design'],
   ['Why separate a knowledge item from its prompts?', 'One fact can generate several practice formats without duplicating the source.', 'Neo Anki'],
   ['What should happen when the daily review budget is overloaded?', 'Pause new material and prioritize the most at-risk due knowledge.', 'Neo Anki'],
-  ['{{c1::Active recall}} means trying to retrieve an answer before seeing it.', 'Active recall', 'Learning science'],
+  ['What does active recall mean?', 'Trying to retrieve an answer before seeing it.', 'Learning science'],
   ['What is an append-only review log good for?', 'Reliable merging, auditability, and rebuilding scheduler state.', 'Engineering'],
   ['What is the purpose of a content-addressed media store?', 'Deduplication and integrity through stable file hashes.', 'Engineering'],
   ['What does HTTP status 404 mean?', 'The requested resource was not found.', 'Web fundamentals'],
@@ -34,7 +34,35 @@ const examples = [
   ['What does idempotent mean?', 'Repeating the same operation has no additional effect.', 'Engineering'],
 ] as const
 
-export const createSeedData = (): AppData => {
+export const createEmptyWorkspaceData = (): AppData => {
+  const timestamp = new Date().toISOString()
+  return {
+    version: 3,
+    deviceId: uid(),
+    items: [],
+    cards: [],
+    reviews: [],
+    assets: [],
+    goals: [],
+    views: [],
+    packs: [],
+    packConflicts: [],
+    trash: [],
+    settings: {
+      dailyMinutes: 30,
+      retention: 0.9,
+      theme: 'light',
+      onboardingComplete: false,
+      recoveryStrategy: 'risk',
+      burySiblings: true,
+      leechThreshold: 8,
+      leechAction: 'flag',
+    },
+    updatedAt: timestamp,
+  }
+}
+
+export const createDemoWorkspaceData = (): AppData => {
   const now = new Date()
   const timestamp = now.toISOString()
   const items: KnowledgeItem[] = []
@@ -42,7 +70,7 @@ export const createSeedData = (): AppData => {
 
   examples.forEach(([prompt, answer, collection], index) => {
     const itemId = uid()
-    const variant: PromptVariant = prompt.includes('{{c1::') ? 'cloze' : 'forward'
+    const variant: PromptVariant = 'forward'
     items.push({
       id: itemId,
       prompt,
@@ -69,11 +97,7 @@ export const createSeedData = (): AppData => {
     } else {
       fsrs.due = addDays(now, index - 12).toISOString()
     }
-    cards.push({ id: uid(), itemId, variant, promptData: variant === 'cloze' ? { clozeOrdinal: 1 } : undefined, suspended: false, fsrs, estimatedSeconds: 12 + (index % 4) * 2, createdAt: timestamp, updatedAt: timestamp })
-
-    if (index === 4 || index === 5) {
-      cards.push({ id: uid(), itemId, variant: 'reverse', suspended: false, fsrs: makeEmptyFSRSCard(now), estimatedSeconds: 14, createdAt: timestamp, updatedAt: timestamp })
-    }
+    cards.push({ id: uid(), itemId, variant, suspended: false, fsrs, estimatedSeconds: 12 + (index % 4) * 2, createdAt: timestamp, updatedAt: timestamp })
   })
 
   const goals: LearningGoal[] = [
@@ -120,3 +144,6 @@ export const createSeedData = (): AppData => {
     updatedAt: timestamp,
   }
 }
+
+/** @deprecated Test/demo fixture. Production initialization must use createEmptyWorkspaceData. */
+export const createSeedData = createDemoWorkspaceData
