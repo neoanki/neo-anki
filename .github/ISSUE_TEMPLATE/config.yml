@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security disclosure
+    url: https://github.com/neoanki/neo-anki/security/policy
+    about: Report vulnerabilities privately when disclosure could put users at risk.

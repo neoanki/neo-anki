@@ -16,6 +16,8 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
   const { route, navigate, plan, persistenceError, persistenceState, retryPersistence } = useApp()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const moreRef = useRef<HTMLDetailsElement>(null)
+  const previousRouteRef = useRef(route)
+  const previousSettingsOpenRef = useRef(false)
   const hiddenNav = route === 'review'
   const extensionLinks = useMemo(() => extensionUiContributionsV2('page').map((page) => ({ route: page.route, label: page.label, icon: Puzzle })), [])
   const hasWorkspaceTools = useMemo(() => extensionUiContributionsV2('workspace').length > 0, [])
@@ -61,7 +63,11 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
   }, [extensionLinks, hasWorkspaceTools, navigate, settingsOpen])
 
   useEffect(() => {
-    if (!settingsOpen) document.getElementById('main-content')?.focus()
+    const routeChanged = previousRouteRef.current !== route
+    const settingsClosed = previousSettingsOpenRef.current && !settingsOpen
+    previousRouteRef.current = route
+    previousSettingsOpenRef.current = settingsOpen
+    if (routeChanged || settingsClosed) document.getElementById('main-content')?.focus()
   }, [route, settingsOpen])
 
   return (

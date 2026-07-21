@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test'
+import { headlessEvidenceUse } from './e2e/support/playwright'
 
 export default defineConfig({
   testDir: './e2e',
@@ -8,5 +9,5 @@ export default defineConfig({
   retries: 0,
   reporter: [['list'], ['html', { outputFolder: 'playwright-report/release-acceptance', open: 'never' }]],
   outputDir: 'test-results/release-acceptance',
-  use: { trace: 'retain-on-failure', screenshot: 'only-on-failure' },
+  use: headlessEvidenceUse,
 })

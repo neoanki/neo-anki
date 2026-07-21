@@ -3,10 +3,12 @@ import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { sha256File, writeQaEvidence } from './support/qa'
 
 const executablePath = process.env.NEO_ANKI_RELEASE_APP || ''
 const ttsPackage = process.env.NEO_ANKI_RELEASE_TTS_PACKAGE || ''
 const evidenceDirectory = process.env.NEO_ANKI_ACCEPTANCE_EVIDENCE_DIR || join(process.cwd(), '.audit-results', 'release-acceptance')
+let artifactSha256 = ''
 
 type WorkspaceCounts = {
   notes: number
@@ -92,6 +94,7 @@ const openCreate = async (page: Page) => {
 
 test.beforeAll(async () => {
   await mkdir(evidenceDirectory, { recursive: true })
+  if (executablePath && existsSync(executablePath)) artifactSha256 = await sha256File(executablePath)
 })
 
 test('released app completes and persists the clean core journey', async () => {
@@ -145,8 +148,19 @@ test('released app completes and persists the clean core journey', async () => {
     const restartFailures = observeRendererFailures(page)
     await page.getByRole('button', { name: 'Library' }).first().click()
     await expect(page.getByText('What does the packaged application preserve?', { exact: true })).toBeVisible()
-    await expect.poll(() => workspaceCounts(page)).toEqual({ notes: 1, cards: 1, reviews: 1, media: 0, goals: 0, views: 0 })
+    const durableCounts = await expect.poll(() => workspaceCounts(page)).toEqual({ notes: 1, cards: 1, reviews: 1, media: 0, goals: 0, views: 0 }).then(() => workspaceCounts(page))
     expect(restartFailures).toEqual([])
+    await writeQaEvidence(join(evidenceDirectory, 'core-manifest.json'), {
+      scenario: 'released app clean core journey with restart',
+      target: 'packaged',
+      version: process.env.NEO_ANKI_RELEASE_VERSION,
+      commit: process.env.GITHUB_SHA,
+      artifactPath: executablePath,
+      artifactSha256,
+      viewport: page.viewportSize() || undefined,
+      durableCounts,
+      runtimeFailures: [...failures, ...restartFailures],
+    })
   } finally {
     await stop(application)
     await rm(userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 })
@@ -180,6 +194,17 @@ test('released TTS package exposes setup from authoring without losing the draft
     await expect(action.getByRole('checkbox')).toBeDisabled()
     await expect.poll(() => workspaceCounts(page)).toMatchObject({ notes: 0, cards: 0, media: 0 })
     expect(failures).toEqual([])
+    await writeQaEvidence(join(evidenceDirectory, 'tts-manifest.json'), {
+      scenario: 'released TTS setup preserves authoring draft',
+      target: 'released',
+      version: process.env.NEO_ANKI_RELEASE_VERSION,
+      commit: process.env.GITHUB_SHA,
+      artifactPath: executablePath,
+      artifactSha256,
+      viewport: page.viewportSize() || undefined,
+      durableCounts: await workspaceCounts(page),
+      runtimeFailures: failures,
+    })
   } finally {
     await stop(application)
     await rm(userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 })

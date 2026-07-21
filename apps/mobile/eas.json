@@ -12,6 +12,12 @@
       "distribution": "internal",
       "android": { "buildType": "apk" }
     },
+    "e2e-test": {
+      "distribution": "internal",
+      "developmentClient": false,
+      "android": { "buildType": "apk" },
+      "ios": { "simulator": true }
+    },
     "production": {
       "autoIncrement": true
     }

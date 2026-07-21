@@ -1,0 +1,75 @@
+name: QA defect
+description: Report a reproducible product, UX, accessibility, content, pedagogy, security, or distribution defect.
+title: "[P2][area] "
+labels:
+  - bug
+body:
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options: [P0 — release emergency, P1 — release blocker, P2 — release decision required, P3 — backlog]
+    validations:
+      required: true
+  - type: input
+    id: target
+    attributes:
+      label: Target version or commit
+      placeholder: v0.4.2, commit SHA, or branch
+    validations:
+      required: true
+  - type: input
+    id: artifact
+    attributes:
+      label: Artifact and SHA-256
+      placeholder: Source build, or filename and SHA-256
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment and persona
+      placeholder: OS, architecture, browser/runtime, viewport, theme, locale, timezone, assistive technology, learner persona
+    validations:
+      required: true
+  - type: textarea
+    id: prerequisites
+    attributes:
+      label: Prerequisites and fixture
+      placeholder: Account, workspace state, extension bytes/version, permissions, seed
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      placeholder: Numbered, deterministic steps
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: User impact and recovery
+      placeholder: Who is affected, data/security/learning impact, and whether recovery is possible
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      placeholder: Logs, screenshot/video/trace links, database counts, seed, related issues
+  - type: textarea
+    id: regression
+    attributes:
+      label: Regression coverage and status
+      placeholder: Reproducer path, known-bug job link, fixed commit, source/artifact verification status

@@ -1,4 +1,9 @@
 import { z } from 'zod'
+
+// Neo Anki ships with a strict CSP. Disable Zod's optional `new Function`
+// optimization before any schema is constructed so Firefox does not emit a
+// CSP violation while Zod probes for eval support.
+z.config({ jitless: true })
 import type { AppData, KnowledgeItem, PracticeCard } from '../types.js'
 
 const id = z.string().trim().min(1).max(240)
