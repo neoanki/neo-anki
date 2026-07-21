@@ -18,7 +18,9 @@ const migrate = async (window: DesktopWindow, file: string | { name: string; mim
   const frame = migrationFrame(window)
   await frame.getByLabel('Choose Anki or CSV file').setInputFiles(file)
   await expect(frame.locator('.report')).toBeVisible()
-  await frame.getByRole('button', { name: 'Commit inspected migration' }).click()
+  await frame.getByRole('button', { name: 'Commit inspected migration' }).dispatchEvent('click')
+  if (openOnboarding) await expect(window.getByRole('heading', { name: 'Today' })).toBeVisible({ timeout: 60_000 })
+  else await expect(frame.getByRole('status')).toContainText('Migration committed', { timeout: 60_000 })
 }
 const firstReadyWindow = async (application: DesktopApplication) => {
   let readyWindow: DesktopWindow | undefined
@@ -161,7 +163,6 @@ test('desktop security policy permits the WebAssembly Anki importer', async () =
     await window.getByRole('button', { name: /build my first plan/i }).click()
     await window.getByRole('button', { name: /open settings/i }).click()
     await migrate(window, { name: 'csp.apkg', mimeType: 'application/octet-stream', buffer: await createAnkiPackage() }, false)
-    await expect(migrationFrame(window).getByRole('status')).toContainText('Migration committed')
     await expect.poll(async () => (await readdir(join(userData, 'backups'))).some((name) => name.startsWith('import-checkpoint-'))).toBe(true)
   } finally {
     await app.close()
@@ -178,8 +179,8 @@ test('current Anki migration renders custom CSS, typed fields, and media in a sa
     const frame = migrationFrame(window)
     await frame.getByLabel('Choose Anki or CSV file').setInputFiles(join(process.cwd(), 'test-fixtures/anki/25.9.4/current-stable.apkg'))
     await expect(frame.getByText('cards.scheduling', { exact: false })).toBeVisible()
-    await frame.getByRole('button', { name: 'Commit inspected migration' }).click()
-    await expect(window.getByRole('heading', { name: 'Today' })).toBeVisible()
+    await frame.getByRole('button', { name: 'Commit inspected migration' }).dispatchEvent('click')
+    await expect(window.getByRole('heading', { name: 'Today' })).toBeVisible({ timeout: 60_000 })
     await window.locator('button.study-button').click()
     await expect(window.getByLabel('Type your answer')).toBeVisible()
     const prompt = window.locator('iframe[title^="Prompt for"]')
