@@ -37,7 +37,7 @@ export const ReviewPage = () => {
   const fallbackContent = useMemo(() => item ? ({ prompt: item.prompt, answer: item.answer, context: item.context, typed: false, mediaId: item.mediaIds[0], citations: item.citations }) : null, [item])
   const content = externalContent || fallbackContent
 
-  const preview = useMemo(() => card ? previewReview(card, card.schedulerOptions?.desiredRetention || data.settings.retention) : null, [card, data.settings.retention])
+  const preview = useMemo(() => card ? previewReview(card, card.schedulerOptions || data.settings.retention) : null, [card, data.settings.retention])
 
   const resetTimer = () => {
     const now = performance.now()

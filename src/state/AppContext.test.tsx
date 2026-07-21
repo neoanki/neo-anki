@@ -63,7 +63,7 @@ const ImportedEditProbe = ({ imported }: { imported: ReturnType<typeof createSee
 }
 
 const CustomStudyProbe = () => {
-  const { data, activeSession, startCustomSession, reviewCard } = useApp()
+  const { data, activeSession, startCustomSession, reviewCard, undoLastReview } = useApp()
   const card = data.cards[0]
   return <div>
     <output aria-label="custom due">{card.fsrs.due}</output>
@@ -71,6 +71,7 @@ const CustomStudyProbe = () => {
     <output aria-label="custom mode">{activeSession?.request.reschedule === false ? 'preview' : 'normal'}</output>
     <button onClick={() => startCustomSession([card.id], false)}>Start preview</button>
     <button onClick={() => reviewCard(card.id, 3, 8)}>Grade preview</button>
+    <button onClick={undoLastReview}>Undo preview</button>
   </div>
 }
 
@@ -179,6 +180,9 @@ describe('workspace safety actions', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Grade preview' }))
     expect(screen.getByLabelText('custom due')).toHaveTextContent(before!)
     expect(screen.getByLabelText('custom reviews')).toHaveTextContent('1')
+    await userEvent.click(screen.getByRole('button', { name: 'Undo preview' }))
+    expect(screen.getByLabelText('custom due')).toHaveTextContent(before!)
+    expect(screen.getByLabelText('custom reviews')).toHaveTextContent('2')
   })
 
   it('rolls back optimistic authoring when durable persistence fails', async () => {

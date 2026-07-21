@@ -511,7 +511,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const chronological = [...current.reviews].sort((left, right) => Date.parse(right.reviewedAt) - Date.parse(left.reviewedAt) || right.id.localeCompare(left.id))
       for (const candidate of chronological) {
         if (candidate.deviceId && candidate.deviceId !== current.deviceId) continue
-        if ((candidate.kind === 'review' || !candidate.kind) && !reversed.has(candidate.id) && candidate.previousCard) { event = candidate; break }
+        if ((candidate.kind === 'review' || candidate.kind === 'preview' || !candidate.kind) && !reversed.has(candidate.id) && candidate.previousCard) { event = candidate; break }
       }
       if (!event?.previousCard) return current
       const updatedAt = new Date().toISOString()

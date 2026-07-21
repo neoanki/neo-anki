@@ -9,7 +9,7 @@ import type {
   WorkerTransportMessageV2,
 } from '../../../packages/extension-sdk/src/index.js'
 
-const MAX_MESSAGE_BYTES = 512 * 1024 * 1024
+const MAX_MESSAGE_BYTES = 8 * 1024 * 1024
 const MAX_PENDING = 100
 const DEFAULT_TIMEOUT_MS = 15_000
 const START_TIMEOUT_MS = 5_000
