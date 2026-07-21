@@ -6,10 +6,11 @@ import { previewReview } from '../lib/fsrs'
 import { rectStyle } from '../lib/occlusion'
 import { useApp } from '../state/AppContext'
 import type { ReviewRating } from '../types'
-import { compareExtensionPromptV2, extensionUiContributionsV2, renderExtensionPromptV2 } from '../extensions/v2/registry'
+import { compareExtensionPromptV2, extensionUiContributionsV2, hasExtensionPromptTypeV2, renderExtensionPromptV2 } from '../extensions/v2/registry'
 import { ExtensionUiFrameV2 } from '../extensions/v2/ExtensionUiFrameV2'
 import { SandboxedCardFrame } from '../components/SandboxedCardFrame'
 import { safeExternalUrl } from '../lib/urls'
+import { KnowledgeItemEditor } from '../components/KnowledgeItemEditor'
 
 export const ReviewPage = () => {
   const { activeSession, data, endSession, navigate, reviewCard, undoLastReview } = useApp()
@@ -19,6 +20,8 @@ export const ReviewPage = () => {
   const [durations, setDurations] = useState<number[]>([])
   const startedAtRef = useRef(0)
   const [typedAnswer, setTypedAnswer] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [renderError, setRenderError] = useState('')
   const [atTransition, setAtTransition] = useState(false)
   const gradingRef = useRef(false)
   const currentCardIdRef = useRef<string | undefined>(undefined)
@@ -92,7 +95,15 @@ export const ReviewPage = () => {
 
   useEffect(() => {
     let current = true
-    if (item && card && card.variant !== 'forward') void renderExtensionPromptV2(item, card).then((value) => { if (current) setExternalContentState({ cardId: card.id, value }) }).catch(() => undefined)
+    queueMicrotask(() => {
+      if (!current) return
+      setRenderError('')
+      setExternalContentState(null)
+      if (item && card && card.variant !== 'forward' && !hasExtensionPromptTypeV2(card.variant)) setRenderError(`The extension for “${card.variant}” is unavailable. Neo Anki is showing the saved Prompt and Answer as a compatibility fallback; re-enable the extension to restore its intended behavior.`)
+    })
+    if (item && card && card.variant !== 'forward') {
+      if (hasExtensionPromptTypeV2(card.variant)) void renderExtensionPromptV2(item, card).then((value) => { if (current) setExternalContentState({ cardId: card.id, value }) }).catch((error) => { if (current) setRenderError(error instanceof Error ? error.message : 'The extension could not render this practice prompt.') })
+    }
     return () => { current = false }
   }, [card, item])
 
@@ -165,13 +176,13 @@ export const ReviewPage = () => {
         <div className="success-mark"><Check size={30} /></div>
         <p className="eyebrow">Session complete</p>
         <h1>That was enough for this session.</h1>
-        <p>You reviewed {results.length} prompts across {activeSession.blocks.length} {activeSession.blocks.length === 1 ? 'context' : 'contexts'}. {activeSession.request.reschedule === false ? 'This was preview-only practice, so due dates and intervals were not changed.' : 'Everything left simply rolls into the next session.'}</p>
+        <p>You reviewed {results.length} practice {results.length === 1 ? 'prompt' : 'prompts'} across {activeSession.blocks.length} {activeSession.blocks.length === 1 ? 'context' : 'contexts'}. {activeSession.request.reschedule === false ? 'This was preview-only practice, so due dates and intervals were not changed.' : 'Everything left simply rolls into the next session.'}</p>
         <div className="completion-stats">
           <div><strong>{formatDuration(elapsed)}</strong><span>focused time</span></div>
           <div><strong>{recalled}</strong><span>successful retrievals</span></div>
           <div><strong>{results.length - recalled}</strong><span>forgotten</span></div>
         </div>
-        <div className="button-row"><button className="secondary-button" onClick={undo}><Undo2 size={17}/> Undo last answer</button><button className="primary-button" onClick={endSession}>Return to Today</button></div>
+        <div className="button-row"><button className="secondary-button" onClick={undo}><Undo2 size={17}/> Undo last answer</button><button className="primary-button" onClick={endSession}>{activeSession.request.kind === 'custom' ? 'Return to Library' : 'Return to Today'}</button></div>
       </div>
     )
   }
@@ -186,7 +197,7 @@ export const ReviewPage = () => {
         <div className="transition-mark"><Layers3 size={28} /></div>
         <p className="eyebrow">Context switch · block {entry.blockIndex + 1} of {activeSession.blocks.length}</p>
         <h1>{previousBlock.contextKey} complete.</h1>
-        <p>Take a breath. Next is <strong>{currentBlock.contextKey}</strong>—{currentBlock.cards.length} prompts, about {formatDuration(currentBlock.estimatedSeconds)}.</p>
+        <p>Take a breath. Next is <strong>{currentBlock.contextKey}</strong>—{currentBlock.cards.length} practice {currentBlock.cards.length === 1 ? 'prompt' : 'prompts'}, about {formatDuration(currentBlock.estimatedSeconds)}.</p>
         <button className="primary-button" onClick={continueToBlock}>Begin {currentBlock.contextKey} <ArrowRight size={18} /></button>
         <span className="keyboard-hint">Press <kbd>Space</kbd> or <kbd>Enter</kbd> when you’re ready.</span>
       </div>
@@ -195,19 +206,20 @@ export const ReviewPage = () => {
 
   if (!content) return <div className="route-loading" role="status">Loading prompt…</div>
   const templateRendering = card.rendering?.source === 'anki-template' ? card.rendering : undefined
-  const asset = getAssetForCard(item, data.assets)
+  const asset = content.mediaId ? data.assets.find((candidate) => candidate.id === content.mediaId) : getAssetForCard(item, data.assets)
+  const missingRequestedAsset = Boolean(content.mediaId && !asset)
   const typedExpected = templateRendering?.typedAnswer?.expected || content.answer
   const isTyped = Boolean(templateRendering?.typedAnswer || content.typed)
   const typedKey = `${card.id}:${typedAnswer}:${typedExpected}`
   const typedResult = revealed && isTyped ? templateRendering?.typedAnswer ? compareTypedAnswer(typedAnswer, typedExpected) : typedResultState?.key === typedKey ? typedResultState.value : null : null
-  const progress = ((index + (revealed ? 0.5 : 0)) / activeSession.queue.length) * 100
+  const progress = ((index + 1) / activeSession.queue.length) * 100
   const isolatedReviewTools = extensionUiContributionsV2('review')
 
   return (
     <div className="review-page">
       <header className="review-header">
         <div className="review-nav-actions"><button className="text-button" onClick={endSession}><ArrowLeft size={18} /> End session</button>{index > 0 && <button className="text-button" onClick={undo} title="Undo last answer (⌘Z)"><Undo2 size={17}/> Undo</button>}</div>
-        <div className="session-progress" role="progressbar" aria-label="Review session progress" aria-valuemin={0} aria-valuemax={activeSession.queue.length} aria-valuenow={index}><span style={{ width: `${progress}%` }} /></div>
+        <div className="session-progress" role="progressbar" aria-label="Review session progress" aria-valuemin={1} aria-valuemax={activeSession.queue.length} aria-valuenow={index + 1} aria-valuetext={`Reviewing practice prompt ${index + 1} of ${activeSession.queue.length}`}><span style={{ width: `${progress}%` }} /></div>
         <div className="review-status">
           <div className="review-tool-host">
             {isolatedReviewTools.map((contribution) => <ExtensionUiFrameV2 key={`${contribution.extensionId}:${contribution.id}`} contribution={contribution} reloadKey={`${card.id}:${revealed ? 'answer' : 'prompt'}`} dto={{ card: { id: card.id, noteId: item.id, deck: item.collection, tags: item.tags, suspended: card.suspended, dueAt: card.fsrs.due }, revealed }} />)}
@@ -218,7 +230,9 @@ export const ReviewPage = () => {
 
       {activeSession.request.kind === 'custom' && <div className="custom-study-banner" role="status"><strong>Custom study</strong><span>{activeSession.request.reschedule === false ? 'Preview only · ratings are recorded, scheduling is unchanged' : 'Ratings update normal scheduling'}</span></div>}
 
-      <div className="visually-hidden" role="status" aria-live="polite">{revealed ? 'Answer revealed. Choose Again, Hard, Good, or Easy.' : 'Question ready.'}</div>
+      <div className="visually-hidden" role="status" aria-live="polite">{revealed ? 'Answer revealed. Choose Forgot, Recalled with effort, Recalled, or Easy recall.' : 'Practice prompt ready.'}</div>
+      {renderError && <div className="inline-message warning extension-render-warning" role="alert"><span>{renderError}</span><button className="text-button" onClick={() => navigate('extensions')}>Open Extensions</button></div>}
+      {missingRequestedAsset && <div className="inline-message error" role="alert">This practice prompt’s selected media file is missing. Open the knowledge item to replace it.</div>}
       <article className={revealed ? 'review-card revealed' : 'review-card'}>
         <div className="review-meta"><span>Block {entry.blockIndex + 1} · {item.collection}</span><span>{card.fsrs.state === 0 ? 'New' : 'Review'}</span></div>
         {templateRendering ? <div className="prompt-content template-card-content">
@@ -239,8 +253,9 @@ export const ReviewPage = () => {
             {content.citations.length > 0 && <div className="review-citations"><strong>Sources</strong>{content.citations.map((citation) => { const url = safeExternalUrl(citation.url); return url ? <a key={citation.id} href={url} target="_blank" rel="noopener noreferrer">{citation.title}</a> : <span key={citation.id}>{citation.title}</span> })}</div>}
           </div>
         )}
-        <button className="edit-card-button" aria-label="Edit this knowledge item" onClick={() => navigate('library')}><Edit3 size={17} /> Edit</button>
+        <button className="edit-card-button" aria-label="Edit this knowledge item" onClick={() => setEditing(true)}><Edit3 size={17} /> Edit</button>
       </article>
+      {editing && <KnowledgeItemEditor item={item} onClose={() => setEditing(false)} />}
 
       <div className="review-actions">
         {!revealed ? (

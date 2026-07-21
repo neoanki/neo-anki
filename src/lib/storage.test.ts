@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import { createSeedData } from '../data/seed'
-import { adoptPersistedData, loadData, migrateData, parseBackupText, saveData } from './storage'
+import { describe, expect, it, vi } from 'vitest'
+import { createEmptyWorkspaceData, createSeedData } from '../data/seed'
+import { adoptPersistedData, clearStoredData, downloadBackup, exportRecoverySource, loadData, loadWorkspaceData, migrateData, parseBackupText, saveData, unlockPersistence } from './storage'
 
 describe('storage and migrations', () => {
   it('migrates v1 items and cards without data loss', () => {
@@ -12,13 +12,69 @@ describe('storage and migrations', () => {
     expect(migrated.cards[0].createdAt).toBeTruthy()
     expect(migrated.settings.recoveryStrategy).toBe('risk')
   })
-  it('saves, loads, validates, and safely falls back from corruption', async () => {
+  it('starts empty, saves, loads, validates, and reports corruption without substituting data', async () => {
+    const empty = loadWorkspaceData()
+    expect(empty.ok && empty.data).toEqual(expect.objectContaining({ items: [], cards: [], goals: [], views: [] }))
     const data = createSeedData(); await saveData(data)
     expect(loadData().items).toHaveLength(data.items.length)
     expect(parseBackupText(JSON.stringify(data)).version).toBe(3)
     expect(() => parseBackupText('{}')).toThrow(/valid Neo Anki/)
     localStorage.setItem('neo-anki:data:v1', '{bad')
-    expect(loadData().version).toBe(3)
+    const failed = loadWorkspaceData()
+    expect(failed).toEqual(expect.objectContaining({ ok: false, failure: expect.objectContaining({ code: 'parse', canExportOriginal: true }) }))
+    expect(() => loadData()).toThrow()
+    await expect(saveData(createEmptyWorkspaceData())).rejects.toThrow(/blocked until workspace recovery/i)
+  })
+
+  it('never includes demo content in the production empty factory', () => {
+    const empty = createEmptyWorkspaceData()
+    expect(empty.items).toEqual([])
+    expect(empty.cards).toEqual([])
+    expect(empty.reviews).toEqual([])
+    expect(empty.assets).toEqual([])
+    expect(empty.goals).toEqual([])
+    expect(empty.views).toEqual([])
+  })
+
+  it('exports a browser recovery checkpoint before unlocking destructive recovery', async () => {
+    const createObjectUrl = vi.fn(() => 'blob:neoanki-recovery')
+    const revokeObjectUrl = vi.fn()
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectUrl })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectUrl })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    localStorage.setItem('neo-anki:data:v1', '{damaged')
+
+    expect(loadWorkspaceData()).toMatchObject({ ok: false, failure: { code: 'parse', mode: 'browser', canExportOriginal: true } })
+    await expect(exportRecoverySource()).resolves.toEqual({ canceled: false })
+    expect(createObjectUrl).toHaveBeenCalledWith(expect.any(Blob))
+    expect(click).toHaveBeenCalledOnce()
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:neoanki-recovery')
+
+    const empty = createEmptyWorkspaceData()
+    unlockPersistence(empty)
+    await saveData(empty)
+    await expect(exportRecoverySource()).rejects.toThrow(/no longer available/)
+    await downloadBackup(empty)
+    expect(click).toHaveBeenCalledTimes(2)
+    await clearStoredData()
+    expect(localStorage.getItem('neo-anki:data:v1')).toBeNull()
+  })
+
+  it('reports desktop read and migration failures and uses preserved-source export', async () => {
+    const original = window.neoAnkiDesktop
+    const exportDesktop = vi.fn(async () => ({ canceled: false, path: '/tmp/recovery.sqlite' }))
+    try {
+      window.neoAnkiDesktop = { loadData: () => ({ data: null, storagePath: '/tmp/workspace.sqlite', recoveredFromBackup: false, error: 'SQLite read failed', recoverySourcePath: '/tmp/recovery.sqlite' }), exportRecoverySource: exportDesktop } as never
+      expect(loadWorkspaceData()).toMatchObject({ ok: false, failure: { code: 'read', mode: 'desktop', sourcePath: '/tmp/recovery.sqlite', canExportOriginal: true } })
+      await expect(exportRecoverySource()).resolves.toEqual({ canceled: false, path: '/tmp/recovery.sqlite' })
+      expect(exportDesktop).toHaveBeenCalledOnce()
+
+      window.neoAnkiDesktop = { loadData: () => ({ data: { version: 999 }, storagePath: '/tmp/workspace.sqlite', recoveredFromBackup: false }), exportRecoverySource: exportDesktop } as never
+      expect(loadWorkspaceData()).toMatchObject({ ok: false, failure: { code: 'migration', mode: 'desktop', sourcePath: '/tmp/workspace.sqlite' } })
+      unlockPersistence()
+    } finally {
+      window.neoAnkiDesktop = original
+    }
   })
 
   it('uses the narrow desktop bridge instead of browser storage when available', async () => {

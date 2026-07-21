@@ -132,6 +132,8 @@ export class ExtensionWorkerRuntimeV2 {
     })
   }
 
+  async waitUntilReady() { await this.ready }
+
   close() { if (this.closed) return; this.closed = true; this.worker.terminate(); this.fail(new Error('Extension worker was closed.'), false) }
   private fail(error: Error, terminate = true) {
     if (terminate && !this.closed) { this.closed = true; this.worker.terminate() }
@@ -141,9 +143,10 @@ export class ExtensionWorkerRuntimeV2 {
   }
 }
 
+export type SandboxedUiLifecycleEventV2 = { type: 'ready' } | { type: 'error'; message: string } | { type: 'resize'; height: number }
 export interface SandboxedUiRuntimeV2 { iframe: HTMLIFrameElement; post(name: string, payload: unknown): void; close(): void }
 
-export const createSandboxedExtensionUiV2 = (manifest: ExtensionManifestV2, contributionId: string, entryUrl: string, init: Omit<SandboxedUiInit, 'type' | 'extensionId' | 'contributionId'>, hostCall?: (name: string, payload: unknown) => Promise<unknown>): SandboxedUiRuntimeV2 => {
+export const createSandboxedExtensionUiV2 = (manifest: ExtensionManifestV2, contributionId: string, entryUrl: string, init: Omit<SandboxedUiInit, 'type' | 'extensionId' | 'contributionId'>, hostCall?: (name: string, payload: unknown) => Promise<unknown>, onLifecycle?: (event: SandboxedUiLifecycleEventV2) => void): SandboxedUiRuntimeV2 => {
   const contribution = manifest.uiEntries?.find((value) => value.id === contributionId)
   if (!contribution) throw new Error(`Unknown UI contribution ${contributionId}.`)
   const entry = safeUrl(entryUrl)
@@ -161,7 +164,19 @@ export const createSandboxedExtensionUiV2 = (manifest: ExtensionManifestV2, cont
     try {
       bounded(event.data)
       const message = event.data
-      if (!message || message.protocol !== 2 || message.type !== 'host-call' || !message.id || !message.name || !hostCall) return
+      if (!message || message.protocol !== 2) return
+      if (message.type === 'ready') { onLifecycle?.({ type: 'ready' }); return }
+      if (message.type === 'error' && !message.id) {
+        const detail = message.payload as { message?: unknown } | undefined
+        onLifecycle?.({ type: 'error', message: typeof detail?.message === 'string' ? detail.message : 'Extension UI failed to start.' })
+        return
+      }
+      if (message.type === 'event' && message.name === 'resize') {
+        const requested = Number((message.payload as { height?: unknown } | undefined)?.height)
+        if (Number.isFinite(requested)) onLifecycle?.({ type: 'resize', height: Math.max(96, Math.min(2400, requested)) })
+        return
+      }
+      if (message.type !== 'host-call' || !message.id || !message.name || !hostCall) return
       void hostCall(message.name, message.payload).then((payload) => channel.port1.postMessage({ protocol: 2, type: 'host-result', id: message.id, payload } satisfies SandboxedUiMessageV2)).catch((error) => channel.port1.postMessage({ protocol: 2, type: 'error', id: message.id, payload: { message: error instanceof Error ? error.message : 'Host call failed.' } } satisfies SandboxedUiMessageV2))
     } catch { channel.port1.close() }
   }
@@ -170,6 +185,7 @@ export const createSandboxedExtensionUiV2 = (manifest: ExtensionManifestV2, cont
     const message: SandboxedUiInit = { type: 'neo-anki:init-ui-v2', extensionId: manifest.id, contributionId, ...structuredClone(init) }
     bounded(message); iframe.contentWindow.postMessage(message, '*', [channel.port2])
   }, { once: true })
+  iframe.addEventListener('error', () => onLifecycle?.({ type: 'error', message: 'The extension interface could not be loaded.' }), { once: true })
   return {
     iframe,
     post(name, payload) { if (closed) throw new Error('Extension UI is closed.'); channel.port1.postMessage(bounded({ protocol: 2, type: 'event', name, payload } satisfies SandboxedUiMessageV2)) },

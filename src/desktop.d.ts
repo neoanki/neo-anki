@@ -14,6 +14,7 @@ declare global {
     recoveredFromBackup: boolean
     migratedLegacyData?: boolean
     error?: string
+    recoverySourcePath?: string
   }
 
   interface NeoAnkiInstalledExtension {
@@ -44,6 +45,7 @@ declare global {
     loadData(): NeoAnkiDesktopLoadResult
     saveData(changes: WorkspaceChangeSet): Promise<void>
     exportBackup(): Promise<{ canceled: boolean; path?: string }>
+    exportRecoverySource?(): Promise<{ canceled: boolean; path?: string }>
     restoreBackup(): Promise<{ canceled: boolean }>
     resetData(): Promise<void>
     createImportCheckpoint(): Promise<string | null>
@@ -63,12 +65,16 @@ declare global {
     installExtension(token: string): Promise<NeoAnkiInstalledExtension>
     discardExtension(token: string): Promise<void>
     setExtensionEnabled(id: string, enabled: boolean): Promise<void>
+    confirmExtensionActivation?(id: string): Promise<void>
+    rollbackExtensionActivation?(id: string): Promise<boolean>
     uninstallExtension(id: string, deleteSecrets: boolean): Promise<void>
     reloadForExtensions(): Promise<void>
     claimExtensionCapability(id: string): Promise<string>
     extensionNetworkFetch(token: string, request: ExtensionNetworkBridgeRequest): Promise<ExtensionNetworkBridgeResponse>
     extensionApplyPatchV2(token: string, patch: WorkspacePatchV2): Promise<{ workspaceRevision: number; data: AppData }>
     extensionCreateMediaV2(token: string, request: MediaCreateRequest): Promise<{ id: string; sha256: string; byteLength: number; workspaceRevision: number }>
+    extensionSaveFileV2?(token: string, request: { filename: string; mimeType: string; text?: string; bytes?: Uint8Array }): Promise<{ canceled: boolean; path?: string }>
+    extensionOpenExternalV2?(token: string, url: string): Promise<void>
     extensionSecretReadBatchV2(token: string, keys: string[]): Promise<Record<string, string | null>>
     extensionSecretMutateBatchV2(token: string, changes: Array<{ op: 'set'; key: string; value: string } | { op: 'delete'; key: string }>): Promise<void>
     extensionConfigReadV2(token: string): Promise<unknown | null>

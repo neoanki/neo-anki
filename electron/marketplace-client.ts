@@ -39,7 +39,7 @@ export class MarketplaceClient {
     return parseMarketplaceCatalog(value)
   }
 
-  async list() { return (await this.catalog()).extensions }
+  async list() { return (await this.catalog()).extensions.filter((extension) => compareMarketplaceVersions(this.appVersion, extension.release.minimumNeoAnkiVersion) >= 0) }
 
   async stage(id: string, version: string): Promise<ExtensionInstallCandidate> {
     const extension = (await this.catalog()).extensions.find(entry => entry.id === id && entry.release.version === version)
