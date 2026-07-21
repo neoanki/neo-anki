@@ -46,10 +46,23 @@ const validateScheduling = (card: Card, index: number, issues: WorkspaceV4Invari
   if (card.buriedBy && !card.buriedUntil) issues.push({ path: `cards[${index}].buriedBy`, message: 'A bury source requires a bury timestamp.' })
 }
 
-const validateReview = (review: ReviewEvent, index: number, reviewIds: Set<string>, cardIds: Set<string>, issues: WorkspaceV4InvariantIssue[]) => {
+const validateReview = (review: ReviewEvent, index: number, reviewsById: Map<string, ReviewEvent>, reversedReviewIds: Set<string>, cardIds: Set<string>, issues: WorkspaceV4InvariantIssue[]) => {
   if (!iso(review.reviewedAt)) issues.push({ path: `reviews[${index}].reviewedAt`, message: 'Review timestamp is invalid.' })
   if (!Number.isFinite(review.durationMilliseconds) || review.durationMilliseconds < 0) issues.push({ path: `reviews[${index}].durationMilliseconds`, message: 'Review duration must be finite and non-negative.' })
-  if (review.kind === 'reversal') requireRef(reviewIds, review.reversesReviewId, `reviews[${index}].reversesReviewId`, 'review event', issues)
+  if (review.kind === 'reversal') {
+    const path = `reviews[${index}].reversesReviewId`
+    if (!review.reversesReviewId) issues.push({ path, message: 'A reversal must name the review it reverses.' })
+    else {
+      const target = reviewsById.get(review.reversesReviewId)
+      if (!target) issues.push({ path, message: `Missing review event ${review.reversesReviewId}.` })
+      else {
+        if (target.kind === 'reversal') issues.push({ path, message: 'A reversal cannot reverse another reversal.' })
+        if (target.cardId !== review.cardId) issues.push({ path, message: 'A reversal must reference a review for the same card.' })
+      }
+      if (reversedReviewIds.has(review.reversesReviewId)) issues.push({ path, message: 'A review can be reversed only once.' })
+      reversedReviewIds.add(review.reversesReviewId)
+    }
+  }
   if (review.kind !== 'reversal' && review.reversesReviewId) issues.push({ path: `reviews[${index}].reversesReviewId`, message: 'Only reversal events may point to a reversed review.' })
   if (review.previousEstimatedSeconds !== undefined && (!Number.isFinite(review.previousEstimatedSeconds) || review.previousEstimatedSeconds < 0)) issues.push({ path: `reviews[${index}].previousEstimatedSeconds`, message: 'Previous estimate must be finite and non-negative.' })
   if (review.previousCardState?.buriedUntil && !iso(review.previousCardState.buriedUntil)) issues.push({ path: `reviews[${index}].previousCardState.buriedUntil`, message: 'Previous bury timestamp is invalid.' })
@@ -104,7 +117,7 @@ export const collectWorkspaceV4InvariantIssues = (workspace: WorkspaceV4): Works
   const presetIds = unique('presets', workspace.presets, issues)
   const noteIds = unique('notes', workspace.notes, issues)
   const cardIds = unique('cards', workspace.cards, issues)
-  const reviewIds = unique('reviews', workspace.reviews, issues)
+  unique('reviews', workspace.reviews, issues)
   const mediaIds = unique('media', workspace.media, issues)
   unique('extensionRecords', workspace.extensionRecords, issues)
   const envelopeIds = unique('sourceEnvelopes', workspace.sourceEnvelopes, issues)
@@ -117,6 +130,8 @@ export const collectWorkspaceV4InvariantIssues = (workspace: WorkspaceV4): Works
   const deckById = new Map(workspace.decks.map((value) => [value.id, value]))
   const presetById = new Map(workspace.presets.map((value) => [value.id, value]))
   const templateById = new Map(workspace.templates.map((value) => [value.id, value]))
+  const reviewsById = new Map(workspace.reviews.map((value) => [value.id, value]))
+  const reversedReviewIds = new Set<string>()
 
   workspace.noteTypes.forEach((value, index) => {
     requireRef(profileIds, value.profileId, `noteTypes[${index}].profileId`, 'profile', issues)
@@ -177,7 +192,7 @@ export const collectWorkspaceV4InvariantIssues = (workspace: WorkspaceV4): Works
   workspace.reviews.forEach((value, index) => {
     requireRef(profileIds, value.profileId, `reviews[${index}].profileId`, 'profile', issues)
     requireRef(cardIds, value.cardId, `reviews[${index}].cardId`, 'card', issues)
-    validateReview(value, index, reviewIds, cardIds, issues); envelope(value, `reviews[${index}].sourceEnvelopeId`)
+    validateReview(value, index, reviewsById, reversedReviewIds, cardIds, issues); envelope(value, `reviews[${index}].sourceEnvelopeId`)
   })
   workspace.media.forEach((value, index) => {
     requireRef(profileIds, value.profileId, `media[${index}].profileId`, 'profile', issues)

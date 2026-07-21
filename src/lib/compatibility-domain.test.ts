@@ -43,6 +43,35 @@ describe('Workspace v4 compatibility domain', () => {
     })).toThrow(/append-only/)
   })
 
+  it('rejects malformed reversal histories before they can corrupt undo state', () => {
+    const review = { ...base, id: 'review', profileId: 'profile', cardId: 'card', kind: 'review' as const, rating: 3 as const, reviewedAt: now, durationMilliseconds: 1000, intervalBefore: 0, intervalAfter: 1, scheduler: 'neo-fsrs' as const }
+
+    const missingTarget = workspace()
+    missingTarget.reviews = [{ ...review, id: 'reversal', kind: 'reversal', rating: 3 }]
+    expect(() => validateWorkspaceV4Invariants(missingTarget)).toThrow(/must name the review/)
+
+    const duplicate = workspace()
+    duplicate.reviews = [
+      review,
+      { ...review, id: 'reversal-1', kind: 'reversal', rating: 3, reversesReviewId: review.id },
+      { ...review, id: 'reversal-2', kind: 'reversal', rating: 3, reversesReviewId: review.id },
+    ]
+    expect(() => validateWorkspaceV4Invariants(duplicate)).toThrow(/only once/)
+
+    const crossCard = workspace()
+    crossCard.cards.push({ ...crossCard.cards[0], id: 'other-card' })
+    crossCard.reviews = [review, { ...review, id: 'reversal', cardId: 'other-card', kind: 'reversal', rating: 3, reversesReviewId: review.id }]
+    expect(() => validateWorkspaceV4Invariants(crossCard)).toThrow(/same card/)
+
+    const reverseReversal = workspace()
+    reverseReversal.reviews = [
+      review,
+      { ...review, id: 'reversal-1', kind: 'reversal', rating: 3, reversesReviewId: review.id },
+      { ...review, id: 'reversal-2', kind: 'reversal', rating: 3, reversesReviewId: 'reversal-1' },
+    ]
+    expect(() => validateWorkspaceV4Invariants(reverseReversal)).toThrow(/cannot reverse another reversal/)
+  })
+
   it('confines extension patches to owned content entities and their declared scope', () => {
     const data = workspace()
     const ownedNote = { ...data.notes[0], id: 'extension:org.example.cards:note-1', fields: { front: 'Owned', back: 'Card' } }

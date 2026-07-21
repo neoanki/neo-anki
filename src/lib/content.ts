@@ -17,7 +17,7 @@ export const analyzeCardHealth = (prompt: string, answer: string, citations: Kno
   if (cleanAnswer.length > 260) findings.push({ code: 'long-answer', severity: 'warning', message: 'The answer may hide multiple facts.', suggestion: 'Keep the required recall short and move explanation into context.' })
   if (/\band\b.*\band\b/i.test(cleanAnswer)) findings.push({ code: 'multi-fact', severity: 'warning', message: 'This may contain several independent facts.', suggestion: 'Create one knowledge item per independently useful fact.' })
   if (cleanPrompt && cleanPrompt.toLocaleLowerCase() === cleanAnswer.toLocaleLowerCase()) findings.push({ code: 'answer-leak', severity: 'error', message: 'The prompt reveals the answer.', suggestion: 'Rewrite the prompt so recall is necessary.' })
-  if (/^(what|who|when|where|why|how)\b/i.test(cleanPrompt) === false && cleanPrompt && !cleanPrompt.includes('{{c')) findings.push({ code: 'open-form', severity: 'info', message: 'The prompt is not phrased as a direct question.', suggestion: 'Direct questions are often faster to interpret during review.' })
+  if (/^(what|who|when|where|why|how)\b/i.test(cleanPrompt) === false && !/[?？؟]\s*$/.test(cleanPrompt) && cleanPrompt && !cleanPrompt.includes('{{c')) findings.push({ code: 'open-form', severity: 'info', message: 'The prompt is not phrased as a direct question.', suggestion: 'Direct questions are often faster to interpret during review.' })
   if (!citations.length && cleanPrompt.length > 40) findings.push({ code: 'missing-source', severity: 'info', message: 'This substantial item has no source.', suggestion: 'Add a citation so future edits can be verified.' })
   return findings
 }
@@ -37,9 +37,10 @@ export const normalizeAnswer = (value: string) => value
   .replace(/\s+/g, ' ')
 
 export const compareTypedAnswer = (attempt: string, expected: string) => {
+  const exactValue = (value: string) => value.normalize('NFKC').toLocaleLowerCase().trim().replace(/\s+/g, ' ').replace(/[.!?。！？]\s*$/u, '')
   const actual = normalizeAnswer(attempt); const target = normalizeAnswer(expected)
   if (!target || actual.length > 512 || target.length > 512) return { result: 'incorrect' as const, similarity: 0 }
-  if (actual === target) return { result: 'exact' as const, similarity: 1 }
+  if (exactValue(attempt) === exactValue(expected)) return { result: 'exact' as const, similarity: 1 }
   const previous = Array.from({ length: target.length + 1 }, (_, index) => index)
   for (let row = 1; row <= actual.length; row += 1) { let diagonal = previous[0]; previous[0] = row; for (let col = 1; col <= target.length; col += 1) { const above = previous[col]; previous[col] = Math.min(previous[col] + 1, previous[col - 1] + 1, diagonal + (actual[row - 1] === target[col - 1] ? 0 : 1)); diagonal = above } }
   const similarity = Math.max(0, 1 - previous[target.length] / Math.max(actual.length, target.length, 1))

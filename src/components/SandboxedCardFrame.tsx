@@ -1,8 +1,33 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+const sanitizeCardHtml = (html: string) => {
+  const template = document.createElement('template')
+  template.innerHTML = html
+  template.content.querySelectorAll('script, meta, base, link, iframe, object, embed, form').forEach((element) => element.remove())
+  template.content.querySelectorAll<HTMLElement>('*').forEach((element) => {
+    for (const attribute of [...element.attributes]) {
+      const name = attribute.name.toLowerCase()
+      if (name.startsWith('on') || ['srcdoc', 'action', 'formaction'].includes(name)) element.removeAttribute(attribute.name)
+      if ((name === 'href' || name === 'xlink:href') && !attribute.value.trim().startsWith('#')) element.removeAttribute(attribute.name)
+    }
+  })
+  return template.innerHTML
+}
+
+const safeCss = (css: string) => css.replace(/<\/style/gi, '<\\/style')
+
+const resizeScript = `(() => {
+  'use strict'
+  const token = document.body.dataset.neoankiToken || ''
+  const send = () => parent.postMessage({ neoAnkiCardHeight: document.documentElement.scrollHeight, token }, '*')
+  new ResizeObserver(send).observe(document.body)
+  addEventListener('load', send, { once: true })
+  send()
+})()`
+
 const documentFor = (html: string, css: string, token: string, theme: 'light' | 'dark') => `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob: neoanki-media:; media-src data: blob: neoanki-media:; font-src data:; style-src 'unsafe-inline'; script-src 'self'; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob: neoanki-media:; media-src data: blob: neoanki-media:; font-src data:; style-src 'unsafe-inline'; script-src 'sha256-rXIRbvfIg1oWa8E7K6zdN0r08XeDu1r8qTk0Q2b4kF8='; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <style>
 :root { color-scheme: light dark; }
 html, body { margin: 0; padding: 0; background: transparent; color: ${theme === 'dark' ? '#f4f1fb' : '#111827'}; }
@@ -15,9 +40,9 @@ a { color: #6d4ed4; }
 .cloze { color: #6d4ed4; font-weight: 700; }
 .media-missing { display: inline-block; padding: .5rem .75rem; border: 1px solid #b42318; border-radius: .5rem; color: #b42318; }
 @media (prefers-color-scheme: dark) { a, .cloze { color: #b9a6ff; } .media-missing { color: #ffb4ab; border-color: #ffb4ab; } }
-${css}
-</style></head><body data-neoanki-token="${token.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;')}" class="card ${theme === 'dark' ? 'nightMode night_mode' : ''}"><main>${html}</main>
-<script src="./card-frame-resize.js"></script>
+${safeCss(css)}
+</style></head><body data-neoanki-token="${token.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;')}" class="card ${theme === 'dark' ? 'nightMode night_mode' : ''}"><main>${sanitizeCardHtml(html)}</main>
+<script>${resizeScript}</script>
 </body></html>`
 
 export const SandboxedCardFrame = ({ html, css, title, theme }: { html: string; css: string; title: string; theme: 'light' | 'dark' }) => {

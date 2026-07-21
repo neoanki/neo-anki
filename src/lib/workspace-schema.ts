@@ -338,7 +338,10 @@ export const collectWorkspaceInvariantIssues = (data: AppData): WorkspaceInvaria
       else {
         const target = reviewById.get(review.reversesReviewId)
         if (!target) add(`reviews.${index}.reversesReviewId`, `Unknown review ${review.reversesReviewId}.`)
-        else if (target.kind === 'reversal') add(`reviews.${index}.reversesReviewId`, 'A reversal cannot reverse another reversal.')
+        else {
+          if (target.kind === 'reversal') add(`reviews.${index}.reversesReviewId`, 'A reversal cannot reverse another reversal.')
+          if (target.cardId !== review.cardId) add(`reviews.${index}.reversesReviewId`, 'A reversal must reference a review for the same card.')
+        }
         if (reversedReviewIds.has(review.reversesReviewId)) add(`reviews.${index}.reversesReviewId`, 'A review can be reversed only once.')
         reversedReviewIds.add(review.reversesReviewId)
       }

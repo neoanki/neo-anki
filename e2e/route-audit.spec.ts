@@ -20,6 +20,10 @@ const assertRouteQuality = async (page: import('@playwright/test').Page, route: 
 test('every core route and Settings survive 200% text at a narrow viewport', async ({ page }) => {
   test.setTimeout(60_000)
   const failures = observeRuntimeFailures(page)
+  await page.route('https://raw.githubusercontent.com/neoanki/extensions/main/catalog.json', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ format: 'neo-anki-extension-catalog', schemaVersion: 1, extensions: [] }),
+  }))
   await page.setViewportSize({ width: 375, height: 812 })
   await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' })
   await seedWorkspace(page)

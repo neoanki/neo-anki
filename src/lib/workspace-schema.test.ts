@@ -24,6 +24,11 @@ describe('semantic workspace invariants', () => {
     const reversal = createSeedData(); const timestamp = reversal.updatedAt
     reversal.reviews = [{ id: 'r', cardId: reversal.cards[0].id, rating: 3, kind: 'reversal', reviewedAt: timestamp, durationSeconds: 0, previousDue: timestamp, nextDue: timestamp, reversesReviewId: 'missing' }]
     expect(() => parseWorkspaceData(reversal)).toThrow(/Unknown review/)
+    const crossCard = createSeedData(); crossCard.cards.push({ ...crossCard.cards[0], id: 'other-card' }); crossCard.reviews = [
+      { id: 'review', cardId: crossCard.cards[0].id, rating: 3, kind: 'review', reviewedAt: timestamp, durationSeconds: 1, previousDue: timestamp, nextDue: timestamp },
+      { id: 'reversal', cardId: 'other-card', rating: 3, kind: 'reversal', reviewedAt: timestamp, durationSeconds: 0, previousDue: timestamp, nextDue: timestamp, reversesReviewId: 'review' },
+    ]
+    expect(() => parseWorkspaceData(crossCard)).toThrow(/same card/)
     const trash = createSeedData(); trash.trash = [{ id: trash.items[0].id, item: trash.items[0], cards: [{ ...trash.cards[0], itemId: 'other' }], deletedAt: timestamp }]
     expect(collectWorkspaceInvariantIssues(trash).map((issue) => issue.message).join(' ')).toMatch(/cannot also be live|must belong/)
   })

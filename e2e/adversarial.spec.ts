@@ -49,6 +49,17 @@ test('browser recovery blocks editing for malformed persisted data and offers a 
   expect(failures).toEqual([])
 })
 
+test('malformed route escapes recover to Today instead of crashing startup', async ({ page }) => {
+  const failures = observeRuntimeFailures(page)
+  await page.addInitScript(({ key, value }) => {
+    if (window.top === window) localStorage.setItem(key, JSON.stringify(value))
+  }, { key: storageKey, value: emptyOnboardedWorkspace() })
+  await page.goto('/#/%E0%A4%A')
+
+  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible()
+  expect(failures).toEqual([])
+})
+
 test('authoring preserves multilingual Unicode and semantic validation across reload', async ({ page }) => {
   const failures = observeRuntimeFailures(page)
   await startWith(page)

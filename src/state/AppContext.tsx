@@ -16,8 +16,10 @@ import { buildDailyPlanInWorker } from '../lib/planner-worker-client'
 const LARGE_PLANNER_CARD_THRESHOLD = 5_000
 const yieldPlannerPreparation = () => new Promise<void>((resolve) => window.setTimeout(resolve, 0))
 const safeRouteFromLocation = (): Route => {
-  const candidate = decodeURIComponent(window.location.hash.replace(/^#\/?/, ''))
-  return /^[a-z][a-z0-9._:-]{0,127}$/i.test(candidate) ? candidate : 'today'
+  try {
+    const candidate = decodeURIComponent(window.location.hash.replace(/^#\/?/, ''))
+    return /^[a-z][a-z0-9._:-]{0,127}$/i.test(candidate) ? candidate : 'today'
+  } catch { return 'today' }
 }
 const scrollToTop = () => window.scrollTo({ top: 0, behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
 
