@@ -47,6 +47,9 @@ test('a large Anki package reports activity and commits durably', async () => {
     await expect(window.getByText(/Import complete\. .*notes and .*cards are now available/)).toBeVisible({ timeout: 10 * 60_000 })
     const importDuration = performance.now() - importStarted
     if (/^jpgram-premium-.*\.apkg$/i.test(basename(ankiPath!))) expect(importDuration).toBeLessThan(5_000)
+    await window.getByRole('button', { name: /^Today/ }).first().click()
+    await expect(window.getByRole('button', { name: /^Study / })).toBeEnabled({ timeout: 30_000 })
+    await expect(window.getByText(/No practice prompts match/i)).toHaveCount(0)
     expect(failures).toEqual([])
 
     await stopElectron(application)
