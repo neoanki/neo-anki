@@ -33,9 +33,9 @@ test('a large Anki package reports activity and commits durably', async () => {
 
     const importStarted = performance.now()
     await input.setInputFiles(ankiPath!)
-    await expect(frame.getByRole('status')).toContainText(`Reading and checking ${basename(ankiPath!)}`)
     await expect(frame.locator('.activity')).toBeVisible()
     await expect(frame.locator('.activity progress')).toBeVisible()
+    await expect(frame.getByRole('status')).toHaveText(new RegExp(`Reading and checking ${basename(ankiPath!)}|Inspecting file in the isolated extension worker`))
     await expect(frame.locator('.report')).toBeVisible({ timeout: 3 * 60_000 })
     await expect(frame.getByRole('status')).toContainText('Preview ready')
 
@@ -61,11 +61,10 @@ test('a large Anki package reports activity and commits durably', async () => {
     if (/^jpgram-premium-.*\.apkg$/i.test(basename(ankiPath!))) {
       await window.getByLabel('Study for').selectOption('20')
       const blocks = window.locator('.block-preview-row')
-      await expect(blocks).toHaveCount(2)
-      await expect(blocks.nth(0)).toContainText('Japanese Grammar::00 - Foundation::01 · Recognition')
-      await expect(blocks.nth(0)).toContainText('8 practice prompts')
-      await expect(blocks.nth(1)).toContainText('Japanese Grammar::00 - Foundation::02 · Production')
-      await expect(blocks.nth(1)).toContainText('8 practice prompts')
+      await expect(window.getByText('16 practice prompts in 1 subject block')).toBeVisible()
+      await expect(blocks).toHaveCount(1)
+      await expect(blocks.first()).toContainText('Japanese Grammar')
+      await expect(blocks.first()).toContainText('16 practice prompts')
       await expect(window.locator('.session-list-pane > header > span')).toHaveText('5 min left for later')
     }
     expect(failures).toEqual([])

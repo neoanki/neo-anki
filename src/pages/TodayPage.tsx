@@ -1,7 +1,7 @@
 import { AlertTriangle, Blocks, Play, Plus, Upload } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { formatDuration } from '../lib/date'
-import { buildStudySession, compareStudyContexts } from '../lib/planner'
+import { buildStudySession, compareStudyContexts, studySubjectForCollection } from '../lib/planner'
 import { useApp } from '../state/AppContext'
 import type { SessionIntent } from '../types'
 import { extensionQueuePoliciesV2 } from '../extensions/v2/registry'
@@ -21,7 +21,7 @@ export const TodayPage = () => {
   const [intent, setIntent] = useState<SessionIntent>('balanced')
   const [renderedAt] = useState(Date.now)
   const weekday = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
-  const collections = useMemo(() => [...new Set(plan.queue.map((entry) => data.items.find((item) => item.id === entry.card.itemId)?.collection || 'Unsorted'))].sort(compareStudyContexts), [data.items, plan.queue])
+  const collections = useMemo(() => [...new Set(plan.queue.map((entry) => studySubjectForCollection(data.items.find((item) => item.id === entry.card.itemId)?.collection || '')))].sort(compareStudyContexts), [data.items, plan.queue])
   const [focusCollection, setFocusCollection] = useState(() => collections[0] || '')
   const effectiveFocusCollection = collections.includes(focusCollection) ? focusCollection : collections[0] || ''
   const recommendedMinutes = recommendedSessionMinutes(data.settings.dailyMinutes, availableWorkSeconds)

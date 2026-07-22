@@ -171,7 +171,8 @@ export const buildDailyPlan = (
   }
 }
 
-const contextFor = (entry: PlannedCard, itemMap: Map<string, KnowledgeItem>) => itemMap.get(entry.card.itemId)?.collection.trim() || 'Unsorted'
+export const studySubjectForCollection = (collection: string) => collection.split('::', 1)[0]?.trim() || 'Unsorted'
+const contextFor = (entry: PlannedCard, itemMap: Map<string, KnowledgeItem>) => studySubjectForCollection(itemMap.get(entry.card.itemId)?.collection || '')
 const contextCollator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' })
 export const compareStudyContexts = (left: string, right: string) => contextCollator.compare(left, right) || left.localeCompare(right)
 

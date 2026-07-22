@@ -152,7 +152,7 @@ describe('session composer', () => {
     expect(session.blocks).toHaveLength(2)
   })
 
-  it('orders numbered imported deck folders naturally and shows each only once', () => {
+  it('groups nested imported decks under their root subject', () => {
     const production = Array.from({ length: 8 }, (_, index) => makeCard(State.New, now, `production-${index}`))
     const recognition = Array.from({ length: 12 }, (_, index) => makeCard(State.New, now, `recognition-${index}`))
     const cards = [...production, ...recognition]
@@ -160,11 +160,13 @@ describe('session composer', () => {
     const daily = buildDailyPlan(cards, [], settings(30), now, items)
     const session = buildStudySession(daily, items, { minutes: 20, intent: 'balanced' })
 
-    expect(session.blocks.map((block) => block.contextKey)).toEqual([
-      'Japanese Grammar::00 - Foundation::01 · Recognition',
-      'Japanese Grammar::00 - Foundation::02 · Production',
+    expect(session.blocks).toHaveLength(1)
+    expect(session.blocks[0].contextKey).toBe('Japanese Grammar')
+    expect(session.blocks[0].cards).toHaveLength(16)
+    expect(session.blocks[0].cards.map((entry) => entry.card.id)).toEqual([
+      ...production.map((card) => card.id),
+      ...recognition.slice(0, 8).map((card) => card.id),
     ])
-    expect(session.blocks.map((block) => block.cards.length)).toEqual([8, 8])
   })
 
   it('supports a focused session without rescheduling other categories', () => {
