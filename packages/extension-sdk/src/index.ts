@@ -131,7 +131,7 @@ export interface MediaCreateRequest { operationId: string; filename: string; mim
 export interface ExtensionContentNoteDto { noteId: string; profileId: string; prompt: string; answer: string; context: string; deckName: string; tags: string[]; record?: { id: string; revision: number; createdAt: string; updatedAt: string; value: unknown } }
 export interface ExtensionContentPageDto { workspaceRevision: number; notes: ExtensionContentNoteDto[]; availableMediaIds: string[]; nextCursor?: string }
 export interface ExtensionContentQuery { cursor?: string; limit?: number; noteIds?: string[] }
-export interface ExtensionMigrationMediaV2 { id: string; filename: string; mimeType: string; dataUrl: string; altText: string; byteLength: number; hash: string; createdAt: string; updatedAt: string }
+export interface ExtensionMigrationMediaV2 { id: string; filename: string; mimeType: string; dataUrl: string; bytes?: Uint8Array; altText: string; byteLength: number; hash: string; createdAt: string; updatedAt: string }
 export interface ExtensionMigrationCommitV2 { document: unknown; media: ExtensionMigrationMediaV2[]; sourceArchive?: Uint8Array; operation: 'additive' | 'replace-profile' }
 
 export interface ExtensionHostV2 {

@@ -363,7 +363,6 @@ const registerDesktopIpc = () => {
     const bytes = request.bytes instanceof Uint8Array ? request.bytes : undefined
     if ((text === undefined) === (bytes === undefined)) throw new Error('The extension must export either text or bytes.')
     const payload = text !== undefined ? Buffer.from(text, 'utf8') : Buffer.from(bytes!)
-    if (payload.byteLength > 512 * 1024 * 1024) throw new Error('The extension export exceeds 512 MB.')
     const result = mainWindow ? await dialog.showSaveDialog(mainWindow, { defaultPath: filename }) : await dialog.showSaveDialog({ defaultPath: filename })
     if (result.canceled || !result.filePath) return { canceled: true }
     await writeFile(result.filePath, payload, { mode: 0o600 })

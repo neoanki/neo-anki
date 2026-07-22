@@ -34,7 +34,9 @@ describe('SDK v2 desktop host', () => {
     await prepareExtensionHost('org.neoanki.host-test')
     const host = createExtensionHostV2('org.neoanki.host-test')
     const updates: unknown[] = []
+    const migrations: unknown[] = []
     window.addEventListener('neo-anki:workspace-updated-v4', (event) => updates.push((event as CustomEvent).detail))
+    window.addEventListener('neo-anki:migration-committed-v4', (event) => migrations.push((event as CustomEvent).detail))
 
     await expect(host.applyPatch({ ...patch, expectedWorkspaceRevision: 2 })).resolves.toEqual({ workspaceRevision: 3 })
     await expect(host.fetch({ operationId: 'network', url: 'https://example.com', body: new Uint8Array([3, 4]) })).resolves.toEqual({ status: 200, headers: { test: 'yes' }, body: new Uint8Array([1, 2]) })
@@ -42,5 +44,6 @@ describe('SDK v2 desktop host', () => {
     await expect(host.migration.commit({ document: {}, media: [], operation: 'additive' })).resolves.toEqual({ workspaceRevision: 6 })
     expect(desktop.extensionNetworkFetch).toHaveBeenCalledWith('capability-token', expect.objectContaining({ bodyBase64: 'AwQ=' }))
     expect(updates).toEqual([{ id: 'workspace' }, { id: 'configured' }, { id: 'migrated' }])
+    expect(migrations).toEqual([{ extensionId: 'org.neoanki.host-test', data: { id: 'migrated' } }])
   })
 })

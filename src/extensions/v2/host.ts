@@ -42,6 +42,7 @@ export const createExtensionHostV2 = (extensionId: string): ExtensionHostV2 => {
       exportWorkspace: () => bridge.extensionMigrationExportV2(token),
       commit: async (input) => {
         const result = await bridge.extensionMigrationCommitV2(token, input)
+        window.dispatchEvent(new CustomEvent('neo-anki:migration-committed-v4', { detail: { extensionId, data: result.data } }))
         window.dispatchEvent(new CustomEvent('neo-anki:workspace-updated-v4', { detail: result.data }))
         return { workspaceRevision: result.workspaceRevision }
       },

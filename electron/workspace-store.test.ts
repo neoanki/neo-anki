@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -44,6 +45,22 @@ describe('WorkspaceStore', () => {
     const committed = store.commitWorkspaceV4Import({ document: appDataToWorkspaceDocumentV4(seed), media: [], operation: 'replace-profile' })
     expect(committed?.items).toHaveLength(seed.items.length)
     expect(await store.createImportCheckpoint()).toBeTruthy()
+    store.close()
+  })
+
+  it('commits extension migration media as binary bytes without base64 expansion', async () => {
+    const store = new WorkspaceStore(await temporaryRoot()), seed = createSeedData()
+    const bytes = new Uint8Array([0, 1, 2, 127, 128, 255])
+    const hash = createHash('sha256').update(bytes).digest('hex')
+    const timestamp = new Date().toISOString()
+    const asset = { id: 'asset-binary', filename: 'binary.dat', mimeType: 'application/octet-stream', dataUrl: 'neoanki-media://pending', bytes, byteLength: bytes.byteLength, hash, altText: 'Binary fixture', createdAt: timestamp, updatedAt: timestamp }
+    const { bytes: _bytes, ...assetMetadata } = asset
+    const document = appDataToWorkspaceDocumentV4({ ...seed, assets: [assetMetadata] })
+
+    store.commitWorkspaceV4Import({ document, media: [asset], operation: 'replace-profile' })
+
+    expect(store.readAsset(asset.id)?.bytes).toEqual(bytes)
+    expect(store.load()?.assets[0]).toMatchObject({ id: asset.id, dataUrl: expect.stringMatching(/^neoanki-media:\/\/asset\//) })
     store.close()
   })
 

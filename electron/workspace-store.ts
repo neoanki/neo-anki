@@ -38,6 +38,7 @@ interface WorkspaceStoreStatus {
 }
 
 type StoredAssetMetadata = Omit<MediaAsset, 'dataUrl'>
+type MigrationMediaPayload = { asset: MediaAsset; bytes?: Uint8Array }
 
 const parseJson = <T>(value: unknown): T => JSON.parse(String(value)) as T
 const stringify = (value: unknown) => JSON.stringify(value)
@@ -50,6 +51,13 @@ const dataUrlBytes = (value: string) => {
 }
 
 const mediaUrl = (asset: Pick<MediaAsset, 'id' | 'hash'>) => `${MEDIA_SCHEME}://asset/${encodeURIComponent(asset.id)}?v=${asset.hash.slice(0, 16)}`
+
+const migrationMediaPayload = (input: unknown): MigrationMediaPayload => {
+  const raw = input && typeof input === 'object' ? input as Record<string, unknown> : {}
+  const bytes = raw.bytes instanceof Uint8Array ? raw.bytes : undefined
+  const candidate = mediaAssetSchema.parse({ ...raw, dataUrl: typeof raw.dataUrl === 'string' ? raw.dataUrl : `${MEDIA_SCHEME}://pending` }) as MediaAsset
+  return { asset: bytes && typeof raw.dataUrl !== 'string' ? { ...candidate, dataUrl: mediaUrl(candidate) } : candidate, bytes }
+}
 
 const rows = <T>(statement: StatementSync) => statement.all().map((row) => parseJson<T>((row as { json: unknown }).json))
 const localDateKey = (date: Date) => [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-')
@@ -315,10 +323,10 @@ export class WorkspaceStore {
 
   load(): AppData | null { return this.loadFromDatabase(this.db) }
 
-  private upsertAsset(input: unknown) {
+  private upsertAsset(input: unknown, suppliedBytes?: Uint8Array) {
     const asset = mediaAssetSchema.parse(input) as MediaAsset
     const existing = this.db.prepare('SELECT data FROM assets WHERE id = ?').get(asset.id) as { data: Uint8Array } | undefined
-    const bytes = asset.dataUrl.startsWith(`${MEDIA_SCHEME}:`) && existing ? Buffer.from(existing.data) : dataUrlBytes(asset.dataUrl)
+    const bytes = suppliedBytes || (asset.dataUrl.startsWith(`${MEDIA_SCHEME}:`) && existing ? Buffer.from(existing.data) : dataUrlBytes(asset.dataUrl))
     if (bytes.byteLength !== asset.byteLength) throw new Error(`Media ${asset.filename} does not match its declared byte length.`)
     const digest = createHash('sha256').update(bytes).digest('hex')
     if (asset.hash && digest !== asset.hash) throw new Error(`Media ${asset.filename} does not match its SHA-256 digest.`)
@@ -380,15 +388,15 @@ export class WorkspaceStore {
     const rootEnvelope = imported.workspace.sourceEnvelopes.find((value) => value.sha256 && (value.format === 'anki-apkg' || value.format === 'anki-colpkg'))
     let createdArchivePath = ''
     if (input.sourceArchive) {
-      if (input.sourceArchive.byteLength > 512 * 1024 * 1024) throw new Error('The retained Anki rollback archive exceeds 512 MB.')
       const digest = sha256(input.sourceArchive)
       if (!rootEnvelope?.sha256 || digest !== rootEnvelope.sha256) throw new Error('The retained Anki rollback archive does not match the preflight digest.')
       const extension = rootEnvelope.format === 'anki-colpkg' ? 'colpkg' : 'apkg'
       const destination = join(this.importArchiveRoot, `${digest}.${extension}`)
       createdArchivePath = retainVerifiedArchive(destination, input.sourceArchive, digest)
     }
-    const mediaPayloads = input.media.map((value) => mediaAssetSchema.parse(value) as MediaAsset)
-    const mediaById = new Map(mediaPayloads.map((value) => [value.id, value]))
+    const mediaPayloads = input.media.map(migrationMediaPayload)
+    const mediaById = new Map(mediaPayloads.map((value) => [value.asset.id, value.asset]))
+    const mediaBytesById = new Map(mediaPayloads.flatMap((value) => value.bytes ? [[value.asset.id, value.bytes] as const] : []))
     const previous = this.readWorkspaceDocument(this.db)
     let document: WorkspaceDocumentV4
     if (!previous) {
@@ -455,7 +463,7 @@ export class WorkspaceStore {
       this.transaction(() => {
         const replaceAssets = !previous
         this.db.exec(`DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; ${replaceAssets ? 'DELETE FROM assets;' : ''} DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM workspace_meta; DELETE FROM workspace_v4;`)
-        this.applyChangesWithoutTransaction(projected)
+        this.applyChangesWithoutTransaction(projected, mediaBytesById)
         if (!replaceAssets) {
           const keep = new Set(projected.assets.map((value) => value.id))
           const stored = this.db.prepare('SELECT id FROM assets').all() as Array<{ id: string }>
@@ -638,7 +646,7 @@ export class WorkspaceStore {
     return { id, sha256, byteLength: bytes.byteLength, workspaceRevision: validated.workspace.revision }
   }
 
-  private applyChangesWithoutTransaction(data: AppData) {
+  private applyChangesWithoutTransaction(data: AppData, suppliedMedia = new Map<string, Uint8Array>()) {
     const changes: WorkspaceChangeSet = {
       version: 1,
       meta: { deviceId: data.deviceId, settings: data.settings, updatedAt: data.updatedAt },
@@ -649,7 +657,7 @@ export class WorkspaceStore {
     for (const item of changes.upsert.items) { const value = knowledgeItemSchema.parse(item); this.db.prepare('INSERT INTO items(id, created_at, updated_at, json) VALUES (?, ?, ?, ?)').run(value.id, value.createdAt, value.updatedAt, stringify(value)) }
     for (const card of changes.upsert.cards) { const value = practiceCardSchema.parse(card); this.db.prepare('INSERT INTO cards(id, item_id, due, suspended, created_at, updated_at, json) VALUES (?, ?, ?, ?, ?, ?, ?)').run(value.id, value.itemId, value.fsrs.due, value.suspended ? 1 : 0, value.createdAt, value.updatedAt, stringify(value)) }
     for (const review of changes.upsert.reviews) { const value = reviewEventSchema.parse(review); this.db.prepare('INSERT INTO reviews(id, card_id, reviewed_at, json) VALUES (?, ?, ?, ?)').run(value.id, value.cardId, value.reviewedAt, stringify(value)) }
-    changes.upsert.assets.forEach((asset) => this.upsertAsset(asset))
+    changes.upsert.assets.forEach((asset) => this.upsertAsset(asset, suppliedMedia.get(asset.id)))
     for (const goal of changes.upsert.goals) { const value = learningGoalSchema.parse(goal); this.db.prepare('INSERT INTO goals(id, created_at, updated_at, json) VALUES (?, ?, ?, ?)').run(value.id, value.createdAt, value.updatedAt, stringify(value)) }
     for (const view of changes.upsert.views) { const value = savedViewSchema.parse(view); this.db.prepare('INSERT INTO views(id, created_at, updated_at, json) VALUES (?, ?, ?, ?)').run(value.id, value.createdAt, value.updatedAt, stringify(value)) }
     for (const pack of changes.upsert.packs) { const value = packSubscriptionSchema.parse(pack); this.db.prepare('INSERT INTO packs(id, installed_at, updated_at, json) VALUES (?, ?, ?, ?)').run(value.id, value.installedAt, value.updatedAt, stringify(value)) }
