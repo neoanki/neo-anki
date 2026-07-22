@@ -140,6 +140,29 @@ test('sandboxed imported templates resize without CSP or renderer errors', async
   expect(failures).toEqual([])
 })
 
+test('sandboxed imported audio keeps a safe native replay control', async ({ page }) => {
+  const data = onboarded()
+  data.items = [data.items[0]]
+  data.cards = [{
+    ...data.cards[0],
+    itemId: data.items[0].id,
+    rendering: {
+      questionHtml: '<p>Audio prompt</p>',
+      answerHtml: '<button class="audio-button" onclick="this.querySelector(\'audio\').play()"><audio src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="></audio></button>',
+      css: '',
+      source: 'anki-template',
+    },
+  }]
+  data.reviews = []
+  await startWith(page, data)
+
+  await page.locator('button.study-button').click()
+  await page.getByRole('button', { name: /reveal answer/i }).click()
+  const frame = page.locator('.sandboxed-card-frame').contentFrame()
+  await expect(frame.locator('button.audio-button')).toHaveCount(0)
+  await expect(frame.locator('audio[controls]')).toHaveCount(1)
+})
+
 test('sandboxed imported templates cannot navigate away from the reviewed card', async ({ page }) => {
   const data = onboarded()
   data.items = [data.items[0]]

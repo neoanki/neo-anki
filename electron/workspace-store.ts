@@ -10,6 +10,7 @@ import type { WorkspaceChangeSet } from '../src/lib/workspace-changes.js'
 import type { WorkspaceDocumentV4, WorkspacePatchV2 } from '../packages/compatibility-domain/src/index.js'
 import { applyWorkspacePatchV2 as applyDomainPatchV2, createWorkspaceDocumentV4, parseWorkspaceDocumentV4 } from '../packages/compatibility-domain/src/index.js'
 import { appDataToWorkspaceDocumentV4, projectValidatedWorkspaceDocumentV4ToAppData, refreshWorkspaceDocumentV4FromProjection, renderAllValidatedWorkspaceCards, renderValidatedWorkspaceCard, workspaceDocumentV4ToAppData } from '../src/lib/workspace-v4.js'
+import { mimeFromFilename } from '../src/lib/media.js'
 import {
   knowledgeItemSchema,
   learningGoalSchema,
@@ -55,11 +56,13 @@ const dataUrlBytes = (value: string) => {
 }
 
 const mediaUrl = (asset: Pick<MediaAsset, 'id' | 'hash'>) => `${MEDIA_SCHEME}://asset/${encodeURIComponent(asset.id)}?v=${asset.hash.slice(0, 16)}`
+const resolvedMediaMimeType = (asset: Pick<MediaAsset, 'filename' | 'mimeType'>) => asset.mimeType === 'application/octet-stream' ? mimeFromFilename(asset.filename) : asset.mimeType
 
 const migrationMediaPayload = (input: unknown): MigrationMediaPayload => {
   const raw = input && typeof input === 'object' ? input as Record<string, unknown> : {}
   const bytes = raw.bytes instanceof Uint8Array ? raw.bytes : undefined
-  const candidate = mediaAssetSchema.parse({ ...raw, dataUrl: typeof raw.dataUrl === 'string' ? raw.dataUrl : `${MEDIA_SCHEME}://pending` }) as MediaAsset
+  const parsed = mediaAssetSchema.parse({ ...raw, dataUrl: typeof raw.dataUrl === 'string' ? raw.dataUrl : `${MEDIA_SCHEME}://pending` }) as MediaAsset
+  const candidate = { ...parsed, mimeType: resolvedMediaMimeType(parsed) }
   return { asset: bytes ? { ...candidate, dataUrl: mediaUrl(candidate) } : candidate, bytes }
 }
 
@@ -296,7 +299,7 @@ export class WorkspaceStore {
       if (asset.archivedMedia) {
         if (!existsSync(join(this.importArchiveRoot, asset.archivedMedia.archiveName))) throw new Error(`Media ${asset.filename} is missing its retained Anki source archive.`)
       }
-      return { ...asset, dataUrl: mediaUrl(asset) }
+      return { ...asset, mimeType: resolvedMediaMimeType(asset), dataUrl: mediaUrl(asset) }
     })
     return parseWorkspaceData({
       version: meta.version,
@@ -435,6 +438,7 @@ export class WorkspaceStore {
   commitWorkspaceV4Import(input: { document: unknown; media: unknown[]; sourceArchive?: Uint8Array; operation: 'additive' | 'replace-profile' }) {
     const timingStarted = performance.now(); let timingPrevious = importTiming('store-entered', timingStarted)
     const imported = parseWorkspaceDocumentV4(input.document)
+    imported.workspace.media = imported.workspace.media.map((asset) => ({ ...asset, mimeType: resolvedMediaMimeType(asset) }))
     timingPrevious = importTiming('document-parsed', timingStarted, timingPrevious)
     const rootEnvelope = imported.workspace.sourceEnvelopes.find((value) => value.sha256 && (value.format === 'anki-apkg' || value.format === 'anki-colpkg'))
     let createdArchivePath = ''
@@ -792,7 +796,7 @@ export class WorkspaceStore {
     const bytes = metadata.archivedMedia ? this.readArchivedMedia(metadata.archivedMedia) : new Uint8Array(row.data)
     if (bytes.byteLength !== metadata.byteLength) throw new Error(`Media ${id} failed its length check.`)
     if (createHash('sha256').update(bytes).digest('hex') !== row.hash) throw new Error(`Media ${id} failed its integrity check.`)
-    return { mimeType: row.mime_type, hash: row.hash, bytes }
+    return { mimeType: resolvedMediaMimeType(metadata), hash: row.hash, bytes }
   }
 
   private readArchivedMedia(location: ArchivedMediaLocation) {

@@ -23,6 +23,7 @@ export const ReviewPage = () => {
   const [typedAnswer, setTypedAnswer] = useState('')
   const [editing, setEditing] = useState(false)
   const [renderError, setRenderError] = useState('')
+  const [mediaPlaybackError, setMediaPlaybackError] = useState('')
   const [atTransition, setAtTransition] = useState(false)
   const gradingRef = useRef(false)
   const currentCardIdRef = useRef<string | undefined>(undefined)
@@ -111,6 +112,7 @@ export const ReviewPage = () => {
   useEffect(() => {
     currentCardIdRef.current = card?.id
     gradingRef.current = false
+    queueMicrotask(() => setMediaPlaybackError(''))
   }, [card?.id])
 
   useEffect(() => {
@@ -260,12 +262,13 @@ export const ReviewPage = () => {
       {renderError && <div className="inline-message warning extension-render-warning" role="alert"><span>{renderError}</span><button className="text-button" onClick={() => navigate('extensions')}>Open Extensions</button></div>}
       {templateRenderError && <div className="inline-message warning extension-render-warning" role="alert"><span>{templateRenderError}</span></div>}
       {missingRequestedAsset && <div className="inline-message error" role="alert">This practice prompt’s selected media file is missing. Open the knowledge item to replace it.</div>}
+      {mediaPlaybackError && <div className="inline-message error" role="alert">Audio could not play. {mediaPlaybackError}</div>}
       <article className={revealed ? 'review-card revealed' : 'review-card'}>
         <div className="review-meta"><span>Block {entry.blockIndex + 1} · {item.collection}</span><span>{card.fsrs.state === 0 ? 'New' : 'Review'}</span></div>
         {templateRendering ? <div className="prompt-content template-card-content">
           <p className="review-label">{revealed ? 'Answer' : 'Prompt'}</p>
           <h1 ref={revealedHeadingRef} className="visually-hidden" tabIndex={-1}>{revealed ? 'Answer' : 'Prompt'}</h1>
-          <SandboxedCardFrame html={revealed ? templateRendering.answerHtml : templateRendering.questionHtml} css={templateRendering.css || data.renderingStyles?.[templateRendering.cssRef || ''] || ''} title={`${revealed ? 'Answer' : 'Prompt'} for ${item.collection}`} theme={data.settings.theme} />
+          <SandboxedCardFrame html={revealed ? templateRendering.answerHtml : templateRendering.questionHtml} css={templateRendering.css || data.renderingStyles?.[templateRendering.cssRef || ''] || ''} title={`${revealed ? 'Answer' : 'Prompt'} for ${item.collection}`} theme={data.settings.theme} autoPlayAudio={revealed} onMediaStatus={(status, message) => setMediaPlaybackError(status === 'error' ? message : '')} />
         </div> : <div className="prompt-content"><p className="review-label">Prompt</p><h1>{content.prompt}</h1></div>}
         {!templateRendering && asset?.mimeType.startsWith('image/') && <div className="review-media image-stage"><img src={asset.dataUrl} alt={asset.altText || asset.filename}/>{!revealed && item.occlusions.filter((rect) => !card.occlusionId || rect.id === card.occlusionId).map((rect) => <span className="occlusion-mask" style={rectStyle(rect)} key={rect.id}>Hidden</span>)}</div>}
         {/* User-supplied study audio may not have a caption track. */}

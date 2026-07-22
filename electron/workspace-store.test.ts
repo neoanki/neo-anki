@@ -76,6 +76,21 @@ describe('WorkspaceStore', () => {
     store.close()
   })
 
+  it('serves generic imported media with the MIME type implied by its filename', async () => {
+    const store = new WorkspaceStore(await temporaryRoot()), seed = createSeedData()
+    const bytes = new Uint8Array([0xff, 0xfb, 0x90, 0x64])
+    const hash = createHash('sha256').update(bytes).digest('hex')
+    const timestamp = new Date().toISOString()
+    const asset = { id: 'asset-audio', filename: 'voice.mp3', mimeType: 'application/octet-stream', dataUrl: 'neoanki-media://pending', bytes, byteLength: bytes.byteLength, hash, altText: '', createdAt: timestamp, updatedAt: timestamp }
+    const { bytes: _bytes, ...assetMetadata } = asset
+
+    store.commitWorkspaceV4Import({ document: appDataToWorkspaceDocumentV4({ ...seed, assets: [assetMetadata] }), media: [asset], operation: 'replace-profile' })
+
+    expect(store.load()?.assets[0].mimeType).toBe('audio/mpeg')
+    expect(store.readAsset(asset.id)).toMatchObject({ mimeType: 'audio/mpeg', bytes })
+    store.close()
+  })
+
   it('preserves archive-backed media while applying unrelated workspace patches', async () => {
     const root = await temporaryRoot(); let store = new WorkspaceStore(root); const seed = createSeedData()
     const bytes = new Uint8Array([1, 2, 3]); const hash = createHash('sha256').update(bytes).digest('hex'); const timestamp = new Date().toISOString()
