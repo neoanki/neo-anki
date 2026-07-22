@@ -1,7 +1,7 @@
 import { AlertTriangle, Blocks, Play, Plus, Upload } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { formatDuration } from '../lib/date'
-import { buildStudySession } from '../lib/planner'
+import { buildStudySession, compareStudyContexts, studySubjectForCollection } from '../lib/planner'
 import { useApp } from '../state/AppContext'
 import type { SessionIntent } from '../types'
 import { extensionQueuePoliciesV2 } from '../extensions/v2/registry'
@@ -15,16 +15,17 @@ const recommendedSessionMinutes = (dailyMinutes: number, availableWorkSeconds: n
 }
 
 export const TodayPage = () => {
-  const { data, plan, planning, startSession, setDailyMinutes, setRecoveryStrategy, navigate, loadDemoWorkspace } = useApp()
+  const { data, plan, planning, planningError, retryPlanning, startSession, setDailyMinutes, setRecoveryStrategy, navigate, loadDemoWorkspace } = useApp()
   const availableWorkSeconds = plan.reviewSeconds + plan.newSeconds
-  const [sessionMinutes, setSessionMinutes] = useState(() => recommendedSessionMinutes(data.settings.dailyMinutes, availableWorkSeconds))
+  const [sessionMinutes, setSessionMinutes] = useState<number | null>(null)
   const [intent, setIntent] = useState<SessionIntent>('balanced')
   const [renderedAt] = useState(Date.now)
   const weekday = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
-  const collections = useMemo(() => [...new Set(plan.queue.map((entry) => data.items.find((item) => item.id === entry.card.itemId)?.collection || 'Unsorted'))], [data.items, plan.queue])
+  const collections = useMemo(() => [...new Set(plan.queue.map((entry) => studySubjectForCollection(data.items.find((item) => item.id === entry.card.itemId)?.collection || '')))].sort(compareStudyContexts), [data.items, plan.queue])
   const [focusCollection, setFocusCollection] = useState(() => collections[0] || '')
   const effectiveFocusCollection = collections.includes(focusCollection) ? focusCollection : collections[0] || ''
-  const effectiveSessionMinutes = sessionMinutes * 60 <= availableWorkSeconds ? sessionMinutes : recommendedSessionMinutes(data.settings.dailyMinutes, availableWorkSeconds)
+  const recommendedMinutes = recommendedSessionMinutes(data.settings.dailyMinutes, availableWorkSeconds)
+  const effectiveSessionMinutes = sessionMinutes !== null && sessionMinutes * 60 <= availableWorkSeconds ? sessionMinutes : recommendedMinutes
 
   const sessionOptions = useMemo(() => {
     const remainingMinutes = Math.max(1, Math.ceil(availableWorkSeconds / 60))
@@ -32,7 +33,7 @@ export const TodayPage = () => {
   }, [availableWorkSeconds])
   const request = useMemo(() => ({ minutes: effectiveSessionMinutes, intent, focusCollection: intent === 'focus' ? effectiveFocusCollection : undefined }), [effectiveFocusCollection, effectiveSessionMinutes, intent])
   const session = useMemo(() => buildStudySession(plan, data.items, request), [data.items, plan, request])
-  const remainingAfterSession = Math.max(0, plan.remainingSeconds - session.plannedSeconds)
+  const remainingAfterSession = Math.max(0, availableWorkSeconds - session.plannedSeconds)
   const recoveryPolicies = [{ id: 'risk', label: 'Most at-risk first' }, ...extensionQueuePoliciesV2().map(({ id, label }) => ({ id, label }))]
   const nextDue = useMemo(() => data.cards.filter((card) => !card.suspended && (!card.buriedUntil || Date.parse(card.buriedUntil) <= renderedAt)).map((card) => new Date(card.fsrs.due)).filter((date) => Number.isFinite(date.getTime()) && date.getTime() > renderedAt).sort((left, right) => left.getTime() - right.getTime())[0], [data.cards, renderedAt])
 
@@ -65,7 +66,7 @@ export const TodayPage = () => {
     </div>
   )
 
-  if (!planning && plan.queue.length === 0) return (
+  if (!planning && !planningError && plan.queue.length === 0) return (
     <div className="page today-page quiet-today">
       <header className="page-header today-header">
         <div><p className="eyebrow">{weekday}</p><h1>Today</h1><p className="page-intro">{formatDuration(plan.spentSeconds)} studied · {formatDuration(plan.remainingSeconds)} available</p></div>
@@ -98,23 +99,23 @@ export const TodayPage = () => {
 
       <section className="study-launcher" aria-labelledby="study-launcher-title">
         <div className="study-launcher-copy">
-          <h2 id="study-launcher-title">{formatDuration(plan.remainingSeconds)} available</h2>
-          <p role={planning ? 'status' : undefined}>{planning ? 'Planning this large workspace in the background… Study controls will be ready without freezing this screen.' : `${plan.duePlanned} ${plan.duePlanned === 1 ? 'review is' : 'reviews are'} ready, with ${plan.newPlanned} new practice ${plan.newPlanned === 1 ? 'prompt' : 'prompts'}. Neo Anki will keep unrelated subjects in separate blocks.`}</p>
+          <h2 id="study-launcher-title">{formatDuration(availableWorkSeconds)} available</h2>
+          <p role={planning ? 'status' : undefined}>{planning ? 'Planning this large workspace in the background… Study controls will be ready without freezing this screen.' : planningError ? 'Neo Anki could not build today’s session. Your imported cards are safe.' : `${plan.duePlanned} ${plan.duePlanned === 1 ? 'review is' : 'reviews are'} ready, with ${plan.newPlanned} new practice ${plan.newPlanned === 1 ? 'prompt' : 'prompts'}. Neo Anki will keep unrelated subjects in separate blocks.`}</p>
         </div>
         <div className="study-controls">
           <label htmlFor="session-length"><span>Study for</span><select id="session-length" value={effectiveSessionMinutes} onChange={(event) => setSessionMinutes(Number(event.target.value))}>{sessionOptions.map((minutes) => <option value={minutes} key={minutes}>{minutes === Math.ceil(availableWorkSeconds / 60) ? `Finish (${minutes} min)` : `${minutes} min`}</option>)}</select></label>
           <label htmlFor="session-mode"><span>Mode</span><select id="session-mode" value={intent} onChange={(event) => setIntent(event.target.value as SessionIntent)}><option value="balanced">Mixed by subject</option><option value="focus">One subject</option><option value="urgent">Reviews only</option></select></label>
           {intent === 'focus' && <label htmlFor="focus-collection"><span>Subject</span><select id="focus-collection" value={effectiveFocusCollection} onChange={(event) => setFocusCollection(event.target.value)}>{collections.map((collection) => <option key={collection}>{collection}</option>)}</select></label>}
-          <button className="primary-button study-button" disabled={planning || !session.queue.length} onClick={() => startSession(request)}><Play size={15} fill="currentColor" />{planning ? 'Planning…' : session.queue.length ? `Study ${formatDuration(session.plannedSeconds)}` : plan.remainingSeconds === 0 ? 'Done for today' : 'Nothing to study'}</button>
+          <button className="primary-button study-button" disabled={planning || Boolean(planningError) || !session.queue.length} onClick={() => startSession(request)}><Play size={15} fill="currentColor" />{planning ? 'Planning…' : planningError ? 'Planning unavailable' : session.queue.length ? `Study ${formatDuration(session.plannedSeconds)}` : plan.remainingSeconds === 0 ? 'Done for today' : 'Nothing to study'}</button>
         </div>
       </section>
 
       <section className="session-list-pane" aria-labelledby="session-order-title">
         <header>
-          <div><h2 id="session-order-title">Session order</h2><p>{session.queue.length} practice {session.queue.length === 1 ? 'prompt' : 'prompts'} in {session.blocks.length} {session.blocks.length === 1 ? 'subject block' : 'subject blocks'}</p></div>
-          <span>{formatDuration(remainingAfterSession)} left for later</span>
+          <div><h2 id="session-order-title">Session order</h2><p>{planning ? 'Preparing practice prompts…' : `${session.queue.length} practice ${session.queue.length === 1 ? 'prompt' : 'prompts'} in ${session.blocks.length} ${session.blocks.length === 1 ? 'subject block' : 'subject blocks'}`}</p></div>
+          <span>{planning ? 'Please wait' : `${formatDuration(remainingAfterSession)} left for later`}</span>
         </header>
-        {session.blocks.length > 0 ? (
+        {planning ? <div className="empty-session" role="status" aria-live="polite"><strong>Building your session…</strong><span>Neo Anki is checking the imported scheduling data.</span></div> : planningError ? <div className="empty-session" role="alert"><strong>Today’s session could not be built.</strong><span>{planningError}</span><button className="secondary-button compact" onClick={retryPlanning}>Try again</button></div> : session.blocks.length > 0 ? (
           <div className="session-table" role="table" aria-label="Planned study blocks">
             <div className="session-table-header" role="row"><span role="columnheader">Subject</span><span role="columnheader">Reviews</span><span role="columnheader">New</span><span role="columnheader">Time</span></div>
             {session.blocks.map((block, index) => {

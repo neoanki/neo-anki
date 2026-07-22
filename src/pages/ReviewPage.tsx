@@ -5,7 +5,7 @@ import { formatDue, formatDuration } from '../lib/date'
 import { previewReview } from '../lib/fsrs'
 import { rectStyle } from '../lib/occlusion'
 import { useApp } from '../state/AppContext'
-import type { ReviewRating } from '../types'
+import type { CardRenderingProjection, ReviewRating } from '../types'
 import { compareExtensionPromptV2, extensionUiContributionsV2, hasExtensionPromptTypeV2, renderExtensionPromptV2 } from '../extensions/v2/registry'
 import { ExtensionUiFrameV2 } from '../extensions/v2/ExtensionUiFrameV2'
 import { SandboxedCardFrame } from '../components/SandboxedCardFrame'
@@ -35,10 +35,24 @@ export const ReviewPage = () => {
   const card = data.cards.find((candidate) => candidate.id === entry?.card.id)
   const item = data.items.find((candidate) => candidate.id === card?.itemId)
   const [externalContentState, setExternalContentState] = useState<{ cardId: string; value: Awaited<ReturnType<typeof renderExtensionPromptV2>> } | null>(null)
+  const [templateRenderingState, setTemplateRenderingState] = useState<{ cardId: string; value: CardRenderingProjection } | null>(null)
+  const [templateRenderErrorState, setTemplateRenderErrorState] = useState<{ cardId: string; message: string } | null>(null)
   const [typedResultState, setTypedResultState] = useState<{ key: string; value: { result: 'exact' | 'close' | 'incorrect'; similarity: number } | null } | null>(null)
   const externalContent = externalContentState && externalContentState.cardId === card?.id ? externalContentState.value : null
   const fallbackContent = useMemo(() => item ? ({ prompt: item.prompt, answer: item.answer, context: item.context, typed: false, mediaId: item.mediaIds[0], citations: item.citations }) : null, [item])
   const content = externalContent || fallbackContent
+  const templateRenderError = templateRenderErrorState && templateRenderErrorState.cardId === card?.id ? templateRenderErrorState.message : ''
+
+  useEffect(() => {
+    let current = true
+    if (!card || card.rendering?.source === 'anki-template' || card.scheduling?.strategy !== 'anki' || !window.neoAnkiDesktop?.loadCardRendering) return () => { current = false }
+    void window.neoAnkiDesktop.loadCardRendering(card.id).then((value) => {
+      if (!current) return
+      if (value) setTemplateRenderingState({ cardId: card.id, value })
+      else setTemplateRenderErrorState({ cardId: card.id, message: 'This imported template could not be resolved. Neo Anki is showing the saved fields instead.' })
+    }).catch(() => { if (current) setTemplateRenderErrorState({ cardId: card.id, message: 'This imported template could not be rendered. Neo Anki is showing the saved fields instead.' }) })
+    return () => { current = false }
+  }, [card])
 
   const preview = useMemo(() => card ? previewReview(card, card.schedulerOptions || data.settings.retention) : null, [card, data.settings.retention])
 
@@ -216,7 +230,8 @@ export const ReviewPage = () => {
   }
 
   if (!content) return <div className="route-loading" role="status">Loading prompt…</div>
-  const templateRendering = card.rendering?.source === 'anki-template' ? card.rendering : undefined
+  const templateRendering = card.rendering?.source === 'anki-template' ? card.rendering : templateRenderingState?.cardId === card.id ? templateRenderingState.value : undefined
+  if (card.scheduling?.strategy === 'anki' && !templateRendering && !templateRenderError && window.neoAnkiDesktop?.loadCardRendering) return <div className="route-loading" role="status">Preparing imported template…</div>
   const asset = content.mediaId ? data.assets.find((candidate) => candidate.id === content.mediaId) : getAssetForCard(item, data.assets)
   const missingRequestedAsset = Boolean(content.mediaId && !asset)
   const typedExpected = templateRendering?.typedAnswer?.expected || content.answer
@@ -243,13 +258,14 @@ export const ReviewPage = () => {
 
       <div className="visually-hidden" role="status" aria-live="polite">{revealed ? 'Answer revealed. Choose Forgot, Recalled with effort, Recalled, or Easy recall.' : 'Practice prompt ready.'}</div>
       {renderError && <div className="inline-message warning extension-render-warning" role="alert"><span>{renderError}</span><button className="text-button" onClick={() => navigate('extensions')}>Open Extensions</button></div>}
+      {templateRenderError && <div className="inline-message warning extension-render-warning" role="alert"><span>{templateRenderError}</span></div>}
       {missingRequestedAsset && <div className="inline-message error" role="alert">This practice prompt’s selected media file is missing. Open the knowledge item to replace it.</div>}
       <article className={revealed ? 'review-card revealed' : 'review-card'}>
         <div className="review-meta"><span>Block {entry.blockIndex + 1} · {item.collection}</span><span>{card.fsrs.state === 0 ? 'New' : 'Review'}</span></div>
         {templateRendering ? <div className="prompt-content template-card-content">
           <p className="review-label">{revealed ? 'Answer' : 'Prompt'}</p>
           <h1 ref={revealedHeadingRef} className="visually-hidden" tabIndex={-1}>{revealed ? 'Answer' : 'Prompt'}</h1>
-          <SandboxedCardFrame html={revealed ? templateRendering.answerHtml : templateRendering.questionHtml} css={templateRendering.css} title={`${revealed ? 'Answer' : 'Prompt'} for ${item.collection}`} theme={data.settings.theme} />
+          <SandboxedCardFrame html={revealed ? templateRendering.answerHtml : templateRendering.questionHtml} css={templateRendering.css || data.renderingStyles?.[templateRendering.cssRef || ''] || ''} title={`${revealed ? 'Answer' : 'Prompt'} for ${item.collection}`} theme={data.settings.theme} />
         </div> : <div className="prompt-content"><p className="review-label">Prompt</p><h1>{content.prompt}</h1></div>}
         {!templateRendering && asset?.mimeType.startsWith('image/') && <div className="review-media image-stage"><img src={asset.dataUrl} alt={asset.altText || asset.filename}/>{!revealed && item.occlusions.filter((rect) => !card.occlusionId || rect.id === card.occlusionId).map((rect) => <span className="occlusion-mask" style={rectStyle(rect)} key={rect.id}>Hidden</span>)}</div>}
         {/* User-supplied study audio may not have a caption track. */}

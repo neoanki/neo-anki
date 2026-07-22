@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -43,8 +44,51 @@ describe('WorkspaceStore', () => {
     expect(checkpoint).toBeNull()
     const committed = store.commitWorkspaceV4Import({ document: appDataToWorkspaceDocumentV4(seed), media: [], operation: 'replace-profile' })
     expect(committed?.items).toHaveLength(seed.items.length)
+    expect(store.cardRendering(seed.cards[0].id)).toMatchObject({ questionHtml: expect.any(String), answerHtml: expect.any(String), css: expect.any(String) })
     expect(await store.createImportCheckpoint()).toBeTruthy()
     store.close()
+  })
+
+  it('commits extension migration media as binary bytes without base64 expansion', async () => {
+    const store = new WorkspaceStore(await temporaryRoot()), seed = createSeedData()
+    const bytes = new Uint8Array([0, 1, 2, 127, 128, 255])
+    const hash = createHash('sha256').update(bytes).digest('hex')
+    const timestamp = new Date().toISOString()
+    const asset = { id: 'asset-binary', filename: 'binary.dat', mimeType: 'application/octet-stream', dataUrl: 'neoanki-media://pending', bytes, byteLength: bytes.byteLength, hash, altText: 'Binary fixture', createdAt: timestamp, updatedAt: timestamp }
+    const { bytes: _bytes, ...assetMetadata } = asset
+    const document = appDataToWorkspaceDocumentV4({ ...seed, assets: [assetMetadata] })
+
+    store.commitWorkspaceV4Import({ document, media: [asset], operation: 'replace-profile' })
+
+    expect(store.readAsset(asset.id)?.bytes).toEqual(bytes)
+    expect(store.load()?.assets[0]).toMatchObject({ id: asset.id, dataUrl: expect.stringMatching(/^neoanki-media:\/\/asset\//) })
+    store.close()
+  })
+
+  it('preserves archive-backed media while applying unrelated workspace patches', async () => {
+    const root = await temporaryRoot(); let store = new WorkspaceStore(root); const seed = createSeedData()
+    const bytes = new Uint8Array([1, 2, 3]); const hash = createHash('sha256').update(bytes).digest('hex'); const timestamp = new Date().toISOString()
+    const asset = { id: 'asset-archived', filename: 'archived.dat', mimeType: 'application/octet-stream', dataUrl: 'neoanki-media://pending', bytes, byteLength: bytes.byteLength, hash, altText: '', createdAt: timestamp, updatedAt: timestamp }
+    const { bytes: _bytes, ...assetMetadata } = asset
+    store.commitWorkspaceV4Import({ document: appDataToWorkspaceDocumentV4({ ...seed, assets: [assetMetadata] }), media: [asset], operation: 'replace-profile' })
+    store.close()
+
+    const archiveName = `${'a'.repeat(64)}.apkg`; await writeFile(join(root, 'import-archives', archiveName), new Uint8Array([0]))
+    const database = new DatabaseSync(join(root, 'neo-anki.sqlite'))
+    const stored = database.prepare('SELECT metadata_json FROM assets WHERE id = ?').get(asset.id) as { metadata_json: string }
+    database.prepare('UPDATE assets SET metadata_json = ?, data = ? WHERE id = ?').run(JSON.stringify({ ...JSON.parse(stored.metadata_json), archivedMedia: { archiveName, entryName: '0', zstd: false } }), new Uint8Array(), asset.id)
+    database.close()
+
+    store = new WorkspaceStore(root)
+    const document = store.workspaceV4Document(); const noteType = document.workspace.noteTypes[0]
+    store.applyCoreWorkspacePatch({ version: 2, idempotencyKey: 'test:archived-media-edit', expectedWorkspaceRevision: document.workspace.revision, owner: { type: 'core' }, operations: [{ op: 'update', kind: 'noteType', id: noteType.id, expectedRevision: noteType.revision, value: { ...noteType, revision: noteType.revision + 1, updatedAt: timestamp, name: 'Edited with archived media' } }] })
+    store.close()
+
+    const verified = new DatabaseSync(join(root, 'neo-anki.sqlite'), { readOnly: true })
+    const row = verified.prepare('SELECT metadata_json, length(data) AS bytes FROM assets WHERE id = ?').get(asset.id) as { metadata_json: string; bytes: number }
+    expect(JSON.parse(row.metadata_json).archivedMedia).toEqual({ archiveName, entryName: '0', zstd: false })
+    expect(row.bytes).toBe(0)
+    verified.close()
   })
 
   it('never silently replaces a corrupt workspace with an older automatic backup', async () => {

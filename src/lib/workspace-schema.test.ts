@@ -40,4 +40,24 @@ describe('semantic workspace invariants', () => {
     expect(() => migrateWorkspaceData({ ...legacy, version: 99 } as unknown as LegacyWorkspaceData)).toThrow(/version 99/)
     expect(() => migrateWorkspaceData(null as never)).toThrow(/must be an object/)
   })
+
+  it('preserves imported deck scheduling metadata across startup migration', () => {
+    const seed = createSeedData()
+    seed.cards[0].deckName = 'Japanese Grammar::00 - Foundation::01 · Recognition'
+    seed.cards[0].presetId = 'anki:preset:1'
+    seed.cards[0].schedulerOptions = {
+      desiredRetention: .9, maximumIntervalDays: 36_500,
+      learningStepsMinutes: [1, 10], relearningStepsMinutes: [10],
+      newCardsPerDay: 20, reviewsPerDay: 200,
+      buryNewSiblings: false, buryReviewSiblings: false,
+      leechThreshold: 8, leechAction: 'flag',
+    }
+    const migrated = migrateWorkspaceData(seed)
+
+    expect(migrated.cards[0]).toMatchObject({
+      deckName: seed.cards[0].deckName,
+      presetId: 'anki:preset:1',
+      schedulerOptions: { newCardsPerDay: 20, reviewsPerDay: 200 },
+    })
+  })
 })

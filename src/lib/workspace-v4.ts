@@ -1,4 +1,4 @@
-import type { AppData, KnowledgeItem, MediaAsset, PracticeCard, ReviewEvent, StoredFSRSCard } from '../types.js'
+import type { AppData, CardRenderingProjection, KnowledgeItem, MediaAsset, PracticeCard, ReviewEvent, StoredFSRSCard } from '../types.js'
 import {
   createWorkspaceDocumentV4,
   migrateWorkspaceDocumentV3ToV4,
@@ -24,8 +24,7 @@ const fallbackFsrs = (due: string): StoredFSRSCard => ({
  * Compatibility adapter for the legacy UI projection. The durable authority is
  * the v4 graph; this projection is regenerated after each load/commit.
  */
-export const workspaceDocumentV4ToAppData = (input: WorkspaceDocumentV4): AppData => {
-  const document = parseWorkspaceDocumentV4(input)
+const projectWorkspaceDocumentV4ToAppData = (document: WorkspaceDocumentV4): AppData => {
   const { workspace, clientState } = document
   const envelopeById = new Map(workspace.sourceEnvelopes.map((value) => [value.id, value]))
   const noteTypeById = new Map(workspace.noteTypes.map((value) => [value.id, value]))
@@ -101,19 +100,7 @@ export const workspaceDocumentV4ToAppData = (input: WorkspaceDocumentV4): AppDat
       last_review: scheduling.lastReviewAt,
     } : preset ? projectAnkiSchedulingToFsrs(scheduling, importedReviews, preset, workspace.updatedAt) : { ...fallbackFsrs(due), scheduled_days: Math.max(0, scheduling.intervalDays), reps: Math.max(0, scheduling.repetitions), lapses: Math.max(0, scheduling.lapses) }) as StoredFSRSCard
     const template = templateById.get(card.templateId)
-    const note = noteById.get(card.noteId)
-    const noteType = note ? noteTypeById.get(note.noteTypeId) : undefined
     const deck = deckById.get(card.deckId)
-    const rendering = note && noteType && template ? renderWorkspaceCard(
-      card,
-      note,
-      noteType,
-      template,
-      noteType.fieldIds.map((id) => ({ id, name: fieldById.get(id)?.name || id })),
-      deck?.name || 'Default',
-      workspace.media,
-      mediaUrl,
-    ) : undefined
     return {
       id: card.id, itemId: card.noteId,
       deckName: deck?.name || 'Default',
@@ -129,7 +116,6 @@ export const workspaceDocumentV4ToAppData = (input: WorkspaceDocumentV4): AppDat
       leech: card.leech ?? legacy.leech,
       fsrs,
       scheduling: structuredClone(scheduling),
-      rendering,
       estimatedSeconds: typeof legacy.estimatedSeconds === 'number' ? legacy.estimatedSeconds : 14,
       createdAt: card.createdAt,
       updatedAt: card.updatedAt,
@@ -168,7 +154,7 @@ export const workspaceDocumentV4ToAppData = (input: WorkspaceDocumentV4): AppDat
   return {
     version: 3,
     deviceId: workspace.deviceId,
-    items, cards, reviews, assets,
+    items, cards, reviews, assets, renderingStyles: Object.fromEntries(workspace.noteTypes.map((value) => [value.id, value.css])),
     goals: structuredClone(clientState.goals) as AppData['goals'],
     views: structuredClone(clientState.views) as AppData['views'],
     packs: structuredClone(clientState.packs) as AppData['packs'],
@@ -177,6 +163,30 @@ export const workspaceDocumentV4ToAppData = (input: WorkspaceDocumentV4): AppDat
     settings,
     updatedAt: workspace.updatedAt,
   }
+}
+
+export const workspaceDocumentV4ToAppData = (input: WorkspaceDocumentV4): AppData => projectWorkspaceDocumentV4ToAppData(parseWorkspaceDocumentV4(input))
+
+/** Projects a document that was already parsed at the trust boundary. */
+export const projectValidatedWorkspaceDocumentV4ToAppData = (document: WorkspaceDocumentV4): AppData => projectWorkspaceDocumentV4ToAppData(document)
+
+export const renderValidatedWorkspaceCard = (document: WorkspaceDocumentV4, cardId: string): CardRenderingProjection | null => {
+  const { workspace } = document
+  const card = workspace.cards.find((value) => value.id === cardId)
+  if (!card) return null
+  const note = workspace.notes.find((value) => value.id === card.noteId)
+  const noteType = note && workspace.noteTypes.find((value) => value.id === note.noteTypeId)
+  const template = workspace.templates.find((value) => value.id === card.templateId)
+  if (!note || !noteType || !template) return null
+  const fields = new Map(workspace.fields.map((value) => [value.id, value]))
+  const envelopes = new Map(workspace.sourceEnvelopes.map((value) => [value.id, value]))
+  const mediaUrl = (asset: WorkspaceDocumentV4['workspace']['media'][number]) => {
+    const legacy = legacyFrom<MediaAsset>(envelopes.get(asset.sourceEnvelopeId || ''))
+    return legacy.dataUrl || `neoanki-media://asset/${encodeURIComponent(asset.id)}?v=${asset.sha256.slice(0, 16)}`
+  }
+  const mediaByFilename = new Map(workspace.media.map((asset) => [asset.filename, mediaUrl(asset)]))
+  const deckName = workspace.decks.find((value) => value.id === card.deckId)?.name || 'Default'
+  return renderWorkspaceCard(card, note, noteType, template, noteType.fieldIds.map((id) => ({ id, name: fields.get(id)?.name || id })), deckName, workspace.media, mediaUrl, mediaByFilename)
 }
 
 export const refreshWorkspaceDocumentV4FromProjection = (data: AppData, previous?: WorkspaceDocumentV4) => {

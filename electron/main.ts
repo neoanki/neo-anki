@@ -1,7 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, safeStorage, session, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
-import { readFile, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { readFile, stat, writeFile } from 'node:fs/promises'
+import { deflateRawSync, inflateRawSync } from 'node:zlib'
 import { basename, extname, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { decompress as decompressZstd } from 'fzstd'
 import { ExtensionManager } from './extension-manager.js'
 import { MarketplaceClient } from './marketplace-client.js'
 import { ExtensionServices, type ExtensionSecretProtector } from './extension-services.js'
@@ -18,6 +21,82 @@ const MEDIA_SCHEME = 'neoanki-media'
 const EXTENSION_WORKER_LOCKDOWN = ';(()=>{const fatal=(event)=>{try{postMessage({protocol:2,type:"fatal",message:String(event?.message||event?.reason?.message||event?.reason||"Extension worker failed during startup.").slice(0,500)})}catch{}};addEventListener("error",fatal);addEventListener("unhandledrejection",fatal);for(const name of ["fetch","XMLHttpRequest","WebSocket","EventSource","WebTransport","RTCPeerConnection","Worker","SharedWorker","BroadcastChannel","indexedDB","caches","importScripts"]){try{Object.defineProperty(globalThis,name,{value:undefined,writable:false,configurable:false})}catch{try{globalThis[name]=undefined}catch{}}}})();\n'
 const devServerUrl = process.env.VITE_DEV_SERVER_URL
 const hideWindowForE2E = process.env.NEO_ANKI_E2E_HEADLESS === '1'
+type StagedImportSource = { path?: string; bytes?: Uint8Array; inspection?: { sourceSha256: string; modern: boolean; databaseDeflate: Uint8Array; mediaManifest: Uint8Array; archiveEntries: string[]; media: Array<{ entry: string; byteLength: number; sha256: string }> } }
+const stagedImportSources = new Map<string, StagedImportSource>()
+const stagedImportBytes = async (source: StagedImportSource) => {
+  if (source.bytes) return source.bytes
+  if (!source.path) throw new Error('The selected import source is unavailable. Choose the file again.')
+  const bytes = new Uint8Array(await readFile(source.path)); source.bytes = bytes
+  return bytes
+}
+
+const zipUint16 = (bytes: Uint8Array, offset: number) => bytes[offset] | (bytes[offset + 1] << 8)
+const zipUint32 = (bytes: Uint8Array, offset: number) => (bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0
+const zipUint64 = (bytes: Uint8Array, offset: number) => {
+  let value = 0n
+  for (let index = 7; index >= 0; index -= 1) value = (value << 8n) | BigInt(bytes[offset + index])
+  if (value > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('This ZIP package is too large for this computer to address safely.')
+  return Number(value)
+}
+const inspectAnkiArchive = (bytes: Uint8Array) => {
+  let eocd = -1
+  for (let index = bytes.length - 22; index >= Math.max(0, bytes.length - 65_557); index -= 1) {
+    if (zipUint32(bytes, index) === 0x06054b50) { eocd = index; break }
+  }
+  if (eocd < 0) throw new Error('This file is not a complete ZIP package.')
+  let entryCount = zipUint16(bytes, eocd + 10)
+  let centralOffset = zipUint32(bytes, eocd + 16)
+  if (entryCount === 0xffff || centralOffset === 0xffffffff) {
+    const locator = eocd - 20
+    if (locator < 0 || zipUint32(bytes, locator) !== 0x07064b50) throw new Error('The ZIP64 directory locator is missing.')
+    const zip64Offset = zipUint64(bytes, locator + 8)
+    if (zipUint32(bytes, zip64Offset) !== 0x06064b50) throw new Error('The ZIP64 directory is malformed.')
+    entryCount = zipUint64(bytes, zip64Offset + 32)
+    centralOffset = zipUint64(bytes, zip64Offset + 48)
+  }
+  const decoder = new TextDecoder()
+  const entries: Array<{ name: string; method: number; compressed: number; uncompressed: number; localOffset: number }> = []
+  let offset = centralOffset
+  for (let index = 0; index < entryCount; index += 1) {
+    if (offset + 46 > bytes.length || zipUint32(bytes, offset) !== 0x02014b50) throw new Error('The Anki ZIP directory is malformed or truncated.')
+    const flags = zipUint16(bytes, offset + 8); const method = zipUint16(bytes, offset + 10)
+    let compressed = zipUint32(bytes, offset + 20); let uncompressed = zipUint32(bytes, offset + 24); let localOffset = zipUint32(bytes, offset + 42)
+    const nameLength = zipUint16(bytes, offset + 28); const extraLength = zipUint16(bytes, offset + 30); const commentLength = zipUint16(bytes, offset + 32)
+    const name = decoder.decode(bytes.subarray(offset + 46, offset + 46 + nameLength))
+    if (!name || name.startsWith('/') || name.includes('\\') || name.split('/').includes('..')) throw new Error(`Unsafe archive entry: ${name || '(empty)'}.`)
+    if ((flags & 1) !== 0 || (method !== 0 && method !== 8)) throw new Error(`Archive entry ${name} uses unsupported encryption or compression.`)
+    if (compressed === 0xffffffff || uncompressed === 0xffffffff || localOffset === 0xffffffff) {
+      let extraOffset = offset + 46 + nameLength; const extraEnd = extraOffset + extraLength; let zip64 = -1
+      while (extraOffset + 4 <= extraEnd) { const id = zipUint16(bytes, extraOffset); const length = zipUint16(bytes, extraOffset + 2); if (id === 1) { zip64 = extraOffset + 4; break }; extraOffset += 4 + length }
+      if (zip64 < 0) throw new Error(`Archive entry ${name} is missing ZIP64 metadata.`)
+      if (uncompressed === 0xffffffff) { uncompressed = zipUint64(bytes, zip64); zip64 += 8 }
+      if (compressed === 0xffffffff) { compressed = zipUint64(bytes, zip64); zip64 += 8 }
+      if (localOffset === 0xffffffff) localOffset = zipUint64(bytes, zip64)
+    }
+    if (compressed > 0 && uncompressed / compressed > 200) throw new Error(`Archive entry ${name} exceeds the safe compression ratio.`)
+    entries.push({ name, method, compressed, uncompressed, localOffset })
+    offset += 46 + nameLength + extraLength + commentLength
+  }
+  const modern = entries.some((entry) => entry.name === 'collection.anki21b')
+  let database: Uint8Array | undefined; let mediaManifest = new Uint8Array()
+  const media: Array<{ entry: string; byteLength: number; sha256: string }> = []
+  for (const entry of entries) {
+    const wanted = /^\d+$/.test(entry.name) || entry.name === 'media' || entry.name === (modern ? 'collection.anki21b' : 'collection.anki21') || (!modern && entry.name === 'collection.anki2')
+    if (!wanted) continue
+    if (zipUint32(bytes, entry.localOffset) !== 0x04034b50) throw new Error(`Archive entry ${entry.name} has a malformed local header.`)
+    const start = entry.localOffset + 30 + zipUint16(bytes, entry.localOffset + 26) + zipUint16(bytes, entry.localOffset + 28)
+    if (start + entry.compressed > bytes.length) throw new Error(`Archive entry ${entry.name} is truncated.`)
+    const stored = bytes.subarray(start, start + entry.compressed)
+    const expanded = entry.method === 0 ? stored : new Uint8Array(inflateRawSync(stored))
+    if (expanded.byteLength !== entry.uncompressed) throw new Error(`Archive entry ${entry.name} has an invalid expanded size.`)
+    const content = modern ? decompressZstd(expanded) : expanded
+    if (/^\d+$/.test(entry.name)) media.push({ entry: entry.name, byteLength: content.byteLength, sha256: createHash('sha256').update(content).digest('hex') })
+    else if (entry.name === 'media') mediaManifest = new Uint8Array(content)
+    else database = new Uint8Array(content)
+  }
+  if (!database) throw new Error('No supported Anki collection database was found in this package.')
+  return { modern, database, mediaManifest, archiveEntries: entries.map((entry) => entry.name).sort(), media }
+}
 const rendererStartupTimeoutMs = process.env.NEO_ANKI_STARTUP_TIMEOUT_MS ? Math.max(500, Number(process.env.NEO_ANKI_STARTUP_TIMEOUT_MS) || 12_000) : 12_000
 
 protocol.registerSchemesAsPrivileged([
@@ -161,6 +240,15 @@ const registerDesktopIpc = () => {
       event.returnValue = { data: null, storagePath: '', recoveredFromBackup: false, error: error instanceof Error ? error.message : 'Could not load data.' }
     }
   })
+  ipcMain.handle('neo-anki:load-data-async', (event) => {
+    try {
+      assertTrustedSender(event)
+      const status = workspaceStore.status()
+      return { data: workspaceStore.load(), storagePath: status.path, recoveredFromBackup: status.recoveredFromBackup, migratedLegacyData: status.migratedLegacyData, error: status.recoveryError, recoverySourcePath: status.recoverySourcePath }
+    } catch (error) {
+      return { data: null, storagePath: '', recoveredFromBackup: false, error: error instanceof Error ? error.message : 'Could not load data.' }
+    }
+  })
 
   ipcMain.handle('neo-anki:save-data', async (event, changes: WorkspaceChangeSet) => {
     assertTrustedSender(event)
@@ -244,6 +332,12 @@ const registerDesktopIpc = () => {
     assertTrustedSender(event)
     await saveQueue.catch(() => undefined)
     return workspaceStore.workspaceV4Document()
+  })
+
+  ipcMain.handle('neo-anki:load-card-rendering', async (event, cardId: string) => {
+    assertTrustedSender(event)
+    await saveQueue.catch(() => undefined)
+    return workspaceStore.cardRendering(cardId)
   })
 
   ipcMain.handle('neo-anki:apply-core-workspace-patch-v2', async (event, patch: WorkspacePatchV2) => {
@@ -363,7 +457,6 @@ const registerDesktopIpc = () => {
     const bytes = request.bytes instanceof Uint8Array ? request.bytes : undefined
     if ((text === undefined) === (bytes === undefined)) throw new Error('The extension must export either text or bytes.')
     const payload = text !== undefined ? Buffer.from(text, 'utf8') : Buffer.from(bytes!)
-    if (payload.byteLength > 512 * 1024 * 1024) throw new Error('The extension export exceeds 512 MB.')
     const result = mainWindow ? await dialog.showSaveDialog(mainWindow, { defaultPath: filename }) : await dialog.showSaveDialog({ defaultPath: filename })
     if (result.canceled || !result.filePath) return { canceled: true }
     await writeFile(result.filePath, payload, { mode: 0o600 })
@@ -395,11 +488,43 @@ const registerDesktopIpc = () => {
     assertTrustedSender(event); await extensionServices.authorize(token, 'content:migrate'); await saveQueue.catch(() => undefined)
     return workspaceStore.workspaceV4ExportPayload()
   })
-  ipcMain.handle('neo-anki:extension-migration-commit-v2', async (event, token: string, input: { document: unknown; media: unknown[]; sourceArchive?: Uint8Array; operation: 'additive' | 'replace-profile' }) => {
+  ipcMain.handle('neo-anki:stage-import-source', async (event, path: unknown, fallbackBytes: unknown) => {
+    assertTrustedSender(event)
+    const sourcePath = typeof path === 'string' && path ? path : undefined
+    const sourceBytes = fallbackBytes instanceof Uint8Array ? fallbackBytes : undefined
+    if (sourcePath) {
+      const metadata = await stat(sourcePath)
+      if (!metadata.isFile()) throw new Error('The selected import source is not a file.')
+    } else if (!sourceBytes) throw new Error('The selected import source is unavailable. Choose the file again.')
+    const token = crypto.randomUUID(); stagedImportSources.set(token, sourcePath ? { path: sourcePath } : { bytes: sourceBytes })
+    while (stagedImportSources.size > 8) stagedImportSources.delete(stagedImportSources.keys().next().value!)
+    return token
+  })
+  ipcMain.handle('neo-anki:inspect-import-source', async (event, token: string, sourceFileToken: string) => {
+    assertTrustedSender(event); await extensionServices.authorize(token, 'content:migrate')
+    const staged = stagedImportSources.get(sourceFileToken)
+    if (!staged) throw new Error('The selected import source expired. Choose the file again.')
+    if (staged.inspection) return staged.inspection
+    const bytes = await stagedImportBytes(staged)
+    const sourceSha256 = createHash('sha256').update(bytes).digest('hex')
+    const archive = inspectAnkiArchive(bytes)
+    staged.inspection = { sourceSha256, modern: archive.modern, databaseDeflate: new Uint8Array(deflateRawSync(archive.database, { level: 1 })), mediaManifest: archive.mediaManifest, archiveEntries: archive.archiveEntries, media: archive.media }
+    return staged.inspection
+  })
+  ipcMain.handle('neo-anki:extension-migration-commit-v2', async (event, token: string, input: { document: unknown; media: unknown[]; sourceArchive?: Uint8Array; sourceFileToken?: string; operation: 'additive' | 'replace-profile' }) => {
+    const timingStarted = performance.now()
+    if (process.env.NEO_ANKI_IMPORT_TIMING === '1') console.error(JSON.stringify({ type: 'neo-anki-import-timing', label: 'main-handler-entered', elapsedMs: 0, phaseMs: 0, at: Date.now() }))
     assertTrustedSender(event); await extensionServices.authorize(token, 'content:migrate'); await saveQueue.catch(() => undefined)
+    const stagedSource = input.sourceFileToken ? stagedImportSources.get(input.sourceFileToken) : undefined
+    if (input.sourceFileToken) stagedImportSources.delete(input.sourceFileToken)
+    const sourceArchive = stagedSource ? await stagedImportBytes(stagedSource) : input.sourceArchive
     await workspaceStore.createImportCheckpoint()
-    const data = workspaceStore.commitWorkspaceV4Import(input)
-    return { workspaceRevision: workspaceStore.workspaceV4Document().workspace.revision, data }
+    if (process.env.NEO_ANKI_IMPORT_TIMING === '1') console.error(JSON.stringify({ type: 'neo-anki-import-timing', label: 'checkpoint-created', elapsedMs: Math.round(performance.now() - timingStarted), at: Date.now() }))
+    const document = typeof input.document === 'string' ? JSON.parse(input.document) as unknown : input.document
+    const data = workspaceStore.commitWorkspaceV4Import({ ...input, document, sourceArchive })
+    if (!data) throw new Error('The imported workspace did not produce a readable projection.')
+    if (process.env.NEO_ANKI_IMPORT_TIMING === '1') console.error(JSON.stringify({ type: 'neo-anki-import-timing', label: 'main-handler-returning', elapsedMs: Math.round(performance.now() - timingStarted), at: Date.now() }))
+    return { workspaceRevision: workspaceStore.workspaceRevision(), summary: { notes: data.items.length, cards: data.cards.length }, data }
   })
   ipcMain.handle('neo-anki:extension-cancel-v2', (event, token: string, operationId: string) => { assertTrustedSender(event); extensionServices.cancel(token, operationId) })
   ipcMain.handle('neo-anki:sync-status', (event) => { assertTrustedSender(event); return syncManager.status() })
@@ -485,7 +610,7 @@ const registerAppProtocol = () => {
     const url = new URL(request.url)
     if (url.hostname !== 'asset') return new Response('Media not found', { status: 404 })
     const asset = workspaceStore.readAsset(decodeURIComponent(url.pathname.replace(/^\//, '')))
-    return asset ? new Response(asset.bytes, { headers: { 'Content-Type': asset.mimeType, ETag: `"${asset.hash}"`, 'Cache-Control': 'private, max-age=31536000, immutable' } }) : new Response('Media not found', { status: 404 })
+    return asset ? new Response(Buffer.from(asset.bytes), { headers: { 'Content-Type': asset.mimeType, ETag: `"${asset.hash}"`, 'Cache-Control': 'private, max-age=31536000, immutable' } }) : new Response('Media not found', { status: 404 })
   })
 }
 

@@ -84,6 +84,7 @@ const neoFsrsSchedulingSchema = z.object({
 const cardSchedulingSchema = z.discriminatedUnion('strategy', [ankiSchedulingSchema, neoFsrsSchedulingSchema])
 const cardRenderingSchema = z.object({
   questionHtml: text, answerHtml: text, css: text,
+  cssRef: id.optional(),
   typedAnswer: z.object({ fieldName: text, expected: text }).optional(),
   source: z.enum(['anki-template', 'neo-native']),
 }).passthrough()
@@ -220,6 +221,7 @@ export const trashEntrySchema = z.object({
   id,
   item: knowledgeItemSchema,
   cards: z.array(practiceCardSchema),
+  renderingStyles: z.record(z.string(), text).optional(),
   deletedAt: timestamp,
 }).passthrough()
 
@@ -405,6 +407,9 @@ export const migrateWorkspaceData = (input: LegacyWorkspaceData): AppData => {
   const cards = (input.cards || []).map((card) => ({
     id: card.id,
     itemId: card.itemId,
+    deckName: card.deckName,
+    presetId: card.presetId,
+    schedulerOptions: card.schedulerOptions,
     variant: card.variant,
     occlusionId: card.occlusionId,
     promptData: card.promptData,
@@ -433,6 +438,7 @@ export const migrateWorkspaceData = (input: LegacyWorkspaceData): AppData => {
     packConflicts: input.packConflicts || [],
     trash: input.trash || [],
     settings: {
+      ...input.settings,
       dailyMinutes: input.settings?.dailyMinutes ?? 30,
       retention: input.settings?.retention ?? 0.9,
       theme: input.settings?.theme ?? 'light',

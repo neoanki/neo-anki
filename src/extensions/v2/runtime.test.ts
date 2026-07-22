@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ExtensionHostV2, ExtensionManifestV2, WorkerTransportMessageV2 } from '../../../packages/extension-sdk/src/index'
+import type { ExtensionHostV2, ExtensionManifestV2, SandboxedUiMessageV2, WorkerTransportMessageV2 } from '../../../packages/extension-sdk/src/index'
 import { createSandboxedExtensionUiV2, ExtensionWorkerRuntimeV2 } from './runtime'
 
 const manifest = (permissions: ExtensionManifestV2['permissions'] = ['study:signals']): ExtensionManifestV2 => ({
@@ -75,6 +75,18 @@ describe('SDK v2 isolated runtimes', () => {
     runtime.close()
   })
 
+  it('passes large File descriptors to workers without treating file bytes as protocol bytes', async () => {
+    const worker = new FakeWorker(); const runtime = new ExtensionWorkerRuntimeV2(manifest(), 'blob:https://neoanki.test/worker', host(), () => worker as never)
+    worker.emit({ protocol: 2, type: 'ready', extensionId: manifest().id })
+    const file = new File([new Uint8Array(8 * 1024 * 1024 + 1)], 'large.apkg', { type: 'application/zip' })
+    const pending = runtime.execute({ type: 'command', requestId: 'large-file', commandId: 'inspect', payload: file })
+    await Promise.resolve()
+    expect(worker.sent.at(-1)).toMatchObject({ type: 'request', request: { requestId: 'large-file', payload: file } })
+    worker.emit({ protocol: 2, type: 'response', response: { type: 'result', requestId: 'large-file', value: { ok: true } } })
+    await expect(pending).resolves.toMatchObject({ type: 'result' })
+    runtime.close()
+  })
+
   it('enforces manifest permissions on worker-to-host RPC', async () => {
     const worker = new FakeWorker(); const workerHost = host(); const runtime = new ExtensionWorkerRuntimeV2(manifest(), 'blob:https://neoanki.test/worker', workerHost, () => worker as never)
     worker.emit({ protocol: 2, type: 'ready', extensionId: manifest().id })
@@ -129,6 +141,28 @@ describe('SDK v2 isolated runtimes', () => {
     await vi.waitFor(() => expect(lifecycle).toHaveBeenCalledWith({ type: 'resize', height: 24_000 }))
     extensionPort!.postMessage({ protocol: 2, type: 'event', name: 'resize', payload: { height: 20 } })
     await vi.waitFor(() => expect(lifecycle).toHaveBeenCalledWith({ type: 'resize', height: 96 }))
+    runtime.close()
+  })
+
+  it('returns correlated validation errors without closing the UI channel', async () => {
+    const lifecycle = vi.fn()
+    const hostCall = vi.fn(async () => ({ ok: true }))
+    const runtime = createSandboxedExtensionUiV2(manifest(['ui:page']), 'page', 'blob:https://neoanki.test/page', { locale: 'en', theme: 'light', dto: {} }, hostCall, lifecycle)
+    document.body.append(runtime.iframe)
+    const target = runtime.iframe.contentWindow!
+    let extensionPort: MessagePort | undefined
+    vi.spyOn(target, 'postMessage').mockImplementation(((_message: unknown, _origin: string, transfer?: Transferable[]) => {
+      extensionPort = transfer?.[0] as MessagePort | undefined
+      extensionPort?.start()
+    }) as typeof target.postMessage)
+    runtime.iframe.dispatchEvent(new Event('load'))
+    const replies: SandboxedUiMessageV2[] = []
+    extensionPort!.onmessage = (event) => replies.push(event.data as SandboxedUiMessageV2)
+    extensionPort!.postMessage({ protocol: 2, type: 'host-call', id: 'oversized', name: 'command', payload: new Uint8Array(8 * 1024 * 1024 + 1) })
+    await vi.waitFor(() => expect(replies).toContainEqual(expect.objectContaining({ type: 'error', id: 'oversized' })))
+    extensionPort!.postMessage({ protocol: 2, type: 'host-call', id: 'recovery', name: 'command', payload: { commandId: 'safe' } })
+    await vi.waitFor(() => expect(replies).toContainEqual(expect.objectContaining({ type: 'host-result', id: 'recovery' })))
+    expect(hostCall).toHaveBeenCalledTimes(1)
     runtime.close()
   })
 })
