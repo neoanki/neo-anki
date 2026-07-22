@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, safeStorage, session, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, protocol, safeStorage, session, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { createHash } from 'node:crypto'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { deflateRawSync, inflateRawSync } from 'node:zlib'
@@ -621,8 +621,8 @@ const createWindow = async (query = '') => {
     height: 820,
     minWidth: 900,
     minHeight: 640,
-    show: false,
-    backgroundColor: '#f4f1ea',
+    show: !hideWindowForE2E,
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1b1a18' : '#f4f1ea',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: process.platform === 'darwin' ? { x: 15, y: 14 } : undefined,
     webPreferences: {
@@ -641,7 +641,6 @@ const createWindow = async (query = '') => {
   window.webContents.on('will-navigate', (event, url) => {
     if (!isTrustedUrl(url)) event.preventDefault()
   })
-  window.once('ready-to-show', () => { if (!hideWindowForE2E) window.show() })
   window.on('closed', () => { if (mainWindow === window) mainWindow = null })
   window.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => { if (isMainFrame && !isInPlace) { rendererReady = false; armRendererStartupWatchdog() } })
   window.webContents.on('did-finish-load', armRendererStartupWatchdog)

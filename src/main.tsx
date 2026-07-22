@@ -28,13 +28,14 @@ const RendererReady = () => {
   return null
 }
 
-void resumeInterruptedBrowserSync().catch(() => undefined).then(() => initializeExternalExtensions()).finally(() => {
+void resumeInterruptedBrowserSync().catch(() => undefined).finally(() => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <RendererReady />
       <AppErrorBoundary><AppProvider><App /></AppProvider></AppErrorBoundary>
     </StrictMode>,
   )
+  void initializeExternalExtensions().finally(() => window.dispatchEvent(new Event('neo-anki:extensions-ready')))
 })
 
 window.addEventListener('error', (event) => {

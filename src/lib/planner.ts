@@ -6,8 +6,16 @@ const DEFAULT_REVIEW_SECONDS = 14
 const NEW_INTRODUCTION_SECONDS = 72
 const UTILIZATION_TARGET = 0.88
 const FUTURE_NEW_COST = [0, 34, 22, 15, 11, 8, 7]
+const contextCollator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' })
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+export const compareStudyContexts = (left: string, right: string) => contextCollator.compare(left, right) || left.localeCompare(right)
+const sourcePathFor = (card: PracticeCard, itemMap: Map<string, KnowledgeItem>) => card.deckName || itemMap.get(card.itemId)?.collection || ''
+const compareCardsByCurriculum = (left: PracticeCard, right: PracticeCard, itemMap: Map<string, KnowledgeItem>) =>
+  compareStudyContexts(sourcePathFor(left, itemMap), sourcePathFor(right, itemMap))
+  || compareStudyContexts(itemMap.get(left.itemId)?.createdAt || left.createdAt, itemMap.get(right.itemId)?.createdAt || right.createdAt)
+  || compareStudyContexts(left.createdAt, right.createdAt)
+  || compareStudyContexts(left.id, right.id)
 export interface PlanningSignal { id: string; label: string; score: number }
 export interface QueuePolicyCandidate { card: PracticeCard; overdueDays: number; extensionBoost: number }
 
@@ -88,7 +96,9 @@ export const buildDailyPlan = (
       const itemB = itemMap.get(b.itemId)
       const urgencyA = itemA ? signalBoost(itemA.id) : 0
       const urgencyB = itemB ? signalBoost(itemB.id) : 0
-      return urgencyB - urgencyA || new Date(a.fsrs.due).getTime() - new Date(b.fsrs.due).getTime()
+      return urgencyB - urgencyA
+        || new Date(a.fsrs.due).getTime() - new Date(b.fsrs.due).getTime()
+        || compareCardsByCurriculum(a, b, itemMap)
     })
     .filter((card) => withinDailyLimit(card, 'new'))
 
@@ -173,8 +183,6 @@ export const buildDailyPlan = (
 
 export const studySubjectForCollection = (collection: string) => collection.split('::', 1)[0]?.trim() || 'Unsorted'
 const contextFor = (entry: PlannedCard, itemMap: Map<string, KnowledgeItem>) => studySubjectForCollection(itemMap.get(entry.card.itemId)?.collection || '')
-const contextCollator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' })
-export const compareStudyContexts = (left: string, right: string) => contextCollator.compare(left, right) || left.localeCompare(right)
 
 const avoidAdjacentSiblings = (entries: PlannedCard[]) => {
   const remaining = [...entries]
@@ -207,7 +215,7 @@ export const buildStudySession = (
     const context = contextFor(entry, itemMap)
     grouped.set(context, [...(grouped.get(context) || []), entry])
   })
-  grouped.forEach((entries, context) => grouped.set(context, avoidAdjacentSiblings(entries)))
+  grouped.forEach((entries, context) => grouped.set(context, avoidAdjacentSiblings(entries.sort((left, right) => compareCardsByCurriculum(left.card, right.card, itemMap)))))
 
   const contexts = [...grouped.keys()].sort(compareStudyContexts)
   const selectedByContext = new Map(contexts.map((context) => [context, [] as PlannedCard[]]))

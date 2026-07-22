@@ -6,11 +6,18 @@
     <meta name="theme-color" content="#f4f1ea" />
     <meta name="description" content="Neo Anki — a calm, time-aware spaced repetition app." />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-rXIRbvfIg1oWa8E7K6zdN0r08XeDu1r8qTk0Q2b4kF8=' neoanki-extension:; worker-src 'self' blob: neoanki-extension:; frame-src data:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: neoanki-media:; media-src 'self' data: blob: neoanki-media:; connect-src 'self' https: wss: ws://127.0.0.1:* http://127.0.0.1:*; object-src 'none'; base-uri 'self'" />
+    <script src="./startup-theme.js"></script>
+    <style>
+      :root{--startup-bg:#f4f1ea;--startup-panel:#fbfaf7;--startup-text:#26241f;--startup-muted:#69655d;--startup-soft:#ece6f8;--startup-accent:#6246a5;--startup-border:#ddd8ce;color-scheme:light}
+      :root[data-theme=dark]{--startup-bg:#1b1a18;--startup-panel:#242320;--startup-text:#f1eee8;--startup-muted:#b9b4aa;--startup-soft:#3b314f;--startup-accent:#a98de4;--startup-border:#403d37;color-scheme:dark}
+      @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--startup-bg:#1b1a18;--startup-panel:#242320;--startup-text:#f1eee8;--startup-muted:#b9b4aa;--startup-soft:#3b314f;--startup-accent:#a98de4;--startup-border:#403d37;color-scheme:dark}}
+      html,body,#root{min-height:100%;margin:0;background:var(--startup-bg)}.startup-shell{min-height:100vh;display:grid;place-items:center;padding:28px;box-sizing:border-box;background:var(--startup-bg);color:var(--startup-text);font:14px Inter,ui-sans-serif,system-ui,-apple-system,sans-serif}.startup-panel{width:min(420px,100%);padding:28px;border:1px solid var(--startup-border);border-radius:18px;background:var(--startup-panel);box-sizing:border-box}.startup-brand{display:flex;align-items:center;gap:11px;font-size:17px;font-weight:700}.startup-mark{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;background:var(--startup-soft);color:var(--startup-accent)}.startup-lines{display:grid;gap:10px;margin:38px 0 24px}.startup-lines span{height:10px;border-radius:99px;background:var(--startup-soft)}.startup-lines span:nth-child(2){width:78%}.startup-lines span:nth-child(3){width:56%}.startup-panel p{margin:0;color:var(--startup-muted)}
+    </style>
     <link rel="manifest" href="./manifest.webmanifest" />
     <title>Neo Anki</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><main class="startup-shell" role="status" aria-live="polite" aria-label="Opening Neo Anki"><section class="startup-panel"><div class="startup-brand"><span class="startup-mark" aria-hidden="true">N</span><span>Neo Anki</span></div><div class="startup-lines" aria-hidden="true"><span></span><span></span><span></span></div><p>Opening your workspace…</p></section></main></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

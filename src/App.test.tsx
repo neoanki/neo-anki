@@ -36,6 +36,28 @@ const renderApp = (onboarded = true) => {
 describe('application workflows', () => {
   beforeEach(() => { localStorage.clear(); window.location.hash = '#/today' })
   afterEach(() => { vi.unstubAllGlobals(); window.neoAnkiDesktop = undefined })
+  it('paints a themed startup shell while desktop data loads asynchronously', async () => {
+    const data = createSeedData(); data.settings.onboardingComplete = true
+    let finishLoad!: (value: NeoAnkiDesktopLoadResult) => void
+    const pending = new Promise<NeoAnkiDesktopLoadResult>((resolve) => { finishLoad = resolve })
+    const synchronousLoad = vi.fn(() => { throw new Error('The synchronous loader must not run during startup.') })
+    window.neoAnkiDesktop = {
+      isDesktop: true,
+      loadData: synchronousLoad,
+      loadDataAsync: () => pending,
+      saveData: async () => undefined,
+      onNavigate: () => () => undefined,
+    } as unknown as NeoAnkiDesktopBridge
+
+    render(<AppProvider><App /></AppProvider>)
+    expect(screen.getByRole('status', { name: 'Opening Neo Anki' })).toHaveTextContent('Opening your workspace…')
+    expect(synchronousLoad).not.toHaveBeenCalled()
+
+    finishLoad({ data, storagePath: '/tmp/neo-anki.sqlite', recoveredFromBackup: false })
+    expect(await screen.findByRole('heading', { name: 'Today' })).toBeInTheDocument()
+    expect(synchronousLoad).not.toHaveBeenCalled()
+  })
+
   it('onboards around time instead of a fixed new-card count', async () => {
     renderApp(false)
     expect(screen.getByRole('heading', { name: /how would you like to begin/i })).toBeInTheDocument()

@@ -331,7 +331,9 @@ test('production shell is accessible and cached for offline use', async ({ page,
     // shell is complete; Chromium and Firefox exercise the actual reload below.
     await expect(page.evaluate(async () => {
       const response = await caches.match('/')
-      return Boolean(response?.ok) && (await response!.text()).includes('<div id="root"></div>')
+      if (!response?.ok) return false
+      const shell = await response.text()
+      return shell.includes('<div id="root">') && shell.includes('aria-label="Opening Neo Anki"')
     })).resolves.toBe(true)
   } else {
     await page.evaluate(() => { Reflect.set(window, '__neoAnkiOfflineReloadMarker', true); window.location.reload() }).catch(() => undefined)
