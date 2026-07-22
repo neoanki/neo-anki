@@ -407,6 +407,9 @@ export const migrateWorkspaceData = (input: LegacyWorkspaceData): AppData => {
   const cards = (input.cards || []).map((card) => ({
     id: card.id,
     itemId: card.itemId,
+    deckName: card.deckName,
+    presetId: card.presetId,
+    schedulerOptions: card.schedulerOptions,
     variant: card.variant,
     occlusionId: card.occlusionId,
     promptData: card.promptData,
@@ -435,6 +438,7 @@ export const migrateWorkspaceData = (input: LegacyWorkspaceData): AppData => {
     packConflicts: input.packConflicts || [],
     trash: input.trash || [],
     settings: {
+      ...input.settings,
       dailyMinutes: input.settings?.dailyMinutes ?? 30,
       retention: input.settings?.retention ?? 0.9,
       theme: input.settings?.theme ?? 'light',

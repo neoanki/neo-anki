@@ -126,18 +126,19 @@ describe('time-budget planner', () => {
 })
 
 describe('session composer', () => {
-  it('keeps unrelated categories in coherent blocks instead of alternating every card', () => {
+  it('keeps each subject in one naturally ordered block', () => {
     const cards = Array.from({ length: 18 }, (_, index) => makeCard(State.Review, new Date(now.getTime() - index * 1_000), `card-${index}`))
     const items = cards.map((card, index) => makeItem(card, index % 2 === 0 ? 'Spanish' : 'Japanese'))
     const daily = buildDailyPlan(cards, [], settings(20), now, items)
     const session = buildStudySession(daily, items, { minutes: 10, intent: 'balanced' })
 
-    expect(session.blocks.length).toBeGreaterThan(1)
+    expect(session.blocks.map((block) => block.contextKey)).toEqual(['Japanese', 'Spanish'])
+    expect(new Set(session.blocks.map((block) => block.contextKey)).size).toBe(session.blocks.length)
     expect(session.blocks.every((block) => block.cards.every((entry) => entry.contextKey === block.contextKey))).toBe(true)
     expect(session.queue.some((entry, index) => index > 0 && entry.contextKey === session.queue[index - 1].contextKey)).toBe(true)
   })
 
-  it('uses one context for a five-minute practice when that context has enough work', () => {
+  it('distributes a balanced session fairly instead of imposing a four-card subject limit', () => {
     const spanish = Array.from({ length: 30 }, (_, index) => makeCard(State.Review, new Date(now.getTime() - index * 1_000), `spanish-${index}`))
     const japanese = Array.from({ length: 10 }, (_, index) => makeCard(State.Review, new Date(now.getTime() - index * 1_000), `japanese-${index}`))
     const cards = [...spanish, ...japanese]
@@ -145,7 +146,25 @@ describe('session composer', () => {
     const daily = buildDailyPlan(cards, [], settings(30), now, items)
     const session = buildStudySession(daily, items, { minutes: 5, intent: 'balanced' })
 
-    expect(new Set(session.queue.map((entry) => entry.contextKey)).size).toBe(1)
+    const counts = session.blocks.map((block) => block.cards.length)
+    expect(session.blocks.map((block) => block.contextKey)).toEqual(['Japanese', 'Spanish'])
+    expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1)
+    expect(session.blocks).toHaveLength(2)
+  })
+
+  it('orders numbered imported deck folders naturally and shows each only once', () => {
+    const production = Array.from({ length: 8 }, (_, index) => makeCard(State.New, now, `production-${index}`))
+    const recognition = Array.from({ length: 12 }, (_, index) => makeCard(State.New, now, `recognition-${index}`))
+    const cards = [...production, ...recognition]
+    const items = [...production.map((card) => makeItem(card, 'Japanese Grammar::00 - Foundation::02 · Production')), ...recognition.map((card) => makeItem(card, 'Japanese Grammar::00 - Foundation::01 · Recognition'))]
+    const daily = buildDailyPlan(cards, [], settings(30), now, items)
+    const session = buildStudySession(daily, items, { minutes: 20, intent: 'balanced' })
+
+    expect(session.blocks.map((block) => block.contextKey)).toEqual([
+      'Japanese Grammar::00 - Foundation::01 · Recognition',
+      'Japanese Grammar::00 - Foundation::02 · Production',
+    ])
+    expect(session.blocks.map((block) => block.cards.length)).toEqual([8, 8])
   })
 
   it('supports a focused session without rescheduling other categories', () => {

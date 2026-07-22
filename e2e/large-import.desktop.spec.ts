@@ -13,12 +13,12 @@ test('a large Anki package reports activity and commits durably', async () => {
   test.skip(!packagePath || !ankiPath, 'Set NEO_ANKI_INTEROPERABILITY_PACKAGE and NEO_ANKI_LARGE_APKG to run the large-package regression.')
   test.setTimeout(12 * 60_000)
   const userData = await mkdtemp(join(tmpdir(), 'neo-anki-large-import-'))
-  const application = await electron.launch({
+  let application = await electron.launch({
     args: ['.', `--install-extension=${packagePath}`],
     env: isolatedElectronEnv(userData),
   })
-  const window = await readyElectronWindow(application)
-  const failures = observeRuntimeFailures(window)
+  let window = await readyElectronWindow(application)
+  let failures = observeRuntimeFailures(window)
   let stopped = false
 
   try {
@@ -47,9 +47,27 @@ test('a large Anki package reports activity and commits durably', async () => {
     await expect(window.getByText(/Import complete\. .*notes and .*cards are now available/)).toBeVisible({ timeout: 10 * 60_000 })
     const importDuration = performance.now() - importStarted
     if (/^jpgram-premium-.*\.apkg$/i.test(basename(ankiPath!))) expect(importDuration).toBeLessThan(5_000)
+    expect(failures).toEqual([])
+
+    await stopElectron(application)
+    stopped = true
+    application = await electron.launch({ args: ['.'], env: isolatedElectronEnv(userData) })
+    window = await readyElectronWindow(application)
+    failures = observeRuntimeFailures(window)
+    stopped = false
     await window.getByRole('button', { name: /^Today/ }).first().click()
     await expect(window.getByRole('button', { name: /^Study / })).toBeEnabled({ timeout: 30_000 })
     await expect(window.getByText(/No practice prompts match/i)).toHaveCount(0)
+    if (/^jpgram-premium-.*\.apkg$/i.test(basename(ankiPath!))) {
+      await window.getByLabel('Study for').selectOption('20')
+      const blocks = window.locator('.block-preview-row')
+      await expect(blocks).toHaveCount(2)
+      await expect(blocks.nth(0)).toContainText('Japanese Grammar::00 - Foundation::01 · Recognition')
+      await expect(blocks.nth(0)).toContainText('8 practice prompts')
+      await expect(blocks.nth(1)).toContainText('Japanese Grammar::00 - Foundation::02 · Production')
+      await expect(blocks.nth(1)).toContainText('8 practice prompts')
+      await expect(window.locator('.session-list-pane > header > span')).toHaveText('5 min left for later')
+    }
     expect(failures).toEqual([])
 
     await stopElectron(application)

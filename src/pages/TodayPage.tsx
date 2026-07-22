@@ -1,7 +1,7 @@
 import { AlertTriangle, Blocks, Play, Plus, Upload } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { formatDuration } from '../lib/date'
-import { buildStudySession } from '../lib/planner'
+import { buildStudySession, compareStudyContexts } from '../lib/planner'
 import { useApp } from '../state/AppContext'
 import type { SessionIntent } from '../types'
 import { extensionQueuePoliciesV2 } from '../extensions/v2/registry'
@@ -21,7 +21,7 @@ export const TodayPage = () => {
   const [intent, setIntent] = useState<SessionIntent>('balanced')
   const [renderedAt] = useState(Date.now)
   const weekday = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
-  const collections = useMemo(() => [...new Set(plan.queue.map((entry) => data.items.find((item) => item.id === entry.card.itemId)?.collection || 'Unsorted'))], [data.items, plan.queue])
+  const collections = useMemo(() => [...new Set(plan.queue.map((entry) => data.items.find((item) => item.id === entry.card.itemId)?.collection || 'Unsorted'))].sort(compareStudyContexts), [data.items, plan.queue])
   const [focusCollection, setFocusCollection] = useState(() => collections[0] || '')
   const effectiveFocusCollection = collections.includes(focusCollection) ? focusCollection : collections[0] || ''
   const recommendedMinutes = recommendedSessionMinutes(data.settings.dailyMinutes, availableWorkSeconds)
@@ -33,7 +33,7 @@ export const TodayPage = () => {
   }, [availableWorkSeconds])
   const request = useMemo(() => ({ minutes: effectiveSessionMinutes, intent, focusCollection: intent === 'focus' ? effectiveFocusCollection : undefined }), [effectiveFocusCollection, effectiveSessionMinutes, intent])
   const session = useMemo(() => buildStudySession(plan, data.items, request), [data.items, plan, request])
-  const remainingAfterSession = Math.max(0, plan.remainingSeconds - session.plannedSeconds)
+  const remainingAfterSession = Math.max(0, availableWorkSeconds - session.plannedSeconds)
   const recoveryPolicies = [{ id: 'risk', label: 'Most at-risk first' }, ...extensionQueuePoliciesV2().map(({ id, label }) => ({ id, label }))]
   const nextDue = useMemo(() => data.cards.filter((card) => !card.suspended && (!card.buriedUntil || Date.parse(card.buriedUntil) <= renderedAt)).map((card) => new Date(card.fsrs.due)).filter((date) => Number.isFinite(date.getTime()) && date.getTime() > renderedAt).sort((left, right) => left.getTime() - right.getTime())[0], [data.cards, renderedAt])
 
@@ -99,7 +99,7 @@ export const TodayPage = () => {
 
       <section className="study-launcher" aria-labelledby="study-launcher-title">
         <div className="study-launcher-copy">
-          <h2 id="study-launcher-title">{formatDuration(plan.remainingSeconds)} available</h2>
+          <h2 id="study-launcher-title">{formatDuration(availableWorkSeconds)} available</h2>
           <p role={planning ? 'status' : undefined}>{planning ? 'Planning this large workspace in the background… Study controls will be ready without freezing this screen.' : planningError ? 'Neo Anki could not build today’s session. Your imported cards are safe.' : `${plan.duePlanned} ${plan.duePlanned === 1 ? 'review is' : 'reviews are'} ready, with ${plan.newPlanned} new practice ${plan.newPlanned === 1 ? 'prompt' : 'prompts'}. Neo Anki will keep unrelated subjects in separate blocks.`}</p>
         </div>
         <div className="study-controls">
