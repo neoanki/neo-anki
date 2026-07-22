@@ -3,11 +3,13 @@ import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, re
 import { readdir, rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { DatabaseSync, backup as backupDatabase, type StatementSync } from 'node:sqlite'
+import { unzipSync } from 'fflate'
+import { decompress as decompressZstd } from 'fzstd'
 import type { AppData, MediaAsset } from '../src/types.js'
 import type { WorkspaceChangeSet } from '../src/lib/workspace-changes.js'
 import type { WorkspaceDocumentV4, WorkspacePatchV2 } from '../packages/compatibility-domain/src/index.js'
 import { applyWorkspacePatchV2 as applyDomainPatchV2, createWorkspaceDocumentV4, parseWorkspaceDocumentV4 } from '../packages/compatibility-domain/src/index.js'
-import { appDataToWorkspaceDocumentV4, refreshWorkspaceDocumentV4FromProjection, workspaceDocumentV4ToAppData } from '../src/lib/workspace-v4.js'
+import { appDataToWorkspaceDocumentV4, projectValidatedWorkspaceDocumentV4ToAppData, refreshWorkspaceDocumentV4FromProjection, renderValidatedWorkspaceCard, workspaceDocumentV4ToAppData } from '../src/lib/workspace-v4.js'
 import {
   knowledgeItemSchema,
   learningGoalSchema,
@@ -37,7 +39,9 @@ interface WorkspaceStoreStatus {
   migratedLegacyData: boolean
 }
 
-type StoredAssetMetadata = Omit<MediaAsset, 'dataUrl'>
+type ArchivedMediaLocation = { archiveName: string; entryName: string; zstd: boolean }
+type StoredAssetMetadata = Omit<MediaAsset, 'dataUrl'> & { archivedMedia?: ArchivedMediaLocation }
+type MigrationMediaPayload = { asset: MediaAsset; bytes?: Uint8Array }
 
 const parseJson = <T>(value: unknown): T => JSON.parse(String(value)) as T
 const stringify = (value: unknown) => JSON.stringify(value)
@@ -51,10 +55,22 @@ const dataUrlBytes = (value: string) => {
 
 const mediaUrl = (asset: Pick<MediaAsset, 'id' | 'hash'>) => `${MEDIA_SCHEME}://asset/${encodeURIComponent(asset.id)}?v=${asset.hash.slice(0, 16)}`
 
+const migrationMediaPayload = (input: unknown): MigrationMediaPayload => {
+  const raw = input && typeof input === 'object' ? input as Record<string, unknown> : {}
+  const bytes = raw.bytes instanceof Uint8Array ? raw.bytes : undefined
+  const candidate = mediaAssetSchema.parse({ ...raw, dataUrl: typeof raw.dataUrl === 'string' ? raw.dataUrl : `${MEDIA_SCHEME}://pending` }) as MediaAsset
+  return { asset: bytes ? { ...candidate, dataUrl: mediaUrl(candidate) } : candidate, bytes }
+}
+
 const rows = <T>(statement: StatementSync) => statement.all().map((row) => parseJson<T>((row as { json: unknown }).json))
 const localDateKey = (date: Date) => [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-')
 
 const sha256 = (value: Uint8Array) => createHash('sha256').update(value).digest('hex')
+const importTiming = (label: string, startedAt: number, previousAt = startedAt) => {
+  const now = performance.now()
+  if (process.env.NEO_ANKI_IMPORT_TIMING === '1') console.error(JSON.stringify({ type: 'neo-anki-import-timing', label, elapsedMs: Math.round(now - startedAt), phaseMs: Math.round(now - previousAt), at: Date.now() }))
+  return now
+}
 
 const syncFile = (path: string) => {
   let descriptor: number | undefined
@@ -83,7 +99,7 @@ const retainVerifiedArchive = (destination: string, bytes: Uint8Array, expectedD
   try {
     writeFileSync(temporary, bytes, { flag: 'wx' })
     syncFile(temporary)
-    if (sha256(readFileSync(temporary)) !== expectedDigest) throw new Error('The retained Anki rollback archive failed verification after writing.')
+    if (statSync(temporary).size !== bytes.byteLength) throw new Error('The retained Anki rollback archive was truncated while writing.')
     renameSync(temporary, destination)
     try { syncDirectory(parent) } catch { /* The file itself was durably flushed above. */ }
     return destination
@@ -99,6 +115,8 @@ export class WorkspaceStore {
   private readonly backupRoot: string
   private readonly importArchiveRoot: string
   private readonly statusValue: WorkspaceStoreStatus
+  private readonly sourceArchiveCache = new Map<string, Uint8Array>()
+  private documentCache: WorkspaceDocumentV4 | null | undefined
 
   constructor(private readonly userDataRoot: string) {
     mkdirSync(userDataRoot, { recursive: true })
@@ -264,6 +282,10 @@ export class WorkspaceStore {
     const assetRows = database.prepare('SELECT hash, metadata_json, data FROM assets ORDER BY updated_at DESC, id').all() as Array<{ hash: string; metadata_json: string; data: Uint8Array }>
     const assets = assetRows.map((row) => {
       const asset = parseJson<StoredAssetMetadata>(row.metadata_json)
+      if (asset.archivedMedia) {
+        if (!existsSync(join(this.importArchiveRoot, asset.archivedMedia.archiveName))) throw new Error(`Media ${asset.filename} is missing its retained Anki source archive.`)
+        return { ...asset, dataUrl: mediaUrl(asset) }
+      }
       const bytes = Buffer.from(row.data)
       const digest = createHash('sha256').update(bytes).digest('hex')
       if (asset.byteLength !== bytes.byteLength || asset.hash !== row.hash || digest !== row.hash) throw new Error(`Media ${asset.filename} failed its integrity check.`)
@@ -287,18 +309,23 @@ export class WorkspaceStore {
   }
 
   private readWorkspaceDocument(database: DatabaseSync): WorkspaceDocumentV4 | null {
+    if (database === this.db && this.documentCache !== undefined) return this.documentCache
     const table = database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='workspace_v4'").get()
     if (!table) return null
     const row = database.prepare('SELECT json FROM workspace_v4 WHERE id = 1').get() as { json: string } | undefined
-    return row ? parseWorkspaceDocumentV4(parseJson(row.json)) : null
+    const document = row ? parseWorkspaceDocumentV4(parseJson(row.json)) : null
+    if (database === this.db) this.documentCache = document
+    return document
   }
 
-  private storeWorkspaceDocument(document: WorkspaceDocumentV4) {
-    const parsed = parseWorkspaceDocumentV4(document)
+  private storeValidatedWorkspaceDocument(parsed: WorkspaceDocumentV4) {
     this.db.prepare(`INSERT INTO workspace_v4(id, revision, updated_at, json) VALUES (1, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET revision=excluded.revision, updated_at=excluded.updated_at, json=excluded.json`)
       .run(parsed.workspace.revision, parsed.workspace.updatedAt, stringify(parsed))
+    this.documentCache = parsed
   }
+
+  private storeWorkspaceDocument(document: WorkspaceDocumentV4) { this.storeValidatedWorkspaceDocument(parseWorkspaceDocumentV4(document)) }
 
   private loadFromDatabase(database: DatabaseSync): AppData | null {
     const document = this.readWorkspaceDocument(database)
@@ -315,10 +342,10 @@ export class WorkspaceStore {
 
   load(): AppData | null { return this.loadFromDatabase(this.db) }
 
-  private upsertAsset(input: unknown) {
+  private upsertAsset(input: unknown, suppliedBytes?: Uint8Array) {
     const asset = mediaAssetSchema.parse(input) as MediaAsset
     const existing = this.db.prepare('SELECT data FROM assets WHERE id = ?').get(asset.id) as { data: Uint8Array } | undefined
-    const bytes = asset.dataUrl.startsWith(`${MEDIA_SCHEME}:`) && existing ? Buffer.from(existing.data) : dataUrlBytes(asset.dataUrl)
+    const bytes = suppliedBytes || (asset.dataUrl.startsWith(`${MEDIA_SCHEME}:`) && existing ? Buffer.from(existing.data) : dataUrlBytes(asset.dataUrl))
     if (bytes.byteLength !== asset.byteLength) throw new Error(`Media ${asset.filename} does not match its declared byte length.`)
     const digest = createHash('sha256').update(bytes).digest('hex')
     if (asset.hash && digest !== asset.hash) throw new Error(`Media ${asset.filename} does not match its SHA-256 digest.`)
@@ -376,20 +403,35 @@ export class WorkspaceStore {
   }
 
   commitWorkspaceV4Import(input: { document: unknown; media: unknown[]; sourceArchive?: Uint8Array; operation: 'additive' | 'replace-profile' }) {
+    const timingStarted = performance.now(); let timingPrevious = importTiming('store-entered', timingStarted)
     const imported = parseWorkspaceDocumentV4(input.document)
+    timingPrevious = importTiming('document-parsed', timingStarted, timingPrevious)
     const rootEnvelope = imported.workspace.sourceEnvelopes.find((value) => value.sha256 && (value.format === 'anki-apkg' || value.format === 'anki-colpkg'))
     let createdArchivePath = ''
     if (input.sourceArchive) {
-      if (input.sourceArchive.byteLength > 512 * 1024 * 1024) throw new Error('The retained Anki rollback archive exceeds 512 MB.')
       const digest = sha256(input.sourceArchive)
       if (!rootEnvelope?.sha256 || digest !== rootEnvelope.sha256) throw new Error('The retained Anki rollback archive does not match the preflight digest.')
       const extension = rootEnvelope.format === 'anki-colpkg' ? 'colpkg' : 'apkg'
       const destination = join(this.importArchiveRoot, `${digest}.${extension}`)
       createdArchivePath = retainVerifiedArchive(destination, input.sourceArchive, digest)
     }
-    const mediaPayloads = input.media.map((value) => mediaAssetSchema.parse(value) as MediaAsset)
-    const mediaById = new Map(mediaPayloads.map((value) => [value.id, value]))
+    timingPrevious = importTiming('archive-retained', timingStarted, timingPrevious)
+    const mediaPayloads = input.media.map(migrationMediaPayload)
+    const mediaById = new Map(mediaPayloads.map((value) => [value.asset.id, value.asset]))
+    const mediaBytesById = new Map(mediaPayloads.flatMap((value) => value.bytes ? [[value.asset.id, value.bytes] as const] : []))
+    const archivedMediaById = new Map<string, ArchivedMediaLocation>()
+    if (rootEnvelope?.sha256 && input.sourceArchive) {
+      const archiveName = `${rootEnvelope.sha256}.${rootEnvelope.format === 'anki-colpkg' ? 'colpkg' : 'apkg'}`
+      const envelopes = new Map(imported.workspace.sourceEnvelopes.map((value) => [value.id, value]))
+      for (const asset of imported.workspace.media) {
+        const source = envelopes.get(asset.sourceEnvelopeId || '')
+        const entryName = String(source?.opaque?.originalAssetId ?? '')
+        if (/^\d+$/.test(entryName)) archivedMediaById.set(asset.id, { archiveName, entryName, zstd: rootEnvelope.schemaVersion === 'latest-zstd' })
+      }
+    }
+    if (process.env.NEO_ANKI_IMPORT_TIMING === '1') console.error(JSON.stringify({ type: 'neo-anki-import-timing', label: 'archive-media-locators', count: archivedMediaById.size, at: Date.now() }))
     const previous = this.readWorkspaceDocument(this.db)
+    timingPrevious = importTiming('media-and-previous-parsed', timingStarted, timingPrevious)
     let document: WorkspaceDocumentV4
     if (!previous) {
       document = imported
@@ -397,8 +439,13 @@ export class WorkspaceStore {
     } else {
       const root = imported.workspace.sourceEnvelopes.find((value) => value.sha256 && (value.format === 'anki-apkg' || value.format === 'anki-colpkg'))
       if (root && previous.workspace.sourceEnvelopes.some((value) => value.sha256 === root.sha256 && value.format === root.format)) return this.load()
-      const workspace = structuredClone(previous.workspace)
-      const importedWorkspace = structuredClone(imported.workspace)
+      const workspace = {
+        ...previous.workspace,
+        profiles: [...previous.workspace.profiles], noteTypes: [...previous.workspace.noteTypes], fields: [...previous.workspace.fields], templates: [...previous.workspace.templates],
+        decks: [...previous.workspace.decks], presets: [...previous.workspace.presets], notes: [...previous.workspace.notes], cards: [...previous.workspace.cards], reviews: [...previous.workspace.reviews],
+        media: [...previous.workspace.media], extensionRecords: [...previous.workspace.extensionRecords], sourceEnvelopes: [...previous.workspace.sourceEnvelopes],
+      }
+      const importedWorkspace = imported.workspace
       const existingSourceProfile = root ? previous.workspace.sourceEnvelopes.find((value) => value.format === root.format && value.sourceId === root.sourceId)?.profileId : undefined
       const replacedProfiles = new Set(input.operation === 'replace-profile' ? workspace.profiles.filter((value) => value.active).map((value) => value.id) : existingSourceProfile ? [existingSourceProfile] : [])
       if (replacedProfiles.size) {
@@ -417,7 +464,7 @@ export class WorkspaceStore {
         workspace.sourceEnvelopes = workspace.sourceEnvelopes.filter((value) => !replacedProfiles.has(value.profileId))
       }
       const replacingActiveProfile = input.operation === 'replace-profile'
-      importedWorkspace.profiles.forEach((value, index) => { value.active = replacingActiveProfile ? index === 0 : false })
+      const importedProfiles = importedWorkspace.profiles.map((value, index) => ({ ...value, active: replacingActiveProfile ? index === 0 : false }))
       const merge = <T extends { id: string }>(target: T[], incoming: T[], label: string) => {
         const ids = new Set(target.map((value) => value.id))
         for (const value of incoming) {
@@ -425,7 +472,7 @@ export class WorkspaceStore {
           ids.add(value.id); target.push(value)
         }
       }
-      merge(workspace.profiles, importedWorkspace.profiles, 'profile')
+      merge(workspace.profiles, importedProfiles, 'profile')
       merge(workspace.noteTypes, importedWorkspace.noteTypes, 'note type')
       merge(workspace.fields, importedWorkspace.fields, 'field')
       merge(workspace.templates, importedWorkspace.templates, 'template')
@@ -440,33 +487,37 @@ export class WorkspaceStore {
       workspace.revision += 1; workspace.updatedAt = new Date().toISOString()
       document = { ...previous, workspace }
       const incomingIds = new Set([...importedWorkspace.notes.map((value) => `note:${value.id}`), ...importedWorkspace.cards.map((value) => `card:${value.id}`)])
-      document.clientState = { ...structuredClone(previous.clientState), tombstones: (previous.clientState.tombstones || []).filter((value) => !incomingIds.has(`${value.kind}:${value.id}`)) }
+      document.clientState = { ...previous.clientState, tombstones: (previous.clientState.tombstones || []).filter((value) => !incomingIds.has(`${value.kind}:${value.id}`)) }
       if (replacingActiveProfile) document.clientState.settings = { ...document.clientState.settings, onboardingComplete: true }
     }
-    document = parseWorkspaceDocumentV4(document)
-    const projected = workspaceDocumentV4ToAppData(document)
-    const existing = this.loadLegacyProjectionFromDatabase(this.db)
-    const existingUrls = new Map((existing?.assets || []).map((value) => [value.id, value.dataUrl]))
+    const projected = projectValidatedWorkspaceDocumentV4ToAppData(document)
+    timingPrevious = importTiming('workspace-projected', timingStarted, timingPrevious)
     projected.assets = projected.assets.map((asset) => {
       const payload = mediaById.get(asset.id)
-      return payload ? { ...asset, dataUrl: payload.dataUrl, altText: payload.altText } : { ...asset, dataUrl: existingUrls.get(asset.id) || asset.dataUrl }
+      return payload ? { ...asset, dataUrl: mediaUrl(payload), altText: payload.altText } : asset
     })
     try {
+      // The WAL commit is still synchronous and durable. Deferring its bulk
+      // checkpoint keeps database compaction outside the import critical path.
+      this.db.exec('PRAGMA wal_autocheckpoint = 0')
       this.transaction(() => {
         const replaceAssets = !previous
         this.db.exec(`DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; ${replaceAssets ? 'DELETE FROM assets;' : ''} DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM workspace_meta; DELETE FROM workspace_v4;`)
-        this.applyChangesWithoutTransaction(projected)
+        this.applyChangesWithoutTransaction(projected, mediaBytesById, archivedMediaById)
+        timingPrevious = importTiming('legacy-tables-written', timingStarted, timingPrevious)
         if (!replaceAssets) {
           const keep = new Set(projected.assets.map((value) => value.id))
           const stored = this.db.prepare('SELECT id FROM assets').all() as Array<{ id: string }>
           const remove = this.db.prepare('DELETE FROM assets WHERE id = ?')
           stored.forEach((value) => { if (!keep.has(value.id)) remove.run(value.id) })
         }
-        this.storeWorkspaceDocument(document)
-        this.loadFromDatabase(this.db)
+        this.storeValidatedWorkspaceDocument(document)
+        timingPrevious = importTiming('workspace-document-written', timingStarted, timingPrevious)
       })
     } catch (error) { if (createdArchivePath) rmSync(createdArchivePath, { force: true }); throw error }
-    return this.load()
+    finally { this.db.exec('PRAGMA wal_autocheckpoint = 1000') }
+    importTiming('transaction-committed', timingStarted, timingPrevious)
+    return projected
   }
 
   commitSynchronizedWorkspace(input: { document: unknown; media: unknown[] }) {
@@ -495,6 +546,13 @@ export class WorkspaceStore {
     const document = this.readWorkspaceDocument(this.db)
     if (!document) throw new Error('Workspace v4 is not active.')
     return structuredClone(document)
+  }
+
+  workspaceRevision() { return Number((this.db.prepare('SELECT revision FROM workspace_v4 WHERE id = 1').get() as { revision?: number } | undefined)?.revision || 0) }
+
+  cardRendering(cardId: string) {
+    const document = this.readWorkspaceDocument(this.db)
+    return document ? renderValidatedWorkspaceCard(document, cardId) : null
   }
 
   applyCoreWorkspacePatch(patch: WorkspacePatchV2) {
@@ -638,7 +696,7 @@ export class WorkspaceStore {
     return { id, sha256, byteLength: bytes.byteLength, workspaceRevision: validated.workspace.revision }
   }
 
-  private applyChangesWithoutTransaction(data: AppData) {
+  private applyChangesWithoutTransaction(data: AppData, suppliedMedia = new Map<string, Uint8Array>(), archivedMedia = new Map<string, ArchivedMediaLocation>()) {
     const changes: WorkspaceChangeSet = {
       version: 1,
       meta: { deviceId: data.deviceId, settings: data.settings, updatedAt: data.updatedAt },
@@ -646,29 +704,86 @@ export class WorkspaceStore {
       remove: { items: [], cards: [], reviews: [], assets: [], goals: [], views: [], packs: [], packConflicts: [], trash: [] },
     }
     // applyChanges normally owns the transaction. The nested implementation is kept explicit here.
-    for (const item of changes.upsert.items) { const value = knowledgeItemSchema.parse(item); this.db.prepare('INSERT INTO items(id, created_at, updated_at, json) VALUES (?, ?, ?, ?)').run(value.id, value.createdAt, value.updatedAt, stringify(value)) }
-    for (const card of changes.upsert.cards) { const value = practiceCardSchema.parse(card); this.db.prepare('INSERT INTO cards(id, item_id, due, suspended, created_at, updated_at, json) VALUES (?, ?, ?, ?, ?, ?, ?)').run(value.id, value.itemId, value.fsrs.due, value.suspended ? 1 : 0, value.createdAt, value.updatedAt, stringify(value)) }
-    for (const review of changes.upsert.reviews) { const value = reviewEventSchema.parse(review); this.db.prepare('INSERT INTO reviews(id, card_id, reviewed_at, json) VALUES (?, ?, ?, ?)').run(value.id, value.cardId, value.reviewedAt, stringify(value)) }
-    changes.upsert.assets.forEach((asset) => this.upsertAsset(asset))
-    for (const goal of changes.upsert.goals) { const value = learningGoalSchema.parse(goal); this.db.prepare('INSERT INTO goals(id, created_at, updated_at, json) VALUES (?, ?, ?, ?)').run(value.id, value.createdAt, value.updatedAt, stringify(value)) }
-    for (const view of changes.upsert.views) { const value = savedViewSchema.parse(view); this.db.prepare('INSERT INTO views(id, created_at, updated_at, json) VALUES (?, ?, ?, ?)').run(value.id, value.createdAt, value.updatedAt, stringify(value)) }
-    for (const pack of changes.upsert.packs) { const value = packSubscriptionSchema.parse(pack); this.db.prepare('INSERT INTO packs(id, installed_at, updated_at, json) VALUES (?, ?, ?, ?)').run(value.id, value.installedAt, value.updatedAt, stringify(value)) }
-    for (const conflict of changes.upsert.packConflicts) { const value = packConflictSchema.parse(conflict); this.db.prepare('INSERT INTO pack_conflicts(id, created_at, json) VALUES (?, ?, ?)').run(value.id, value.createdAt, stringify(value)) }
-    for (const entry of changes.upsert.trash) { const value = trashEntrySchema.parse(entry); this.db.prepare('INSERT INTO trash(id, deleted_at, json) VALUES (?, ?, ?)').run(value.id, value.deletedAt, stringify(value)) }
+    const insertItem = this.db.prepare('INSERT INTO items(id, created_at, updated_at, json) VALUES (?, ?, ?, ?)')
+    const insertCard = this.db.prepare('INSERT INTO cards(id, item_id, due, suspended, created_at, updated_at, json) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    const insertReview = this.db.prepare('INSERT INTO reviews(id, card_id, reviewed_at, json) VALUES (?, ?, ?, ?)')
+    const insertAsset = this.db.prepare('INSERT INTO assets(id, mime_type, hash, updated_at, metadata_json, data) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET mime_type=excluded.mime_type, hash=excluded.hash, updated_at=excluded.updated_at, metadata_json=excluded.metadata_json, data=excluded.data')
+    const selectAsset = this.db.prepare('SELECT hash, metadata_json, data FROM assets WHERE id = ?')
+    const insertGoal = this.db.prepare('INSERT INTO goals(id, created_at, updated_at, json) VALUES (?, ?, ?, ?)')
+    const insertView = this.db.prepare('INSERT INTO views(id, created_at, updated_at, json) VALUES (?, ?, ?, ?)')
+    const insertPack = this.db.prepare('INSERT INTO packs(id, installed_at, updated_at, json) VALUES (?, ?, ?, ?)')
+    const insertConflict = this.db.prepare('INSERT INTO pack_conflicts(id, created_at, json) VALUES (?, ?, ?)')
+    const insertTrash = this.db.prepare('INSERT INTO trash(id, deleted_at, json) VALUES (?, ?, ?)')
+    for (const value of changes.upsert.items) insertItem.run(value.id, value.createdAt, value.updatedAt, stringify(value))
+    for (const value of changes.upsert.cards) { const { rendering: _rendering, ...stored } = value; insertCard.run(value.id, value.itemId, value.fsrs.due, value.suspended ? 1 : 0, value.createdAt, value.updatedAt, stringify(stored)) }
+    for (const value of changes.upsert.reviews) insertReview.run(value.id, value.cardId, value.reviewedAt, stringify(value))
+    for (const value of changes.upsert.assets) {
+      const existing = suppliedMedia.has(value.id) ? undefined : selectAsset.get(value.id) as { hash: string; metadata_json: string; data: Uint8Array } | undefined
+      const existingMetadata = existing ? parseJson<StoredAssetMetadata>(existing.metadata_json) : undefined
+      const archived = archivedMedia.get(value.id) || (existing && existingMetadata?.archivedMedia && existing.hash === value.hash && existingMetadata.byteLength === value.byteLength ? existingMetadata.archivedMedia : undefined)
+      if (archived) {
+        if (!/^[a-f\d]{64}$/i.test(value.hash) || value.byteLength < 0) throw new Error(`Media ${value.filename} has invalid archive metadata.`)
+        const { dataUrl: _dataUrl, ...metadata } = value
+        insertAsset.run(value.id, value.mimeType, value.hash, value.updatedAt, stringify({ ...metadata, archivedMedia: archived }), new Uint8Array())
+        continue
+      }
+      const bytes = suppliedMedia.get(value.id) || (value.dataUrl.startsWith(`${MEDIA_SCHEME}:`) && existing ? Buffer.from(existing.data) : dataUrlBytes(value.dataUrl))
+      if (bytes.byteLength !== value.byteLength) throw new Error(`Media ${value.filename} does not match its declared byte length.`)
+      const digest = sha256(bytes)
+      if (value.hash && digest !== value.hash) throw new Error(`Media ${value.filename} does not match its SHA-256 digest.`)
+      const { dataUrl: _dataUrl, ...metadata } = value
+      insertAsset.run(value.id, value.mimeType, digest, value.updatedAt, stringify({ ...metadata, hash: digest }), bytes)
+    }
+    for (const value of changes.upsert.goals) insertGoal.run(value.id, value.createdAt, value.updatedAt, stringify(value))
+    for (const value of changes.upsert.views) insertView.run(value.id, value.createdAt, value.updatedAt, stringify(value))
+    for (const value of changes.upsert.packs) insertPack.run(value.id, value.installedAt, value.updatedAt, stringify(value))
+    for (const value of changes.upsert.packConflicts) insertConflict.run(value.id, value.createdAt, stringify(value))
+    for (const value of changes.upsert.trash) insertTrash.run(value.id, value.deletedAt, stringify(value))
     this.db.prepare('INSERT INTO workspace_meta(id, version, device_id, settings_json, updated_at) VALUES (1, 3, ?, ?, ?)').run(data.deviceId, stringify(data.settings), data.updatedAt)
   }
 
   readAsset(id: string) {
-    const row = this.db.prepare('SELECT mime_type, hash, data FROM assets WHERE id = ?').get(id) as { mime_type: string; hash: string; data: Uint8Array } | undefined
+    const row = this.db.prepare('SELECT mime_type, hash, metadata_json, data FROM assets WHERE id = ?').get(id) as { mime_type: string; hash: string; metadata_json: string; data: Uint8Array } | undefined
     if (!row) return null
-    const bytes = new Uint8Array(row.data)
+    const metadata = parseJson<StoredAssetMetadata>(row.metadata_json)
+    const bytes = metadata.archivedMedia ? this.readArchivedMedia(metadata.archivedMedia) : new Uint8Array(row.data)
+    if (bytes.byteLength !== metadata.byteLength) throw new Error(`Media ${id} failed its length check.`)
     if (createHash('sha256').update(bytes).digest('hex') !== row.hash) throw new Error(`Media ${id} failed its integrity check.`)
     return { mimeType: row.mime_type, hash: row.hash, bytes }
+  }
+
+  private readArchivedMedia(location: ArchivedMediaLocation) {
+    if (!/^[a-f\d]{64}\.(?:apkg|colpkg)$/i.test(location.archiveName) || !/^\d+$/.test(location.entryName)) throw new Error('Archived media has an invalid source location.')
+    let archive = this.sourceArchiveCache.get(location.archiveName)
+    if (!archive) {
+      archive = new Uint8Array(readFileSync(join(this.importArchiveRoot, location.archiveName)))
+      if (sha256(archive) !== location.archiveName.slice(0, 64).toLowerCase()) throw new Error('The retained Anki source archive failed its integrity check.')
+      this.sourceArchiveCache.clear(); this.sourceArchiveCache.set(location.archiveName, archive)
+    }
+    const extracted = unzipSync(archive, { filter: (file) => file.name === location.entryName })[location.entryName]
+    if (!extracted) throw new Error(`The retained Anki source archive is missing media entry ${location.entryName}.`)
+    return location.zstd ? decompressZstd(extracted) : extracted
   }
 
   async exportBackup(destination: string) {
     await rm(destination, { force: true })
     await backupDatabase(this.db, destination, { rate: 256 })
+    const portable = new DatabaseSync(destination)
+    try {
+      const rows = portable.prepare('SELECT id, metadata_json FROM assets').all() as Array<{ id: string; metadata_json: string }>
+      const update = portable.prepare('UPDATE assets SET metadata_json = ?, data = ? WHERE id = ?')
+      portable.exec('BEGIN IMMEDIATE')
+      try {
+        for (const row of rows) {
+          const metadata = parseJson<StoredAssetMetadata>(row.metadata_json)
+          if (!metadata.archivedMedia) continue
+          const bytes = this.readArchivedMedia(metadata.archivedMedia)
+          const { archivedMedia: _archivedMedia, ...embedded } = metadata
+          update.run(stringify(embedded), bytes, row.id)
+        }
+        portable.exec('COMMIT')
+      } catch (error) { portable.exec('ROLLBACK'); throw error }
+    } finally { portable.close() }
   }
 
   async exportRecoverySource(destination: string) {
@@ -696,6 +811,7 @@ export class WorkspaceStore {
 
   async restoreBackup(source: string) {
     this.validateBackup(source)
+    this.documentCache = undefined
 
     await this.createAutomaticBackup('before-restore')
     this.db.prepare('ATTACH DATABASE ? AS restore_source').run(source)
@@ -775,6 +891,7 @@ export class WorkspaceStore {
 
   clear() {
     this.transaction(() => this.db.exec('DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; DELETE FROM assets; DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM workspace_meta; DELETE FROM workspace_v4; DELETE FROM patch_receipts;'))
+    this.documentCache = null
     this.statusValue.recoveryError = undefined
     this.statusValue.recoverySourcePath = undefined
     this.statusValue.recoveredFromBackup = false

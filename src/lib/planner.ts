@@ -171,7 +171,10 @@ export const buildDailyPlan = (
   }
 }
 
-const contextFor = (entry: PlannedCard, itemMap: Map<string, KnowledgeItem>) => itemMap.get(entry.card.itemId)?.collection.trim() || 'Unsorted'
+export const studySubjectForCollection = (collection: string) => collection.split('::', 1)[0]?.trim() || 'Unsorted'
+const contextFor = (entry: PlannedCard, itemMap: Map<string, KnowledgeItem>) => studySubjectForCollection(itemMap.get(entry.card.itemId)?.collection || '')
+const contextCollator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' })
+export const compareStudyContexts = (left: string, right: string) => contextCollator.compare(left, right) || left.localeCompare(right)
 
 const avoidAdjacentSiblings = (entries: PlannedCard[]) => {
   const remaining = [...entries]
@@ -206,11 +209,10 @@ export const buildStudySession = (
   })
   grouped.forEach((entries, context) => grouped.set(context, avoidAdjacentSiblings(entries)))
 
-  const contexts = [...grouped.keys()]
-  const blocks: SessionBlock[] = []
+  const contexts = [...grouped.keys()].sort(compareStudyContexts)
+  const selectedByContext = new Map(contexts.map((context) => [context, [] as PlannedCard[]]))
   let plannedSeconds = 0
   let cursor = 0
-  const targetReviewBlock = budgetSeconds <= 300 ? budgetSeconds : budgetSeconds <= 1_200 ? 150 : 240
 
   while (contexts.some((context) => (grouped.get(context)?.length || 0) > 0) && plannedSeconds < budgetSeconds) {
     const context = contexts[cursor % Math.max(1, contexts.length)]
@@ -218,26 +220,20 @@ export const buildStudySession = (
     const source = grouped.get(context)
     if (!source?.length) continue
 
-    const blockIndex = blocks.length
-    const blockId = `block-${blockIndex}-${context.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
-    const blockCards = []
-    let blockSeconds = 0
-    const containsNew = source[0]?.reason === 'new'
-    const targetSeconds = containsNew ? Math.max(targetReviewBlock, 240) : targetReviewBlock
-
-    while (source.length && blockSeconds < targetSeconds) {
-      const nextIndex = source.findIndex((candidate) => plannedSeconds + candidate.estimatedSeconds <= budgetSeconds)
-      if (nextIndex < 0) break
-      const [next] = source.splice(nextIndex, 1)
-      blockCards.push({ ...next, blockId, blockIndex, contextKey: context })
-      blockSeconds += next.estimatedSeconds
-      plannedSeconds += next.estimatedSeconds
-    }
-
-    if (blockCards.length) blocks.push({ id: blockId, contextKey: context, estimatedSeconds: blockSeconds, cards: blockCards })
-    else source.length = 0
+    const nextIndex = source.findIndex((candidate) => plannedSeconds + candidate.estimatedSeconds <= budgetSeconds)
+    if (nextIndex < 0) { source.length = 0; continue }
+    const [next] = source.splice(nextIndex, 1)
+    selectedByContext.get(context)!.push(next)
+    plannedSeconds += next.estimatedSeconds
   }
 
+  const activeContexts = contexts.filter((context) => (selectedByContext.get(context)?.length || 0) > 0)
+  const blocks: SessionBlock[] = activeContexts.map((context, blockIndex) => {
+    const selected = selectedByContext.get(context)!
+    const blockId = `block-${blockIndex}-${context.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+    const cards = selected.map((entry) => ({ ...entry, blockId, blockIndex, contextKey: context }))
+    return { id: blockId, contextKey: context, estimatedSeconds: cards.reduce((sum, entry) => sum + entry.estimatedSeconds, 0), cards }
+  })
   const queue = blocks.flatMap((block) => block.cards)
   return {
     request,

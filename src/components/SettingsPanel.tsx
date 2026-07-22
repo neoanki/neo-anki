@@ -7,7 +7,6 @@ import { useModalDialog } from './useModalDialog'
 import { CompatibilityManager } from './CompatibilityManager'
 import { SyncPanel } from './SyncPanel'
 
-const MAX_IMPORT_BYTES = 512 * 1024 * 1024
 const LARGE_IMPORT_BYTES = 128 * 1024 * 1024
 const formatImportSize = (bytes: number) => bytes >= 1024 * 1024 * 1024 ? `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB` : `${Math.ceil(bytes / 1024 / 1024)} MB`
 type MigrationRecoveryFile = { kind: 'source-package' | 'workspace-checkpoint'; name: string; byteLength: number; createdAt: string }
@@ -33,7 +32,6 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
 
   const importFile = async (file?: File) => {
     if (!file) return
-    if (file.size > MAX_IMPORT_BYTES) { showMessage(`That file is ${formatImportSize(file.size)}. Neo Anki limits a single import to 512 MB compressed.`, true); return }
     if (file.size > LARGE_IMPORT_BYTES && !window.confirm(`This import is ${formatImportSize(file.size)} and may take several minutes. Continue?`)) return
     const replacesWorkspace = file.name.toLowerCase().endsWith('.json')
     if (replacesWorkspace && !window.confirm('Restore this JSON backup as the complete workspace? Neo Anki will create a recovery checkpoint before replacing current data.')) return

@@ -1,5 +1,5 @@
 import type { ExtensionHostV2 } from '../../../packages/extension-sdk/src/index.js'
-import { extensionCapabilityToken } from '../host.js'
+import { extensionCapabilityToken, takeExtensionMigrationSource } from '../host.js'
 
 const unavailable = () => Promise.reject(new Error('SDK v2 capabilities require the Neo Anki desktop app.'))
 const toBase64 = (bytes: Uint8Array) => { let binary = ''; for (const byte of bytes) binary += String.fromCharCode(byte); return btoa(binary) }
@@ -41,7 +41,10 @@ export const createExtensionHostV2 = (extensionId: string): ExtensionHostV2 => {
     migration: {
       exportWorkspace: () => bridge.extensionMigrationExportV2(token),
       commit: async (input) => {
-        const result = await bridge.extensionMigrationCommitV2(token, input)
+        const sourceFileToken = takeExtensionMigrationSource(extensionId)
+        const serializedInput = { ...input, document: JSON.stringify(input.document) }
+        const result = await bridge.extensionMigrationCommitV2(token, sourceFileToken ? { ...serializedInput, sourceArchive: undefined, sourceFileToken } as typeof input : serializedInput)
+        window.dispatchEvent(new CustomEvent('neo-anki:migration-committed-v4', { detail: { extensionId, summary: result.summary } }))
         window.dispatchEvent(new CustomEvent('neo-anki:workspace-updated-v4', { detail: result.data }))
         return { workspaceRevision: result.workspaceRevision }
       },

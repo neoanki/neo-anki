@@ -130,6 +130,7 @@ export interface CardRenderingProjection {
   questionHtml: string
   answerHtml: string
   css: string
+  cssRef?: string
   typedAnswer?: { fieldName: string; expected: string }
   source: 'anki-template' | 'neo-native'
 }
@@ -305,6 +306,8 @@ export interface AppData {
   deviceId: string
   items: KnowledgeItem[]
   cards: PracticeCard[]
+  /** Deduplicated card CSS keyed by authoritative note-type id. */
+  renderingStyles?: Record<string, string>
   reviews: ReviewEvent[]
   assets: MediaAsset[]
   goals: LearningGoal[]

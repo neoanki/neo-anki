@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { AppData, CreateKnowledgeInput, DailyPlan, KnowledgeItem, RecoveryStrategy, ReviewRating, Route, SessionRequest, StudySession } from '../types'
 import { makeEmptyFSRSCard, scheduleReview, serializeFSRSCard } from '../lib/fsrs'
 import { buildCustomStudySession, buildDailyPlan, buildStudySession } from '../lib/planner'
-import { adoptPersistedData, clearStoredData, downloadBackup, exportRecoverySource, flushPendingSaves, loadWorkspaceData, saveData, unlockPersistence, type WorkspaceLoadFailure } from '../lib/storage'
+import { adoptPersistedData, adoptTrustedDesktopData, clearStoredData, downloadBackup, exportRecoverySource, flushPendingSaves, loadWorkspaceData, reloadWorkspaceData, saveData, unlockPersistence, type WorkspaceLoadFailure } from '../lib/storage'
 import { createDemoWorkspaceData, createEmptyWorkspaceData } from '../data/seed'
 import { extensionRuntime } from '../extensions/runtime'
 import { mergeImportGraph } from '../lib/import-merge'
@@ -59,6 +59,8 @@ interface AppContextValue {
   route: Route
   plan: ReturnType<typeof buildDailyPlan>
   planning: boolean
+  planningError: string
+  retryPlanning: () => void
   activeSession: StudySession | null
   persistenceError: string
   persistenceState: 'saving' | 'saved' | 'failed'
@@ -117,6 +119,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [persistenceState, setPersistenceState] = useState<'saving' | 'saved' | 'failed'>('saved')
   const [extensionSignalRevision, setExtensionSignalRevision] = useState(0)
   const [backgroundPlan, setBackgroundPlan] = useState<{ key: string; plan: DailyPlan } | null>(null)
+  const [plannerFailure, setPlannerFailure] = useState<{ key: string; message: string } | null>(null)
+  const [plannerAttempt, setPlannerAttempt] = useState(0)
   const corePatchQueue = useRef<Promise<void>>(Promise.resolve())
 
   useEffect(() => {
@@ -171,8 +175,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [])
 
   useEffect(() => {
-    const update = (event: Event) => { const next = (event as CustomEvent<AppData>).detail; adoptPersistedData(next); setData(next) }
-    const reload = () => applyWorkspaceLoad(loadWorkspaceData())
+    const update = (event: Event) => { const next = (event as CustomEvent<AppData>).detail; adoptTrustedDesktopData(next); setData(next) }
+    const reload = () => { void reloadWorkspaceData().then(applyWorkspaceLoad).catch((error) => setPersistenceError(error instanceof Error ? error.message : 'Neo Anki could not refresh the imported workspace.')) }
     window.addEventListener('neo-anki:workspace-updated-v4', update)
     window.addEventListener('neo-anki:workspace-reload-requested', reload)
     return () => { window.removeEventListener('neo-anki:workspace-updated-v4', update); window.removeEventListener('neo-anki:workspace-reload-requested', reload) }
@@ -199,7 +203,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const planKey = `${data.updatedAt}:${data.cards.length}:${data.reviews.length}:${extensionSignalRevision}`
   const fallbackPlan = useMemo(() => buildDailyPlan([], [...data.reviews].sort((left, right) => Date.parse(left.reviewedAt) - Date.parse(right.reviewedAt) || left.id.localeCompare(right.id)).slice(-100), data.settings, new Date()), [data.reviews, data.settings])
   const plan = directPlan || (backgroundPlan?.key === planKey ? backgroundPlan.plan : fallbackPlan)
-  const planning = !directPlan && backgroundPlan?.key !== planKey
+  const planningError = plannerFailure?.key === planKey ? plannerFailure.message : ''
+  const planning = !directPlan && backgroundPlan?.key !== planKey && !planningError
+  const retryPlanning = useCallback(() => { setPlannerFailure(null); setPlannerAttempt((value) => value + 1) }, [])
 
   useEffect(() => {
     if (directPlan) return
@@ -207,10 +213,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const now = new Date()
     void prepareLargePlannerInput(data, now, controller.signal)
       .then((prepared) => buildDailyPlanInWorker({ requestId: crypto.randomUUID(), now: now.toISOString(), cards: data.cards, reviews: prepared.reviews, settings: data.settings, items: data.items, signalsByItem: prepared.signalsByItem, queueScoresByCard: prepared.queueScoresByCard }, controller.signal))
-      .then((next) => { if (!controller.signal.aborted) setBackgroundPlan({ key: planKey, plan: next }) })
-      .catch((error) => { if ((error as { name?: string }).name !== 'AbortError') extensionRuntime.reportDiagnostic('core.planner', 'background-plan', error) })
+      .then((next) => { if (!controller.signal.aborted) { setPlannerFailure(null); setBackgroundPlan({ key: planKey, plan: next }) } })
+      .catch((error) => {
+        if ((error as { name?: string }).name === 'AbortError') return
+        const message = error instanceof Error ? error.message : 'The background planner failed.'
+        setPlannerFailure({ key: planKey, message })
+        extensionRuntime.reportDiagnostic('core.planner', 'background-plan', error)
+      })
     return () => controller.abort()
-  }, [data, directPlan, planKey])
+  }, [data, directPlan, planKey, plannerAttempt])
 
   const navigate = (next: Route) => {
     if (!window.dispatchEvent(new CustomEvent('neo-anki:before-navigate', { cancelable: true, detail: { route: next } }))) return
@@ -652,6 +663,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     route,
     plan,
     planning,
+    planningError,
+    retryPlanning,
     activeSession,
     persistenceError,
     persistenceState,

@@ -37,11 +37,12 @@ export const adoptPersistedData = (data: AppData) => {
   lastPersisted = data
 }
 
+/** Adopt a value returned by a validated, committed desktop transaction. */
+export const adoptTrustedDesktopData = (data: AppData) => { lastPersisted = data }
+
 export const migrateData = migrateWorkspaceData
 
-export const loadWorkspaceData = (): WorkspaceLoadResult => {
-  if (window.neoAnkiDesktop) {
-    const result = window.neoAnkiDesktop.loadData()
+const adoptDesktopLoad = (result: NeoAnkiDesktopLoadResult): WorkspaceLoadResult => {
     storageStatus = {
       mode: 'desktop',
       path: result.storagePath,
@@ -70,6 +71,11 @@ export const loadWorkspaceData = (): WorkspaceLoadResult => {
       persistenceBlocked = true
       return { ok: false, failure: { code: 'migration', message, mode: 'desktop', sourcePath: result.recoverySourcePath || result.storagePath, canExportOriginal: true } }
     }
+}
+
+export const loadWorkspaceData = (): WorkspaceLoadResult => {
+  if (window.neoAnkiDesktop) {
+    return adoptDesktopLoad(window.neoAnkiDesktop.loadData())
   }
   const raw = localStorage.getItem(STORAGE_KEY)
   if (!raw) {
@@ -104,6 +110,11 @@ export const loadWorkspaceData = (): WorkspaceLoadResult => {
   }
 }
 
+export const reloadWorkspaceData = async (): Promise<WorkspaceLoadResult> => {
+  const bridge = window.neoAnkiDesktop
+  return bridge?.loadDataAsync ? adoptDesktopLoad(await bridge.loadDataAsync()) : loadWorkspaceData()
+}
+
 export const loadData = (): AppData => {
   const result = loadWorkspaceData()
   if (!result.ok) throw new Error(result.failure.message)
@@ -115,6 +126,7 @@ export const getStorageStatus = () => storageStatus
 export const saveData = async (data: AppData) => {
   if (persistenceBlocked) throw new Error('Saving is blocked until workspace recovery is complete.')
   if (window.neoAnkiDesktop) {
+    if (data === lastPersisted) return
     const snapshot = structuredClone(parseWorkspaceData(data))
     const save = desktopSaveQueue.catch(() => undefined).then(async () => {
       const changes = createWorkspaceChangeSet(lastPersisted, snapshot)

@@ -79,6 +79,21 @@ export const ExtensionManagerPanel = ({ fullPage = false, focusExtensionId = '',
   useEffect(() => { if (fullPage) saveHubState({ view, configurationId }) }, [configurationId, fullPage, view])
 
   useEffect(() => {
+    const completed = (event: Event) => {
+      const detail = (event as CustomEvent<{ extensionId?: string; summary?: { notes?: number; cards?: number } }>).detail
+      if (!detail?.extensionId || !configurable.some((entry) => entry.extensionId === detail.extensionId)) return
+      const notes = detail.summary?.notes
+      const cards = detail.summary?.cards
+      const counts = typeof notes === 'number' && typeof cards === 'number' ? ` ${notes.toLocaleString()} notes and ${cards.toLocaleString()} cards are now available.` : ''
+      const notice = `Import complete.${counts}`
+      setMessage(notice)
+      if (fullPage) saveHubState({ view, configurationId, notice })
+    }
+    window.addEventListener('neo-anki:migration-committed-v4', completed)
+    return () => window.removeEventListener('neo-anki:migration-committed-v4', completed)
+  }, [configurable, configurationId, fullPage, view])
+
+  useEffect(() => {
     if (!bridge) return
     let current = true
     void bridge.listExtensions().then((records) => { if (current) setInstalled(records) }).catch((reason) => { if (current) setError(reason instanceof Error ? reason.message : 'Could not read installed extensions.') })

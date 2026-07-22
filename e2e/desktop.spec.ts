@@ -9,7 +9,7 @@ import { DatabaseSync } from 'node:sqlite'
 
 type DesktopApplication = Awaited<ReturnType<typeof electron.launch>>
 type DesktopWindow = ReturnType<DesktopApplication['windows']>[number]
-const interoperabilityPackage = join(process.cwd(), 'test-extensions', 'org.neoanki.interoperability-2.0.3.neoanki-extension')
+const interoperabilityPackage = join(process.cwd(), 'test-extensions', 'org.neoanki.interoperability-2.0.7.neoanki-extension')
 const coreArgs = ['.']
 const extensionArgs = ['.', `--install-extension=${interoperabilityPackage}`]
 const hiddenDesktopEnv = (overrides: NodeJS.ProcessEnv = {}) => ({ ...process.env, NEO_ANKI_E2E_HEADLESS: '1', ...overrides })
@@ -33,8 +33,8 @@ const migrate = async (window: DesktopWindow, file: string | { name: string; mim
   const frame = migrationFrame(window)
   await frame.getByLabel('Choose Anki or CSV file').setInputFiles(file)
   await expect(frame.locator('.report')).toBeVisible()
-  await frame.getByRole('button', { name: 'Commit inspected migration' }).dispatchEvent('click')
-  await expect(frame.getByRole('status')).toContainText('Migration committed', { timeout: 60_000 })
+  await frame.getByRole('button', { name: 'Import this file' }).dispatchEvent('click')
+  await expect(frame.getByRole('status')).toContainText('Import complete', { timeout: 60_000 })
 }
 const firstReadyWindow = async (application: DesktopApplication) => {
   let readyWindow: DesktopWindow | undefined
@@ -188,8 +188,8 @@ test('current Anki migration renders custom CSS, typed fields, and media in a sa
     const frame = migrationFrame(window)
     await frame.getByLabel('Choose Anki or CSV file').setInputFiles(join(process.cwd(), 'test-fixtures/anki/25.9.4/current-stable.apkg'))
     await expect(frame.getByText('cards.scheduling', { exact: false })).toBeVisible()
-    await frame.getByRole('button', { name: 'Commit inspected migration' }).dispatchEvent('click')
-    await expect(frame.getByRole('status')).toContainText('Migration committed', { timeout: 60_000 })
+    await frame.getByRole('button', { name: 'Import this file' }).dispatchEvent('click')
+    await expect(frame.getByRole('status')).toContainText('Import complete', { timeout: 60_000 })
     await window.getByRole('button', { name: 'Today' }).first().click()
     await window.locator('button.study-button').click()
     await expect(window.getByLabel('Type your answer')).toBeVisible()

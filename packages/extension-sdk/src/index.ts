@@ -131,7 +131,7 @@ export interface MediaCreateRequest { operationId: string; filename: string; mim
 export interface ExtensionContentNoteDto { noteId: string; profileId: string; prompt: string; answer: string; context: string; deckName: string; tags: string[]; record?: { id: string; revision: number; createdAt: string; updatedAt: string; value: unknown } }
 export interface ExtensionContentPageDto { workspaceRevision: number; notes: ExtensionContentNoteDto[]; availableMediaIds: string[]; nextCursor?: string }
 export interface ExtensionContentQuery { cursor?: string; limit?: number; noteIds?: string[] }
-export interface ExtensionMigrationMediaV2 { id: string; filename: string; mimeType: string; dataUrl: string; altText: string; byteLength: number; hash: string; createdAt: string; updatedAt: string }
+export interface ExtensionMigrationMediaV2 { id: string; filename: string; mimeType: string; dataUrl: string; bytes?: Uint8Array; altText: string; byteLength: number; hash: string; createdAt: string; updatedAt: string }
 export interface ExtensionMigrationCommitV2 { document: unknown; media: ExtensionMigrationMediaV2[]; sourceArchive?: Uint8Array; operation: 'additive' | 'replace-profile' }
 
 export interface ExtensionHostV2 {
@@ -256,7 +256,7 @@ export const applySandboxedUiAppearanceV1 = (appearance: SandboxedUiAppearanceV1
   }
 }
 
-const transportScope = () => globalThis as typeof globalThis & { postMessage(message: unknown): void; addEventListener(type: 'message', listener: (event: MessageEvent<WorkerTransportMessageV2>) => void): void }
+const transportScope = () => globalThis as typeof globalThis & { postMessage(message: unknown, transfer?: Transferable[]): void; addEventListener(type: 'message', listener: (event: MessageEvent<WorkerTransportMessageV2>) => void): void }
 const workerRequestId = (request: WorkerContributionRequest) => request.type === 'planning-signals' ? request.request.requestId : request.type === 'cancel' ? request.operationId : request.requestId
 const rpcId = () => typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : typeof crypto.getRandomValues === 'function' ? Array.from(crypto.getRandomValues(new Uint32Array(4)), (value) => value.toString(16).padStart(8, '0')).join('-') : `${Date.now()}-${Math.random().toString(36).slice(2)}`
 
@@ -266,7 +266,13 @@ export const exposeExtensionWorkerV2 = (extension: NeoAnkiExtensionV2) => {
   const pending = new Map<string, { resolve(value: unknown): void; reject(error: Error): void }>()
   const call = (method: ExtensionHostMethodV2, args: unknown[]) => new Promise<unknown>((resolve, reject) => {
     const callId = rpcId(); pending.set(callId, { resolve, reject })
-    scope.postMessage({ protocol: 2, type: 'host-call', callId, method, args } satisfies WorkerTransportMessageV2)
+    const transfer: Transferable[] = []
+    if (method === 'migration.commit') {
+      const input = args[0] as ExtensionMigrationCommitV2 | undefined
+      const buffers = [input?.sourceArchive, ...(input?.media || []).map((asset) => asset.bytes)].flatMap((value) => value?.buffer instanceof ArrayBuffer ? [value.buffer] : [])
+      transfer.push(...new Set(buffers))
+    }
+    scope.postMessage({ protocol: 2, type: 'host-call', callId, method, args } satisfies WorkerTransportMessageV2, transfer)
   })
   const host: ExtensionHostV2 = {
     applyPatch: (patch) => call('applyPatch', [patch]) as ReturnType<ExtensionHostV2['applyPatch']>,

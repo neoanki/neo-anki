@@ -251,7 +251,7 @@ export const executeExtensionCommandV2 = async (extensionId: string, commandId: 
   if (!runtime) throw new Error(`Extension ${extensionId} has no active worker.`)
   if (!commandId.trim() || commandId.length > 120) throw new Error('Extension command id is invalid.')
   const requestId = crypto.randomUUID()
-  const response = await runtime.execute({ type: 'command', requestId, commandId, payload }, 180_000)
+  const response = await runtime.execute({ type: 'command', requestId, commandId, payload }, 30 * 60_000)
   if (response.type === 'result') return response.value
   if (response.type === 'patch') throw new Error('UI commands must commit patches through the worker host before returning.')
   throw new Error(`Extension ${extensionId} returned an invalid command response.`)

@@ -20,6 +20,12 @@ class PlannerWorkerFixture {
   terminate() {}
 }
 
+class FailingPlannerWorkerFixture extends PlannerWorkerFixture {
+  override postMessage(payload: PlannerWorkerPayload) {
+    queueMicrotask(() => this.onmessage?.({ data: { requestId: payload.requestId, ok: false, error: 'Planner fixture failed.' } } as MessageEvent))
+  }
+}
+
 const renderApp = (onboarded = true) => {
   const data = createSeedData()
   data.settings.onboardingComplete = onboarded
@@ -91,7 +97,25 @@ describe('application workflows', () => {
     vi.stubGlobal('Worker', PlannerWorkerFixture)
     render(<AppProvider><App /></AppProvider>)
     expect(screen.getByText(/planning this large workspace/i)).toBeInTheDocument()
+    expect(screen.getByText(/building your session/i)).toBeInTheDocument()
+    expect(screen.queryByText(/No practice prompts match/i)).not.toBeInTheDocument()
     expect(await screen.findByText(/reviews are ready, with \d+ new practice prompts/i, {}, { timeout: 10_000 })).toBeInTheDocument()
+    expect(screen.getByLabelText('Study for')).toHaveValue('10')
+    expect(screen.getByRole('button', { name: /^Study / })).toBeEnabled()
+    expect(screen.queryByText(/No practice prompts match/i)).not.toBeInTheDocument()
+  })
+
+  it('surfaces background planner failures with a recovery action', async () => {
+    const data = createSeedData(); data.settings.onboardingComplete = true
+    const item = data.items[0]; const card = data.cards.find((value) => value.itemId === item.id) || data.cards[0]
+    data.items = [item]; data.cards = Array.from({ length: 5_001 }, (_, index) => ({ ...card, id: `failing-worker-card-${index}`, itemId: item.id })); data.reviews = []
+    localStorage.setItem('neo-anki:data:v1', JSON.stringify(data))
+    vi.stubGlobal('Worker', FailingPlannerWorkerFixture)
+    render(<AppProvider><App /></AppProvider>)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Planner fixture failed.')
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled()
+    expect(screen.queryByText(/No practice prompts match/i)).not.toBeInTheDocument()
   })
 
   it('creates basic knowledge and exposes it in the library', async () => {

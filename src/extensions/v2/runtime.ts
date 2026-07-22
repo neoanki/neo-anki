@@ -12,6 +12,7 @@ import type {
 const MAX_MESSAGE_BYTES = 8 * 1024 * 1024
 const MAX_PENDING = 100
 const DEFAULT_TIMEOUT_MS = 15_000
+const MAX_REQUEST_TIMEOUT_MS = 30 * 60_000
 const START_TIMEOUT_MS = 5_000
 const MAX_UI_FRAME_HEIGHT = 24_000
 
@@ -26,7 +27,13 @@ type WorkerFactory = (url: string) => WorkerLike
 const messageBytes = (value: unknown, seen = new Set<object>()): number => {
   if (value instanceof ArrayBuffer) return value.byteLength
   if (ArrayBuffer.isView(value)) return value.byteLength
-  if (typeof Blob !== 'undefined' && value instanceof Blob) return value.size
+  // Blob/File structured clones carry an immutable backing-store reference; they do
+  // not copy `size` bytes into the protocol message. Count their descriptor metadata
+  // here and keep raw ArrayBuffer/typed-array payloads under the ordinary 8 MiB cap.
+  if (typeof Blob !== 'undefined' && value instanceof Blob) {
+    const file = typeof File !== 'undefined' && value instanceof File ? value : undefined
+    return 64 + new TextEncoder().encode(value.type).byteLength + (file ? new TextEncoder().encode(file.name).byteLength : 0)
+  }
   if (typeof value === 'string') return new TextEncoder().encode(value).byteLength
   if (!value || typeof value !== 'object') return 16
   if (seen.has(value)) throw new Error('Extension messages may not contain cycles.')
@@ -38,6 +45,10 @@ const messageBytes = (value: unknown, seen = new Set<object>()): number => {
 const bounded = (value: unknown) => {
   if (messageBytes(value) > MAX_MESSAGE_BYTES) throw new Error('Extension message exceeds 8 MiB.')
   return value
+}
+const isMigrationCommitHostCall = (value: unknown): value is Extract<WorkerTransportMessageV2, { type: 'host-call' }> => {
+  const message = value as Partial<Extract<WorkerTransportMessageV2, { type: 'host-call' }>> | null
+  return message?.protocol === 2 && message.type === 'host-call' && message.method === 'migration.commit' && typeof message.callId === 'string'
 }
 const requestId = (request: WorkerContributionRequest) => request.type === 'planning-signals' ? request.request.requestId : request.type === 'cancel' ? request.operationId : request.requestId
 const safeUrl = (value: string) => {
@@ -65,7 +76,10 @@ export class ExtensionWorkerRuntimeV2 {
     const startup = window.setTimeout(() => this.fail(new Error(`Extension ${manifest.id} did not become ready within ${START_TIMEOUT_MS} ms.`)), START_TIMEOUT_MS)
     this.worker.addEventListener('message', (event) => {
       try {
-        bounded(event.data)
+        // Migration is the one protocol operation intentionally allowed to carry a
+        // complete workspace and media payload. It remains permission-gated and is
+        // validated transactionally by the host before commit.
+        if (!isMigrationCommitHostCall(event.data)) bounded(event.data)
         const message = event.data
         if (!message || message.protocol !== 2) throw new Error('Extension sent an invalid protocol message.')
         if ((message as unknown as { type?: string }).type === 'fatal') throw new Error(`Extension worker ${manifest.id} failed: ${String((message as unknown as { message?: string }).message || 'unknown startup error')}`)
@@ -125,7 +139,7 @@ export class ExtensionWorkerRuntimeV2 {
     const id = requestId(request)
     if (!id.trim() || this.pending.has(id)) throw new Error('Extension requests require a unique request id.')
     if (this.pending.size >= MAX_PENDING) throw new Error(`Extension worker queue is limited to ${MAX_PENDING} requests.`)
-    const timeout = Math.max(100, Math.min(180_000, timeoutMs))
+    const timeout = Math.max(100, Math.min(MAX_REQUEST_TIMEOUT_MS, timeoutMs))
     return new Promise<WorkerContributionResponse>((resolve, reject) => {
       const handle = window.setTimeout(() => { this.pending.delete(id); void this.host.cancel(id).catch(() => undefined); reject(new Error(`Extension request ${id} exceeded ${timeout} ms.`)) }, timeout)
       this.pending.set(id, { resolve, reject, timeout: handle })
@@ -181,7 +195,13 @@ export const createSandboxedExtensionUiV2 = (manifest: ExtensionManifestV2, cont
       }
       if (message.type !== 'host-call' || !message.id || !message.name || !hostCall) return
       void hostCall(message.name, message.payload).then((payload) => channel.port1.postMessage({ protocol: 2, type: 'host-result', id: message.id, payload } satisfies SandboxedUiMessageV2)).catch((error) => channel.port1.postMessage({ protocol: 2, type: 'error', id: message.id, payload: { message: error instanceof Error ? error.message : 'Host call failed.' } } satisfies SandboxedUiMessageV2))
-    } catch { channel.port1.close() }
+    } catch (error) {
+      const message = event.data as Partial<SandboxedUiMessageV2> | null
+      const detail = error instanceof Error ? error.message : 'Extension UI message failed validation.'
+      if (message?.type === 'host-call' && typeof message.id === 'string') {
+        channel.port1.postMessage({ protocol: 2, type: 'error', id: message.id, payload: { message: detail } } satisfies SandboxedUiMessageV2)
+      } else onLifecycle?.({ type: 'error', message: detail })
+    }
   }
   iframe.addEventListener('load', () => {
     if (closed || !iframe.contentWindow) return
