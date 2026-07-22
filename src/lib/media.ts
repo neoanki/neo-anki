@@ -1,4 +1,4 @@
-import type { MediaAsset } from '../types'
+import type { MediaAsset } from '../types.js'
 
 const extensionMime: Record<string, string> = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',

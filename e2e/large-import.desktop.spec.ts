@@ -71,6 +71,17 @@ test('a large Anki package reports activity and commits durably', async () => {
       await expect(window.locator('.review-meta')).toContainText('Japanese Grammar::00 - Foundation::01 · Recognition', { timeout: 2_000 })
       expect(performance.now() - studyStarted).toBeLessThan(1_000)
       await expect(window.getByText('Preparing imported template…')).toHaveCount(0)
+      await window.getByRole('button', { name: /reveal answer/i }).click()
+      const answer = window.locator('iframe[title^="Answer for Japanese Grammar"]').contentFrame()
+      const audio = answer.locator('audio[controls]')
+      await expect(audio).toHaveCount(1)
+      await expect.poll(() => failures).toEqual([])
+      await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => ({ currentTime: element.currentTime, error: element.error?.code || 0, readyState: element.readyState }))).toMatchObject({ error: 0, readyState: expect.any(Number) })
+      await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.currentTime > 0 || element.ended), { timeout: 5_000 }).toBe(true)
+      await audio.evaluate((element: HTMLAudioElement) => { element.pause(); element.currentTime = 0 })
+      await audio.click({ position: { x: 18, y: 18 } })
+      await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => !element.paused || element.currentTime > 0), { timeout: 5_000 }).toBe(true)
+      await expect(window.getByText(/Audio could not play/)).toHaveCount(0)
     }
     expect(failures).toEqual([])
 
