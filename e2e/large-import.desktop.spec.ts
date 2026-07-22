@@ -66,6 +66,11 @@ test('a large Anki package reports activity and commits durably', async () => {
       await expect(blocks.first()).toContainText('Japanese Grammar')
       await expect(blocks.first()).toContainText('16 practice prompts')
       await expect(window.locator('.session-list-pane > header > span')).toHaveText('5 min left for later')
+      const studyStarted = performance.now()
+      await window.getByRole('button', { name: /^Study / }).click()
+      await expect(window.locator('.review-meta')).toContainText('Japanese Grammar::00 - Foundation::01 · Recognition', { timeout: 2_000 })
+      expect(performance.now() - studyStarted).toBeLessThan(1_000)
+      await expect(window.getByText('Preparing imported template…')).toHaveCount(0)
     }
     expect(failures).toEqual([])
 
@@ -76,6 +81,8 @@ test('a large Anki package reports activity and commits durably', async () => {
     expect(count('items')).toBeGreaterThan(0)
     expect(count('cards')).toBeGreaterThan(0)
     expect(count('assets')).toBeGreaterThan(0)
+    expect(count('rendering_styles')).toBeLessThan(20)
+    expect(Number((database.prepare("SELECT COUNT(*) AS count FROM cards WHERE json_extract(json, '$.rendering.cssHash') IS NOT NULL").get() as { count: number }).count)).toBe(count('cards'))
     expect(Number((database.prepare("SELECT COUNT(*) AS count FROM assets WHERE length(data) = 0 AND metadata_json LIKE '%archivedMedia%'").get() as { count: number }).count)).toBe(count('assets'))
     database.close()
 

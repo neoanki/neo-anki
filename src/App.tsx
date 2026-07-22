@@ -6,6 +6,7 @@ import { useApp } from './state/AppContext'
 import { extensionPageV2 } from './extensions/v2/registry'
 import { ExtensionUiFrameV2 } from './extensions/v2/ExtensionUiFrameV2'
 import { WorkspaceRecovery } from './components/WorkspaceRecovery'
+import { StartupScreen } from './components/StartupScreen'
 
 const CreatePage = lazy(() => import('./pages/CreatePage').then((module) => ({ default: module.CreatePage })))
 const LibraryPage = lazy(() => import('./pages/LibraryPage').then((module) => ({ default: module.LibraryPage })))
@@ -14,8 +15,9 @@ const PlansPage = lazy(() => import('./pages/PlansPage').then((module) => ({ def
 const ExtensionsPage = lazy(() => import('./pages/ExtensionsPage').then((module) => ({ default: module.ExtensionsPage })))
 
 export const App = () => {
-  const { data, route, plan, workspaceLoadFailure } = useApp()
+  const { data, route, plan, workspaceLoading, workspaceLoadFailure } = useApp()
   const isolatedPage = extensionPageV2(route)
+  if (workspaceLoading) return <StartupScreen />
   if (workspaceLoadFailure) return <WorkspaceRecovery />
   if (!data.settings.onboardingComplete) return <Onboarding />
   return (

@@ -170,14 +170,13 @@ export const workspaceDocumentV4ToAppData = (input: WorkspaceDocumentV4): AppDat
 /** Projects a document that was already parsed at the trust boundary. */
 export const projectValidatedWorkspaceDocumentV4ToAppData = (document: WorkspaceDocumentV4): AppData => projectWorkspaceDocumentV4ToAppData(document)
 
-export const renderValidatedWorkspaceCard = (document: WorkspaceDocumentV4, cardId: string): CardRenderingProjection | null => {
+const createValidatedWorkspaceCardRenderer = (document: WorkspaceDocumentV4) => {
   const { workspace } = document
-  const card = workspace.cards.find((value) => value.id === cardId)
-  if (!card) return null
-  const note = workspace.notes.find((value) => value.id === card.noteId)
-  const noteType = note && workspace.noteTypes.find((value) => value.id === note.noteTypeId)
-  const template = workspace.templates.find((value) => value.id === card.templateId)
-  if (!note || !noteType || !template) return null
+  const cards = new Map(workspace.cards.map((value) => [value.id, value]))
+  const notes = new Map(workspace.notes.map((value) => [value.id, value]))
+  const noteTypes = new Map(workspace.noteTypes.map((value) => [value.id, value]))
+  const templates = new Map(workspace.templates.map((value) => [value.id, value]))
+  const decks = new Map(workspace.decks.map((value) => [value.id, value]))
   const fields = new Map(workspace.fields.map((value) => [value.id, value]))
   const envelopes = new Map(workspace.sourceEnvelopes.map((value) => [value.id, value]))
   const mediaUrl = (asset: WorkspaceDocumentV4['workspace']['media'][number]) => {
@@ -185,8 +184,30 @@ export const renderValidatedWorkspaceCard = (document: WorkspaceDocumentV4, card
     return legacy.dataUrl || `neoanki-media://asset/${encodeURIComponent(asset.id)}?v=${asset.sha256.slice(0, 16)}`
   }
   const mediaByFilename = new Map(workspace.media.map((asset) => [asset.filename, mediaUrl(asset)]))
-  const deckName = workspace.decks.find((value) => value.id === card.deckId)?.name || 'Default'
-  return renderWorkspaceCard(card, note, noteType, template, noteType.fieldIds.map((id) => ({ id, name: fields.get(id)?.name || id })), deckName, workspace.media, mediaUrl, mediaByFilename)
+  return (cardId: string): CardRenderingProjection | null => {
+    const card = cards.get(cardId)
+    if (!card) return null
+    const note = notes.get(card.noteId)
+    const noteType = note && noteTypes.get(note.noteTypeId)
+    const template = templates.get(card.templateId)
+    if (!note || !noteType || !template) return null
+    const deckName = decks.get(card.deckId)?.name || 'Default'
+    return renderWorkspaceCard(card, note, noteType, template, noteType.fieldIds.map((id) => ({ id, name: fields.get(id)?.name || id })), deckName, workspace.media, mediaUrl, mediaByFilename)
+  }
+}
+
+export const renderValidatedWorkspaceCard = (document: WorkspaceDocumentV4, cardId: string): CardRenderingProjection | null => createValidatedWorkspaceCardRenderer(document)(cardId)
+
+/** Materialize imported templates once at commit time instead of rebuilding indexes during study. */
+export const renderAllValidatedWorkspaceCards = (document: WorkspaceDocumentV4) => {
+  const render = createValidatedWorkspaceCardRenderer(document)
+  const rendered = new Map<string, CardRenderingProjection>()
+  for (const card of document.workspace.cards) {
+    if (card.scheduling.strategy !== 'anki') continue
+    const projection = render(card.id)
+    if (projection) rendered.set(card.id, projection)
+  }
+  return rendered
 }
 
 export const refreshWorkspaceDocumentV4FromProjection = (data: AppData, previous?: WorkspaceDocumentV4) => {

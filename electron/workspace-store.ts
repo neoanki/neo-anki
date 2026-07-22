@@ -5,11 +5,11 @@ import { basename, join } from 'node:path'
 import { DatabaseSync, backup as backupDatabase, type StatementSync } from 'node:sqlite'
 import { unzipSync } from 'fflate'
 import { decompress as decompressZstd } from 'fzstd'
-import type { AppData, MediaAsset } from '../src/types.js'
+import type { AppData, CardRenderingProjection, MediaAsset } from '../src/types.js'
 import type { WorkspaceChangeSet } from '../src/lib/workspace-changes.js'
 import type { WorkspaceDocumentV4, WorkspacePatchV2 } from '../packages/compatibility-domain/src/index.js'
 import { applyWorkspacePatchV2 as applyDomainPatchV2, createWorkspaceDocumentV4, parseWorkspaceDocumentV4 } from '../packages/compatibility-domain/src/index.js'
-import { appDataToWorkspaceDocumentV4, projectValidatedWorkspaceDocumentV4ToAppData, refreshWorkspaceDocumentV4FromProjection, renderValidatedWorkspaceCard, workspaceDocumentV4ToAppData } from '../src/lib/workspace-v4.js'
+import { appDataToWorkspaceDocumentV4, projectValidatedWorkspaceDocumentV4ToAppData, refreshWorkspaceDocumentV4FromProjection, renderAllValidatedWorkspaceCards, renderValidatedWorkspaceCard, workspaceDocumentV4ToAppData } from '../src/lib/workspace-v4.js'
 import {
   knowledgeItemSchema,
   learningGoalSchema,
@@ -42,6 +42,7 @@ interface WorkspaceStoreStatus {
 type ArchivedMediaLocation = { archiveName: string; entryName: string; zstd: boolean }
 type StoredAssetMetadata = Omit<MediaAsset, 'dataUrl'> & { archivedMedia?: ArchivedMediaLocation }
 type MigrationMediaPayload = { asset: MediaAsset; bytes?: Uint8Array }
+type StoredCardRendering = Omit<CardRenderingProjection, 'css'> & { css?: string; cssHash?: string }
 
 const parseJson = <T>(value: unknown): T => JSON.parse(String(value)) as T
 const stringify = (value: unknown) => JSON.stringify(value)
@@ -117,6 +118,8 @@ export class WorkspaceStore {
   private readonly statusValue: WorkspaceStoreStatus
   private readonly sourceArchiveCache = new Map<string, Uint8Array>()
   private documentCache: WorkspaceDocumentV4 | null | undefined
+  private renderingStyleInsert: StatementSync | undefined
+  private readonly renderingStyleHashes = new Map<string, string>()
 
   constructor(private readonly userDataRoot: string) {
     mkdirSync(userDataRoot, { recursive: true })
@@ -147,8 +150,11 @@ export class WorkspaceStore {
       if (!result || !Object.values(result).includes('ok')) { db.close(); throw new Error('SQLite integrity check failed.') }
       const schemaVersion = Number((db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version)
       if (schemaVersion > 0 && schemaVersion <= DATABASE_SCHEMA_VERSION) {
-        try { this.loadFromDatabase(db) }
-        catch (error) { db.close(); throw error }
+        try {
+          const table = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='workspace_v4'").get()
+          const invalid = table && db.prepare('SELECT 1 FROM workspace_v4 WHERE id = 1 AND json_valid(json) = 0').get()
+          if (invalid) throw new Error('Workspace v4 JSON is invalid.')
+        } catch (error) { db.close(); throw error }
       }
       return db
     }
@@ -209,6 +215,10 @@ export class WorkspaceStore {
       ) STRICT;
       CREATE INDEX IF NOT EXISTS cards_due_idx ON cards(suspended, due);
       CREATE INDEX IF NOT EXISTS cards_item_idx ON cards(item_id);
+      CREATE TABLE IF NOT EXISTS rendering_styles (
+        hash TEXT PRIMARY KEY,
+        css TEXT NOT NULL
+      ) STRICT;
       CREATE TABLE IF NOT EXISTS reviews (
         id TEXT PRIMARY KEY,
         card_id TEXT NOT NULL,
@@ -279,16 +289,13 @@ export class WorkspaceStore {
   private loadLegacyProjectionFromDatabase(database: DatabaseSync): AppData | null {
     const meta = database.prepare('SELECT version, device_id, settings_json, updated_at FROM workspace_meta WHERE id = 1').get() as { version: number; device_id: string; settings_json: string; updated_at: string } | undefined
     if (!meta) return null
-    const assetRows = database.prepare('SELECT hash, metadata_json, data FROM assets ORDER BY updated_at DESC, id').all() as Array<{ hash: string; metadata_json: string; data: Uint8Array }>
+    const assetRows = database.prepare('SELECT hash, metadata_json FROM assets ORDER BY updated_at DESC, id').all() as Array<{ hash: string; metadata_json: string }>
     const assets = assetRows.map((row) => {
       const asset = parseJson<StoredAssetMetadata>(row.metadata_json)
+      if (asset.hash !== row.hash) throw new Error(`Media ${asset.filename} has inconsistent metadata.`)
       if (asset.archivedMedia) {
         if (!existsSync(join(this.importArchiveRoot, asset.archivedMedia.archiveName))) throw new Error(`Media ${asset.filename} is missing its retained Anki source archive.`)
-        return { ...asset, dataUrl: mediaUrl(asset) }
       }
-      const bytes = Buffer.from(row.data)
-      const digest = createHash('sha256').update(bytes).digest('hex')
-      if (asset.byteLength !== bytes.byteLength || asset.hash !== row.hash || digest !== row.hash) throw new Error(`Media ${asset.filename} failed its integrity check.`)
       return { ...asset, dataUrl: mediaUrl(asset) }
     })
     return parseWorkspaceData({
@@ -297,7 +304,7 @@ export class WorkspaceStore {
       settings: parseJson(meta.settings_json),
       updatedAt: meta.updated_at,
       items: rows(database.prepare('SELECT json FROM items ORDER BY created_at DESC, id')),
-      cards: rows(database.prepare('SELECT json FROM cards ORDER BY created_at DESC, id')),
+      cards: rows(database.prepare("SELECT json_remove(json, '$.rendering') AS json FROM cards ORDER BY created_at DESC, id")),
       reviews: rows(database.prepare('SELECT json FROM reviews ORDER BY reviewed_at, id')),
       assets,
       goals: rows(database.prepare('SELECT json FROM goals ORDER BY created_at DESC, id')),
@@ -327,17 +334,34 @@ export class WorkspaceStore {
 
   private storeWorkspaceDocument(document: WorkspaceDocumentV4) { this.storeValidatedWorkspaceDocument(parseWorkspaceDocumentV4(document)) }
 
-  private loadFromDatabase(database: DatabaseSync): AppData | null {
-    const document = this.readWorkspaceDocument(database)
-    if (!document) return this.loadLegacyProjectionFromDatabase(database)
-    // Re-reading media blobs proves integrity before exposing any projected URL.
-    const legacy = this.loadLegacyProjectionFromDatabase(database)
-    const projected = workspaceDocumentV4ToAppData(document)
-    if (legacy) {
-      const urls = new Map(legacy.assets.map((asset) => [asset.id, asset.dataUrl]))
-      projected.assets = projected.assets.map((asset) => ({ ...asset, dataUrl: urls.get(asset.id) || asset.dataUrl }))
+  private withMaterializedCardRenderings(data: AppData, document: WorkspaceDocumentV4): AppData {
+    const renderings = renderAllValidatedWorkspaceCards(document)
+    return { ...data, cards: data.cards.map((card) => renderings.has(card.id) ? { ...card, rendering: renderings.get(card.id)! } : card) }
+  }
+
+  private compactCardForStorage<T extends { rendering?: StoredCardRendering }>(card: T, insertedStyles = new Set<string>()) {
+    const rendering = card.rendering
+    if (!rendering?.css) return card
+    let cssHash = this.renderingStyleHashes.get(rendering.css)
+    if (!cssHash) {
+      cssHash = sha256(Buffer.from(rendering.css))
+      this.renderingStyleHashes.set(rendering.css, cssHash)
     }
-    return parseWorkspaceData(projected)
+    if (!insertedStyles.has(cssHash)) {
+      this.renderingStyleInsert ||= this.db.prepare('INSERT INTO rendering_styles(hash, css) VALUES (?, ?) ON CONFLICT(hash) DO NOTHING')
+      this.renderingStyleInsert.run(cssHash, rendering.css)
+      insertedStyles.add(cssHash)
+    }
+    const { css: _css, ...compact } = rendering
+    return { ...card, rendering: { ...compact, cssHash } }
+  }
+
+  private loadFromDatabase(database: DatabaseSync): AppData | null {
+    const projected = this.loadLegacyProjectionFromDatabase(database)
+    const hasDocument = Boolean(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='workspace_v4'").get()
+      && database.prepare('SELECT 1 FROM workspace_v4 WHERE id = 1').get())
+    if (hasDocument && !projected) throw new Error('Workspace runtime projection is missing.')
+    return projected
   }
 
   load(): AppData | null { return this.loadFromDatabase(this.db) }
@@ -360,8 +384,16 @@ export class WorkspaceStore {
     if (!changes || changes.version !== 1 || !changes.upsert || !changes.remove) throw new Error('Workspace change set is invalid.')
     if (changes.remove.reviews.length) throw new Error('Review history is append-only; append a reversal event instead of deleting a review.')
     this.transaction(() => {
+      const storedCardRendering = this.db.prepare("SELECT json_extract(json, '$.rendering') AS rendering FROM cards WHERE id = ?")
+      const insertedStyles = new Set<string>()
       for (const value of changes.upsert.items) { const item = knowledgeItemSchema.parse(value); this.db.prepare('INSERT INTO items(id, created_at, updated_at, json) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET created_at=excluded.created_at, updated_at=excluded.updated_at, json=excluded.json').run(item.id, item.createdAt, item.updatedAt, stringify(item)) }
-      for (const value of changes.upsert.cards) { const card = practiceCardSchema.parse(value); this.db.prepare('INSERT INTO cards(id, item_id, due, suspended, created_at, updated_at, json) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET item_id=excluded.item_id, due=excluded.due, suspended=excluded.suspended, created_at=excluded.created_at, updated_at=excluded.updated_at, json=excluded.json').run(card.id, card.itemId, card.fsrs.due, card.suspended ? 1 : 0, card.createdAt, card.updatedAt, stringify(card)) }
+      for (const value of changes.upsert.cards) {
+        const card = practiceCardSchema.parse(value)
+        const rendering = (card as typeof card & { rendering?: CardRenderingProjection }).rendering
+          || parseJson<StoredCardRendering | null>((storedCardRendering.get(card.id) as { rendering?: string } | undefined)?.rendering || 'null')
+        const stored = this.compactCardForStorage(rendering ? { ...card, rendering } : card, insertedStyles)
+        this.db.prepare('INSERT INTO cards(id, item_id, due, suspended, created_at, updated_at, json) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET item_id=excluded.item_id, due=excluded.due, suspended=excluded.suspended, created_at=excluded.created_at, updated_at=excluded.updated_at, json=excluded.json').run(card.id, card.itemId, card.fsrs.due, card.suspended ? 1 : 0, card.createdAt, card.updatedAt, stringify(stored))
+      }
       for (const value of changes.upsert.reviews) { const review = reviewEventSchema.parse(value); this.db.prepare('INSERT INTO reviews(id, card_id, reviewed_at, json) VALUES (?, ?, ?, ?)').run(review.id, review.cardId, review.reviewedAt, stringify(review)) }
       for (const value of changes.upsert.assets) this.upsertAsset(value)
       for (const value of changes.upsert.goals) { const goal = learningGoalSchema.parse(value); this.db.prepare('INSERT INTO goals(id, created_at, updated_at, json) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET created_at=excluded.created_at, updated_at=excluded.updated_at, json=excluded.json').run(goal.id, goal.createdAt, goal.updatedAt, stringify(goal)) }
@@ -385,7 +417,6 @@ export class WorkspaceStore {
         if (!projected) throw new Error('Workspace projection disappeared during commit.')
         const previous = this.readWorkspaceDocument(this.db) || undefined
         this.storeWorkspaceDocument(refreshWorkspaceDocumentV4FromProjection(projected, previous))
-        this.loadFromDatabase(this.db)
       }
     })
   }
@@ -393,12 +424,11 @@ export class WorkspaceStore {
   replaceAll(input: unknown) {
     const isV4 = (input as Partial<WorkspaceDocumentV4>)?.format === 'neo-anki-workspace'
     const document = isV4 ? parseWorkspaceDocumentV4(input) : appDataToWorkspaceDocumentV4(parseWorkspaceData(input))
-    const data = workspaceDocumentV4ToAppData(document)
+    const data = this.withMaterializedCardRenderings(workspaceDocumentV4ToAppData(document), document)
     this.transaction(() => {
       this.db.exec('DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; DELETE FROM assets; DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM workspace_meta; DELETE FROM workspace_v4; DELETE FROM patch_receipts;')
       this.applyChangesWithoutTransaction(data)
       this.storeWorkspaceDocument(document)
-      this.loadFromDatabase(this.db)
     })
   }
 
@@ -496,6 +526,8 @@ export class WorkspaceStore {
       const payload = mediaById.get(asset.id)
       return payload ? { ...asset, dataUrl: mediaUrl(payload), altText: payload.altText } : asset
     })
+    const persistedProjection = this.withMaterializedCardRenderings(projected, document)
+    timingPrevious = importTiming('card-renderings-materialized', timingStarted, timingPrevious)
     try {
       // The WAL commit is still synchronous and durable. Deferring its bulk
       // checkpoint keeps database compaction outside the import critical path.
@@ -503,7 +535,7 @@ export class WorkspaceStore {
       this.transaction(() => {
         const replaceAssets = !previous
         this.db.exec(`DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; ${replaceAssets ? 'DELETE FROM assets;' : ''} DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM workspace_meta; DELETE FROM workspace_v4;`)
-        this.applyChangesWithoutTransaction(projected, mediaBytesById, archivedMediaById)
+        this.applyChangesWithoutTransaction(persistedProjection, mediaBytesById, archivedMediaById)
         timingPrevious = importTiming('legacy-tables-written', timingStarted, timingPrevious)
         if (!replaceAssets) {
           const keep = new Set(projected.assets.map((value) => value.id))
@@ -551,8 +583,21 @@ export class WorkspaceStore {
   workspaceRevision() { return Number((this.db.prepare('SELECT revision FROM workspace_v4 WHERE id = 1').get() as { revision?: number } | undefined)?.revision || 0) }
 
   cardRendering(cardId: string) {
+    const row = this.db.prepare("SELECT json_extract(json, '$.rendering') AS rendering FROM cards WHERE id = ?").get(cardId) as { rendering?: string } | undefined
+    if (row?.rendering) {
+      const stored = parseJson<StoredCardRendering>(row.rendering)
+      if (stored.cssHash) {
+        const style = this.db.prepare('SELECT css FROM rendering_styles WHERE hash = ?').get(stored.cssHash) as { css: string } | undefined
+        if (!style) throw new Error(`Card ${cardId} is missing its imported rendering style.`)
+        const { cssHash: _cssHash, ...rendering } = stored
+        return { ...rendering, css: style.css } as CardRenderingProjection
+      }
+      if (typeof stored.css === 'string') return stored as CardRenderingProjection
+    }
     const document = this.readWorkspaceDocument(this.db)
-    return document ? renderValidatedWorkspaceCard(document, cardId) : null
+    const rendering = document ? renderValidatedWorkspaceCard(document, cardId) : null
+    if (rendering) this.db.prepare("UPDATE cards SET json = json_set(json, '$.rendering', json(?)) WHERE id = ?").run(stringify(rendering), cardId)
+    return rendering
   }
 
   applyCoreWorkspacePatch(patch: WorkspacePatchV2) {
@@ -566,7 +611,7 @@ export class WorkspaceStore {
       return { workspaceRevision: previous.workspace.revision, data: this.load()! }
     }
     const document = createWorkspaceDocumentV4(applyDomainPatchV2(previous.workspace, patch), previous.clientState)
-    const projected = workspaceDocumentV4ToAppData(document)
+    const projected = this.withMaterializedCardRenderings(workspaceDocumentV4ToAppData(document), document)
     const existing = this.loadLegacyProjectionFromDatabase(this.db)
     const urls = new Map((existing?.assets || []).map((value) => [value.id, value.dataUrl]))
     projected.assets = projected.assets.map((value) => ({ ...value, dataUrl: urls.get(value.id) || value.dataUrl }))
@@ -575,7 +620,6 @@ export class WorkspaceStore {
       this.applyChangesWithoutTransaction(projected)
       this.storeWorkspaceDocument(document)
       this.db.prepare('INSERT INTO patch_receipts(owner, idempotency_key, request_hash, workspace_revision, applied_at) VALUES (?, ?, ?, ?, ?)').run(owner, patch.idempotencyKey, requestHash, document.workspace.revision, new Date().toISOString())
-      this.loadFromDatabase(this.db)
     })
     return { workspaceRevision: document.workspace.revision, data: this.load()! }
   }
@@ -591,7 +635,7 @@ export class WorkspaceStore {
       return { workspaceRevision: previous.workspace.revision, data: this.load()! }
     }
     const document = createWorkspaceDocumentV4(applyDomainPatchV2(previous.workspace, patch), previous.clientState)
-    const projected = workspaceDocumentV4ToAppData(document)
+    const projected = this.withMaterializedCardRenderings(workspaceDocumentV4ToAppData(document), document)
     const existing = this.loadLegacyProjectionFromDatabase(this.db)
     const urls = new Map((existing?.assets || []).map((value) => [value.id, value.dataUrl]))
     projected.assets = projected.assets.map((value) => ({ ...value, dataUrl: urls.get(value.id) || value.dataUrl }))
@@ -600,7 +644,6 @@ export class WorkspaceStore {
       this.applyChangesWithoutTransaction(projected)
       this.storeWorkspaceDocument(document)
       this.db.prepare('INSERT INTO patch_receipts(owner, idempotency_key, request_hash, workspace_revision, applied_at) VALUES (?, ?, ?, ?, ?)').run(owner, patch.idempotencyKey, requestHash, document.workspace.revision, new Date().toISOString())
-      this.loadFromDatabase(this.db)
     })
     return { workspaceRevision: document.workspace.revision, data: this.load()! }
   }
@@ -634,7 +677,6 @@ export class WorkspaceStore {
     this.transaction(() => {
       this.storeWorkspaceDocument(validated)
       this.db.prepare('UPDATE workspace_meta SET settings_json = ?, updated_at = ? WHERE id = 1').run(stringify(projected.settings), validated.workspace.updatedAt)
-      this.loadFromDatabase(this.db)
     })
     return { workspaceRevision: validated.workspace.revision, data: this.load()! }
   }
@@ -685,13 +727,13 @@ export class WorkspaceStore {
     document.workspace.media.push({ id, revision: 1, createdAt: now, updatedAt: now, profileId: profile.id, filename: input.filename, mimeType: input.mimeType, byteLength: bytes.byteLength, sha256, storageKey: sha256, sourceEnvelopeId })
     document.workspace.revision += 1; document.workspace.updatedAt = now
     const validated = createWorkspaceDocumentV4(document.workspace, document.clientState)
-    const projected = workspaceDocumentV4ToAppData(validated)
+    const projected = this.withMaterializedCardRenderings(workspaceDocumentV4ToAppData(validated), validated)
     const current = this.loadLegacyProjectionFromDatabase(this.db)
     const urls = new Map((current?.assets || []).map((value) => [value.id, value.dataUrl]))
     projected.assets = projected.assets.map((value) => value.id === id ? { ...value, dataUrl: `data:${input.mimeType};base64,${Buffer.from(bytes).toString('base64')}`, altText: input.altText || '' } : { ...value, dataUrl: urls.get(value.id) || value.dataUrl })
     this.transaction(() => {
       this.db.exec('DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM workspace_meta; DELETE FROM workspace_v4;')
-      this.applyChangesWithoutTransaction(projected); this.storeWorkspaceDocument(validated); this.loadFromDatabase(this.db)
+      this.applyChangesWithoutTransaction(projected); this.storeWorkspaceDocument(validated)
     })
     return { id, sha256, byteLength: bytes.byteLength, workspaceRevision: validated.workspace.revision }
   }
@@ -714,8 +756,9 @@ export class WorkspaceStore {
     const insertPack = this.db.prepare('INSERT INTO packs(id, installed_at, updated_at, json) VALUES (?, ?, ?, ?)')
     const insertConflict = this.db.prepare('INSERT INTO pack_conflicts(id, created_at, json) VALUES (?, ?, ?)')
     const insertTrash = this.db.prepare('INSERT INTO trash(id, deleted_at, json) VALUES (?, ?, ?)')
+    const insertedStyles = new Set<string>()
     for (const value of changes.upsert.items) insertItem.run(value.id, value.createdAt, value.updatedAt, stringify(value))
-    for (const value of changes.upsert.cards) { const { rendering: _rendering, ...stored } = value; insertCard.run(value.id, value.itemId, value.fsrs.due, value.suspended ? 1 : 0, value.createdAt, value.updatedAt, stringify(stored)) }
+    for (const value of changes.upsert.cards) insertCard.run(value.id, value.itemId, value.fsrs.due, value.suspended ? 1 : 0, value.createdAt, value.updatedAt, stringify(this.compactCardForStorage(value, insertedStyles)))
     for (const value of changes.upsert.reviews) insertReview.run(value.id, value.cardId, value.reviewedAt, stringify(value))
     for (const value of changes.upsert.assets) {
       const existing = suppliedMedia.has(value.id) ? undefined : selectAsset.get(value.id) as { hash: string; metadata_json: string; data: Uint8Array } | undefined
@@ -817,10 +860,13 @@ export class WorkspaceStore {
     this.db.prepare('ATTACH DATABASE ? AS restore_source').run(source)
     try {
       this.transaction(() => {
-        this.db.exec('DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; DELETE FROM assets; DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM workspace_meta; DELETE FROM workspace_v4; DELETE FROM patch_receipts;')
+        const sourceHasRenderingStyles = Boolean(this.db.prepare("SELECT 1 FROM restore_source.sqlite_master WHERE type='table' AND name='rendering_styles'").get())
+        this.db.exec('DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; DELETE FROM assets; DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM rendering_styles; DELETE FROM workspace_meta; DELETE FROM workspace_v4; DELETE FROM patch_receipts;')
         this.db.exec('INSERT INTO workspace_meta SELECT * FROM restore_source.workspace_meta; INSERT INTO workspace_v4 SELECT * FROM restore_source.workspace_v4; INSERT INTO items SELECT * FROM restore_source.items; INSERT INTO cards SELECT * FROM restore_source.cards; INSERT INTO reviews SELECT * FROM restore_source.reviews; INSERT INTO assets SELECT * FROM restore_source.assets; INSERT INTO goals SELECT * FROM restore_source.goals; INSERT INTO views SELECT * FROM restore_source.views; INSERT INTO packs SELECT * FROM restore_source.packs; INSERT INTO pack_conflicts SELECT * FROM restore_source.pack_conflicts; INSERT INTO trash SELECT * FROM restore_source.trash;')
+        if (sourceHasRenderingStyles) this.db.exec('INSERT INTO rendering_styles SELECT * FROM restore_source.rendering_styles;')
       })
     } finally { this.db.exec('DETACH DATABASE restore_source') }
+    this.renderingStyleHashes.clear()
     // Full parsing catches semantic corruption that SQLite's integrity check cannot see.
     this.load()
     this.statusValue.recoveryError = undefined
@@ -890,7 +936,8 @@ export class WorkspaceStore {
   }
 
   clear() {
-    this.transaction(() => this.db.exec('DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; DELETE FROM assets; DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM workspace_meta; DELETE FROM workspace_v4; DELETE FROM patch_receipts;'))
+    this.transaction(() => this.db.exec('DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; DELETE FROM assets; DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM rendering_styles; DELETE FROM workspace_meta; DELETE FROM workspace_v4; DELETE FROM patch_receipts;'))
+    this.renderingStyleHashes.clear()
     this.documentCache = null
     this.statusValue.recoveryError = undefined
     this.statusValue.recoverySourcePath = undefined

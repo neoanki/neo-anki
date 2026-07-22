@@ -55,6 +55,7 @@ const prepareLargePlannerInput = async (data: AppData, now: Date, signal: AbortS
 
 interface AppContextValue {
   data: AppData
+  workspaceLoading: boolean
   workspaceLoadFailure: WorkspaceLoadFailure | null
   route: Route
   plan: ReturnType<typeof buildDailyPlan>
@@ -104,8 +105,10 @@ interface AppContextValue {
 const AppContext = createContext<AppContextValue | null>(null)
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
-  const [initialLoad] = useState(() => loadWorkspaceData())
+  const usesAsyncDesktopLoad = Boolean(window.neoAnkiDesktop?.loadDataAsync)
+  const [initialLoad] = useState(() => usesAsyncDesktopLoad ? { ok: true as const, data: createEmptyWorkspaceData() } : loadWorkspaceData())
   const [data, setRenderedData] = useState<AppData>(() => initialLoad.ok ? initialLoad.data : createEmptyWorkspaceData())
+  const [workspaceLoading, setWorkspaceLoading] = useState(usesAsyncDesktopLoad)
   const [workspaceLoadFailure, setWorkspaceLoadFailure] = useState<WorkspaceLoadFailure | null>(() => initialLoad.ok ? null : initialLoad.failure)
   const dataRef = useRef(data)
   const setData = useCallback((update: SetStateAction<AppData>) => {
@@ -124,7 +127,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const corePatchQueue = useRef<Promise<void>>(Promise.resolve())
 
   useEffect(() => {
-    if (workspaceLoadFailure) return
+    if (workspaceLoading || workspaceLoadFailure) return
     // An explicitly awaited mutation can advance dataRef before React runs an
     // older render's passive effect. Never let that stale render enqueue a
     // regressive desktop snapshot after the newer mutation has committed.
@@ -135,7 +138,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       if (current) { setPersistenceError(error instanceof Error ? error.message : 'Neo Anki could not save your latest changes.'); setPersistenceState('failed') }
     })
     return () => { current = false }
-  }, [data, workspaceLoadFailure])
+  }, [data, workspaceLoadFailure, workspaceLoading])
 
   useEffect(() => {
     const restoreRoute = () => setRoute(safeRouteFromLocation())
@@ -163,6 +166,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setWorkspaceLoadFailure(null)
   }, [])
 
+  useEffect(() => {
+    if (!usesAsyncDesktopLoad) return
+    let current = true
+    void reloadWorkspaceData()
+      .then((result) => { if (current) applyWorkspaceLoad(result) })
+      .catch((error) => {
+        if (!current) return
+        setWorkspaceLoadFailure({ code: 'read', message: error instanceof Error ? error.message : 'Neo Anki could not load the workspace.', mode: 'desktop', canExportOriginal: true })
+      })
+      .finally(() => { if (current) setWorkspaceLoading(false) })
+    return () => { current = false }
+  }, [applyWorkspaceLoad, usesAsyncDesktopLoad])
+
   const retryWorkspaceLoad = useCallback(() => applyWorkspaceLoad(loadWorkspaceData()), [applyWorkspaceLoad])
   const exportWorkspaceRecoverySource = useCallback(() => exportRecoverySource(), [])
   const startEmptyAfterRecovery = useCallback(async () => {
@@ -179,19 +195,22 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const reload = () => { void reloadWorkspaceData().then(applyWorkspaceLoad).catch((error) => setPersistenceError(error instanceof Error ? error.message : 'Neo Anki could not refresh the imported workspace.')) }
     window.addEventListener('neo-anki:workspace-updated-v4', update)
     window.addEventListener('neo-anki:workspace-reload-requested', reload)
-    return () => { window.removeEventListener('neo-anki:workspace-updated-v4', update); window.removeEventListener('neo-anki:workspace-reload-requested', reload) }
+    const extensionsReady = () => setExtensionSignalRevision((value) => value + 1)
+    window.addEventListener('neo-anki:extensions-ready', extensionsReady)
+    return () => { window.removeEventListener('neo-anki:workspace-updated-v4', update); window.removeEventListener('neo-anki:workspace-reload-requested', reload); window.removeEventListener('neo-anki:extensions-ready', extensionsReady) }
   }, [applyWorkspaceLoad, setData])
 
   useEffect(() => {
     document.documentElement.dataset.theme = data.settings.theme
+    localStorage.setItem('neo-anki:last-theme', data.settings.theme)
   }, [data.settings.theme])
 
   useEffect(() => {
-    if (workspaceLoadFailure) return
+    if (workspaceLoading || workspaceLoadFailure) return
     let current = true
     void refreshExtensionPlanningSignalsV2(data).then(() => { if (current) setExtensionSignalRevision((value) => value + 1) }).catch((error) => extensionRuntime.reportDiagnostic('extension-host-v2', 'planning-signals', error))
     return () => { current = false }
-  }, [data, workspaceLoadFailure])
+  }, [data, workspaceLoadFailure, workspaceLoading])
 
   const directPlan = useMemo(
     () => { void extensionSignalRevision; return data.cards.length < LARGE_PLANNER_CARD_THRESHOLD ? buildDailyPlan(data.cards, data.reviews, data.settings, new Date(), data.items, {
@@ -208,7 +227,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const retryPlanning = useCallback(() => { setPlannerFailure(null); setPlannerAttempt((value) => value + 1) }, [])
 
   useEffect(() => {
-    if (directPlan) return
+    if (workspaceLoading || directPlan) return
     const controller = new AbortController()
     const now = new Date()
     void prepareLargePlannerInput(data, now, controller.signal)
@@ -221,7 +240,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         extensionRuntime.reportDiagnostic('core.planner', 'background-plan', error)
       })
     return () => controller.abort()
-  }, [data, directPlan, planKey, plannerAttempt])
+  }, [data, directPlan, planKey, plannerAttempt, workspaceLoading])
 
   const navigate = (next: Route) => {
     if (!window.dispatchEvent(new CustomEvent('neo-anki:before-navigate', { cancelable: true, detail: { route: next } }))) return
@@ -659,6 +678,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const value: AppContextValue = {
     data,
+    workspaceLoading,
     workspaceLoadFailure,
     route,
     plan,

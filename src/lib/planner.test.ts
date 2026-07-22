@@ -164,8 +164,8 @@ describe('session composer', () => {
     expect(session.blocks[0].contextKey).toBe('Japanese Grammar')
     expect(session.blocks[0].cards).toHaveLength(16)
     expect(session.blocks[0].cards.map((entry) => entry.card.id)).toEqual([
-      ...production.map((card) => card.id),
-      ...recognition.slice(0, 8).map((card) => card.id),
+      ...recognition.map((card) => card.id),
+      ...production.slice(0, 4).map((card) => card.id),
     ])
   })
 
