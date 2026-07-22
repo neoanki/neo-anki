@@ -80,10 +80,10 @@ export const ExtensionManagerPanel = ({ fullPage = false, focusExtensionId = '',
 
   useEffect(() => {
     const completed = (event: Event) => {
-      const detail = (event as CustomEvent<{ extensionId?: string; data?: { items?: unknown[]; cards?: unknown[] } }>).detail
+      const detail = (event as CustomEvent<{ extensionId?: string; summary?: { notes?: number; cards?: number } }>).detail
       if (!detail?.extensionId || !configurable.some((entry) => entry.extensionId === detail.extensionId)) return
-      const notes = detail.data?.items?.length
-      const cards = detail.data?.cards?.length
+      const notes = detail.summary?.notes
+      const cards = detail.summary?.cards
       const counts = typeof notes === 'number' && typeof cards === 'number' ? ` ${notes.toLocaleString()} notes and ${cards.toLocaleString()} cards are now available.` : ''
       const notice = `Import complete.${counts}`
       setMessage(notice)

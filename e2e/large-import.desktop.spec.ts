@@ -31,6 +31,7 @@ test('a large Anki package reports activity and commits durably', async () => {
     const input = frame.getByLabel('Choose Anki or CSV file')
     await expect(input).toBeVisible()
 
+    const importStarted = performance.now()
     await input.setInputFiles(ankiPath!)
     await expect(frame.getByRole('status')).toContainText(`Reading and checking ${basename(ankiPath!)}`)
     await expect(frame.locator('.activity')).toBeVisible()
@@ -44,6 +45,8 @@ test('a large Anki package reports activity and commits durably', async () => {
     await expect(frame.locator('.activity')).toContainText('Keep Neo Anki open')
     await expect(input).toBeDisabled()
     await expect(window.getByText(/Import complete\. .*notes and .*cards are now available/)).toBeVisible({ timeout: 10 * 60_000 })
+    const importDuration = performance.now() - importStarted
+    if (/^jpgram-premium-.*\.apkg$/i.test(basename(ankiPath!))) expect(importDuration).toBeLessThan(5_000)
     expect(failures).toEqual([])
 
     await stopElectron(application)
@@ -53,6 +56,7 @@ test('a large Anki package reports activity and commits durably', async () => {
     expect(count('items')).toBeGreaterThan(0)
     expect(count('cards')).toBeGreaterThan(0)
     expect(count('assets')).toBeGreaterThan(0)
+    expect(Number((database.prepare("SELECT COUNT(*) AS count FROM assets WHERE length(data) = 0 AND metadata_json LIKE '%archivedMedia%'").get() as { count: number }).count)).toBe(count('assets'))
     database.close()
 
     expect((await readdir(join(userData, 'backups'))).some((name) => name.startsWith('import-checkpoint-'))).toBe(true)

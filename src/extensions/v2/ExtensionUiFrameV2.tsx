@@ -4,7 +4,7 @@ import type { SandboxedUiAppearanceV1 } from '../../../packages/extension-sdk/sr
 import type { ExtensionUiContributionV2 } from './registry.js'
 import { executeExtensionCommandV2, markExtensionUiReadyV2, rollbackPendingExtensionActivationV2 } from './registry.js'
 import { createSandboxedExtensionUiV2 } from './runtime.js'
-import { extensionCapabilityToken } from '../host.js'
+import { extensionCapabilityToken, stageExtensionMigrationSource } from '../host.js'
 
 const cssValue = (styles: CSSStyleDeclaration, name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback
 
@@ -70,7 +70,16 @@ export const ExtensionUiFrameV2 = ({ contribution, dto, reloadKey = '', onResult
         if (name === 'command') {
           const command = payload as { commandId?: unknown; payload?: unknown }
           if (typeof command?.commandId !== 'string') throw new Error('Extension UI command is invalid.')
-          const result = await executeExtensionCommandV2(contribution.extensionId, command.commandId, command.payload)
+          let commandPayload = command.payload
+          if (command.commandId === 'interop.inspect' && command.payload instanceof File) {
+            const sourceFileToken = await stageExtensionMigrationSource(contribution.extensionId, command.payload)
+            const bridge = window.neoAnkiDesktop
+            const capabilityToken = extensionCapabilityToken(contribution.extensionId)
+            if (sourceFileToken && bridge?.inspectImportSource && capabilityToken && /\.(?:apkg|colpkg)$/i.test(command.payload.name)) {
+              commandPayload = { filename: command.payload.name, inspection: await bridge.inspectImportSource(capabilityToken, sourceFileToken) }
+            }
+          }
+          const result = await executeExtensionCommandV2(contribution.extensionId, command.commandId, commandPayload)
           onResultRef.current?.(result)
           return result
         }

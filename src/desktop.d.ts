@@ -43,6 +43,7 @@ declare global {
     isDesktop: true
     rendererReady(): void
     loadData(): NeoAnkiDesktopLoadResult
+    loadDataAsync?(): Promise<NeoAnkiDesktopLoadResult>
     saveData(changes: WorkspaceChangeSet): Promise<void>
     exportBackup(): Promise<{ canceled: boolean; path?: string }>
     exportRecoverySource?(): Promise<{ canceled: boolean; path?: string }>
@@ -54,6 +55,7 @@ declare global {
     commitWorkspaceV4Import(input: { document: unknown; media: MediaAsset[]; sourceArchive?: Uint8Array; operation: 'additive' | 'replace-profile' }): Promise<AppData>
     loadWorkspaceV4ExportPayload(): Promise<{ document: unknown; media: MediaAsset[] }>
     loadWorkspaceV4Document(): Promise<WorkspaceDocumentV4>
+    loadCardRendering?(cardId: string): Promise<import('./types').CardRenderingProjection | null>
     applyCoreWorkspacePatchV2(patch: WorkspacePatchV2): Promise<{ workspaceRevision: number; data: AppData }>
     reportDiagnostic(diagnostic: { source: 'renderer' | 'extension-host'; level: 'info' | 'warning' | 'error'; code: string; message: string; stack?: string }): Promise<void>
     exportDiagnostics(): Promise<{ canceled: boolean; path?: string }>
@@ -82,7 +84,9 @@ declare global {
     extensionConfigWriteV2(token: string, value: unknown): Promise<{ workspaceRevision: number; data: AppData }>
     extensionContentListNotesV2(token: string, query: ExtensionContentQuery): Promise<ExtensionContentPageDto>
     extensionMigrationExportV2(token: string): Promise<{ document: unknown; media: MediaAsset[] }>
-    extensionMigrationCommitV2(token: string, input: { document: unknown; media: MediaAsset[]; sourceArchive?: Uint8Array; operation: 'additive' | 'replace-profile' }): Promise<{ workspaceRevision: number; data: AppData }>
+    stageImportSource?(file: File): Promise<string>
+    inspectImportSource?(token: string, sourceFileToken: string): Promise<{ sourceSha256: string; modern: boolean; databaseDeflate: Uint8Array; mediaManifest: Uint8Array; archiveEntries: string[]; media: Array<{ entry: string; byteLength: number; sha256: string }> }>
+    extensionMigrationCommitV2(token: string, input: { document: unknown; media: MediaAsset[]; sourceArchive?: Uint8Array; operation: 'additive' | 'replace-profile' }): Promise<{ workspaceRevision: number; summary: { notes: number; cards: number }; data: AppData }>
     extensionCancelV2(token: string, operationId: string): Promise<void>
     syncStatus(): Promise<NeoAnkiSyncStatus>
     syncListDevices(): Promise<NeoAnkiSyncDevice[]>

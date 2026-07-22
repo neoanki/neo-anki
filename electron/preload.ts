@@ -1,9 +1,10 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 contextBridge.exposeInMainWorld('neoAnkiDesktop', {
   isDesktop: true,
   rendererReady: () => ipcRenderer.send('neo-anki:renderer-ready'),
   loadData: () => ipcRenderer.sendSync('neo-anki:load-data'),
+  loadDataAsync: () => ipcRenderer.invoke('neo-anki:load-data-async'),
   saveData: (changes: unknown) => ipcRenderer.invoke('neo-anki:save-data', changes),
   exportBackup: () => ipcRenderer.invoke('neo-anki:export-backup'),
   exportRecoverySource: () => ipcRenderer.invoke('neo-anki:export-recovery-source'),
@@ -15,6 +16,7 @@ contextBridge.exposeInMainWorld('neoAnkiDesktop', {
   commitWorkspaceV4Import: (input: unknown) => ipcRenderer.invoke('neo-anki:commit-workspace-v4-import', input),
   loadWorkspaceV4ExportPayload: () => ipcRenderer.invoke('neo-anki:load-workspace-v4-export-payload'),
   loadWorkspaceV4Document: () => ipcRenderer.invoke('neo-anki:load-workspace-v4-document'),
+  loadCardRendering: (cardId: string) => ipcRenderer.invoke('neo-anki:load-card-rendering', cardId),
   applyCoreWorkspacePatchV2: (patch: unknown) => ipcRenderer.invoke('neo-anki:apply-core-workspace-patch-v2', patch),
   reportDiagnostic: (diagnostic: unknown) => ipcRenderer.invoke('neo-anki:report-diagnostic', diagnostic),
   exportDiagnostics: () => ipcRenderer.invoke('neo-anki:export-diagnostics'),
@@ -43,6 +45,8 @@ contextBridge.exposeInMainWorld('neoAnkiDesktop', {
   extensionConfigWriteV2: (token: string, value: unknown) => ipcRenderer.invoke('neo-anki:extension-config-write-v2', token, value),
   extensionContentListNotesV2: (token: string, query: unknown) => ipcRenderer.invoke('neo-anki:extension-content-list-notes-v2', token, query),
   extensionMigrationExportV2: (token: string) => ipcRenderer.invoke('neo-anki:extension-migration-export-v2', token),
+  stageImportSource: (file: File) => ipcRenderer.invoke('neo-anki:stage-import-source', webUtils.getPathForFile(file)),
+  inspectImportSource: (token: string, sourceFileToken: string) => ipcRenderer.invoke('neo-anki:inspect-import-source', token, sourceFileToken),
   extensionMigrationCommitV2: (token: string, input: unknown) => ipcRenderer.invoke('neo-anki:extension-migration-commit-v2', token, input),
   extensionCancelV2: (token: string, operationId: string) => ipcRenderer.invoke('neo-anki:extension-cancel-v2', token, operationId),
   syncStatus: () => ipcRenderer.invoke('neo-anki:sync-status'),

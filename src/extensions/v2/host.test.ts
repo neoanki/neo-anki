@@ -14,7 +14,7 @@ const bridge = () => ({
   extensionConfigWriteV2: vi.fn(async () => ({ workspaceRevision: 5, data: { id: 'configured' } })),
   extensionContentListNotesV2: vi.fn(async () => ({ workspaceRevision: 5, notes: [], availableMediaIds: [] })),
   extensionMigrationExportV2: vi.fn(async () => ({ document: {}, media: [] })),
-  extensionMigrationCommitV2: vi.fn(async () => ({ workspaceRevision: 6, data: { id: 'migrated' } })),
+  extensionMigrationCommitV2: vi.fn(async () => ({ workspaceRevision: 6, summary: { notes: 2, cards: 3 }, data: { id: 'migrated' } })),
 })
 const patch = { version: 2 as const, idempotencyKey: 'host-test', owner: { type: 'extension' as const, extensionId: 'org.neoanki.host-test', scopes: ['records'] }, expectedWorkspaceRevision: 1, operations: [] }
 
@@ -44,6 +44,6 @@ describe('SDK v2 desktop host', () => {
     await expect(host.migration.commit({ document: {}, media: [], operation: 'additive' })).resolves.toEqual({ workspaceRevision: 6 })
     expect(desktop.extensionNetworkFetch).toHaveBeenCalledWith('capability-token', expect.objectContaining({ bodyBase64: 'AwQ=' }))
     expect(updates).toEqual([{ id: 'workspace' }, { id: 'configured' }, { id: 'migrated' }])
-    expect(migrations).toEqual([{ extensionId: 'org.neoanki.host-test', data: { id: 'migrated' } }])
+    expect(migrations).toEqual([{ extensionId: 'org.neoanki.host-test', summary: { notes: 2, cards: 3 } }])
   })
 })

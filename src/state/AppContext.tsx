@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { AppData, CreateKnowledgeInput, DailyPlan, KnowledgeItem, RecoveryStrategy, ReviewRating, Route, SessionRequest, StudySession } from '../types'
 import { makeEmptyFSRSCard, scheduleReview, serializeFSRSCard } from '../lib/fsrs'
 import { buildCustomStudySession, buildDailyPlan, buildStudySession } from '../lib/planner'
-import { adoptPersistedData, clearStoredData, downloadBackup, exportRecoverySource, flushPendingSaves, loadWorkspaceData, saveData, unlockPersistence, type WorkspaceLoadFailure } from '../lib/storage'
+import { adoptPersistedData, adoptTrustedDesktopData, clearStoredData, downloadBackup, exportRecoverySource, flushPendingSaves, loadWorkspaceData, reloadWorkspaceData, saveData, unlockPersistence, type WorkspaceLoadFailure } from '../lib/storage'
 import { createDemoWorkspaceData, createEmptyWorkspaceData } from '../data/seed'
 import { extensionRuntime } from '../extensions/runtime'
 import { mergeImportGraph } from '../lib/import-merge'
@@ -171,8 +171,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [])
 
   useEffect(() => {
-    const update = (event: Event) => { const next = (event as CustomEvent<AppData>).detail; adoptPersistedData(next); setData(next) }
-    const reload = () => applyWorkspaceLoad(loadWorkspaceData())
+    const update = (event: Event) => { const next = (event as CustomEvent<AppData>).detail; adoptTrustedDesktopData(next); setData(next) }
+    const reload = () => { void reloadWorkspaceData().then(applyWorkspaceLoad).catch((error) => setPersistenceError(error instanceof Error ? error.message : 'Neo Anki could not refresh the imported workspace.')) }
     window.addEventListener('neo-anki:workspace-updated-v4', update)
     window.addEventListener('neo-anki:workspace-reload-requested', reload)
     return () => { window.removeEventListener('neo-anki:workspace-updated-v4', update); window.removeEventListener('neo-anki:workspace-reload-requested', reload) }

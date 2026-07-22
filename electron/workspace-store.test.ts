@@ -44,6 +44,7 @@ describe('WorkspaceStore', () => {
     expect(checkpoint).toBeNull()
     const committed = store.commitWorkspaceV4Import({ document: appDataToWorkspaceDocumentV4(seed), media: [], operation: 'replace-profile' })
     expect(committed?.items).toHaveLength(seed.items.length)
+    expect(store.cardRendering(seed.cards[0].id)).toMatchObject({ questionHtml: expect.any(String), answerHtml: expect.any(String), css: expect.any(String) })
     expect(await store.createImportCheckpoint()).toBeTruthy()
     store.close()
   })

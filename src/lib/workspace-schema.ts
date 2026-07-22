@@ -84,6 +84,7 @@ const neoFsrsSchedulingSchema = z.object({
 const cardSchedulingSchema = z.discriminatedUnion('strategy', [ankiSchedulingSchema, neoFsrsSchedulingSchema])
 const cardRenderingSchema = z.object({
   questionHtml: text, answerHtml: text, css: text,
+  cssRef: id.optional(),
   typedAnswer: z.object({ fieldName: text, expected: text }).optional(),
   source: z.enum(['anki-template', 'neo-native']),
 }).passthrough()
@@ -220,6 +221,7 @@ export const trashEntrySchema = z.object({
   id,
   item: knowledgeItemSchema,
   cards: z.array(practiceCardSchema),
+  renderingStyles: z.record(z.string(), text).optional(),
   deletedAt: timestamp,
 }).passthrough()
 
