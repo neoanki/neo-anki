@@ -118,14 +118,19 @@ export class WorkspaceStore {
   private readonly importArchiveRoot: string
   private readonly statusValue: WorkspaceStoreStatus
   private readonly sourceArchiveCache = new Map<string, Uint8Array>()
+  private readonly statementCache = new Map<string, StatementSync>()
   private documentCache: WorkspaceDocumentV4 | null | undefined
   private projectionCache: AppData | null | undefined
   private deferredLegacyData: AppData | null = null
   private deferredLegacyInput: unknown | undefined
+  private deferredLegacyProjectionJson: string | null = null
   private deferredLegacyMigrationStarted = false
+  private legacySourcePreserved = false
+  private readonly preserveLegacySource: boolean
   private readonly allowUnvalidatedLegacyProjection: boolean
 
   constructor(private readonly userDataRoot: string, options: { preserveLegacySource?: boolean; allowUnvalidatedLegacyProjection?: boolean } = {}) {
+    this.preserveLegacySource = options.preserveLegacySource !== false
     this.allowUnvalidatedLegacyProjection = options.allowUnvalidatedLegacyProjection === true
     mkdirSync(userDataRoot, { recursive: true })
     this.backupRoot = join(userDataRoot, 'backups')
@@ -138,20 +143,10 @@ export class WorkspaceStore {
     this.statusValue = { path: this.dbPath, recoveredFromBackup: opened.recovered, recoveryError: opened.error, recoverySourcePath: opened.recoverySourcePath, migratedLegacyData: false }
     this.configure()
     this.initializeSchema()
-    if (!this.statusValue.recoveryError && !this.hasWorkspace()) {
-      const legacyPath = join(this.userDataRoot, LEGACY_FILE)
-      if (existsSync(legacyPath)) {
-        if (options.preserveLegacySource !== false) {
-          const preserved = join(this.backupRoot, `legacy-json-${new Date().toISOString().replace(/[:.]/g, '-')}.json`)
-          copyFileSync(legacyPath, preserved)
-        }
-        try { this.deferredLegacyInput = JSON.parse(readFileSync(legacyPath, 'utf8')) as unknown }
-        catch (error) {
-          this.statusValue.recoverySourcePath = legacyPath
-          this.statusValue.recoveryError = `The legacy workspace could not be migrated. The original JSON was preserved. ${error instanceof Error ? error.message : ''}`.trim()
-        }
-      }
-    }
+    // The legacy neo-anki-data.json preserve-copy and JSON.parse are O(file size)
+    // and must not block window creation. They are performed lazily the first
+    // time readDeferredLegacyData() runs — after the window is already painting
+    // its startup shell — rather than synchronously in the constructor.
   }
 
   private openRecoverableDatabase(): { db: DatabaseSync; recovered: boolean; error?: string; recoverySourcePath?: string } {
@@ -195,8 +190,27 @@ export class WorkspaceStore {
     }
   }
 
+  /**
+   * Prepare-and-cache a statement against the store's own connection. this.db
+   * is assigned once in the constructor and its tables are never dropped during
+   * a session, so a cached StatementSync stays valid; this avoids re-preparing
+   * the same SQL on every mutation of the hot save/load paths.
+   */
+  private prep(sql: string): StatementSync {
+    let statement = this.statementCache.get(sql)
+    if (!statement) {
+      statement = this.db.prepare(sql)
+      this.statementCache.set(sql, statement)
+    }
+    return statement
+  }
+
   private configure() {
-    this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA trusted_schema = OFF;')
+    // cache_size is the negative-KiB form: -16000 caps the page cache at ~16 MiB
+    // (up from the ~2 MiB default) to cut page-cache churn on large reads without
+    // an unbounded footprint. mmap_size is capped at 256 MiB so large-workspace
+    // reads use memory-mapped I/O without letting the mapping grow without bound.
+    this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA trusted_schema = OFF; PRAGMA cache_size = -16000; PRAGMA mmap_size = 268435456;')
   }
 
   private initializeSchema() {
@@ -304,8 +318,27 @@ export class WorkspaceStore {
     const legacyPath = join(this.userDataRoot, LEGACY_FILE)
     if (!existsSync(legacyPath)) return null
     if (this.statusValue.recoveryError) return null
+    let legacy: unknown
+    let rawText: string | undefined
     try {
-      const legacy = this.deferredLegacyInput ?? JSON.parse(readFileSync(legacyPath, 'utf8')) as unknown
+      // Preserve the untouched original before any migration reads it. This
+      // runs once, lazily, so the O(file size) copy stays off window creation.
+      if (this.preserveLegacySource && !this.legacySourcePreserved) {
+        const preserved = join(this.backupRoot, `legacy-json-${new Date().toISOString().replace(/[:.]/g, '-')}.json`)
+        copyFileSync(legacyPath, preserved)
+        this.legacySourcePreserved = true
+      }
+      if (this.deferredLegacyInput !== undefined) legacy = this.deferredLegacyInput
+      else { rawText = readFileSync(legacyPath, 'utf8'); legacy = JSON.parse(rawText) as unknown }
+    } catch (error) {
+      // A file that cannot even be read/parsed is a preserved-source recovery
+      // state, not a hard failure: mirror the previous constructor behavior of
+      // recording recoveryError and letting load() report null.
+      this.statusValue.recoverySourcePath = legacyPath
+      this.statusValue.recoveryError = `The legacy workspace could not be migrated. The original JSON was preserved. ${error instanceof Error ? error.message : ''}`.trim()
+      return null
+    }
+    try {
       const candidate = legacy as Partial<AppData>
       const canProjectBeforeValidation = this.allowUnvalidatedLegacyProjection
         && candidate?.version === 3
@@ -318,6 +351,10 @@ export class WorkspaceStore {
       this.deferredLegacyData = canProjectBeforeValidation
         ? legacy as AppData
         : migrateWorkspaceData(legacy as Parameters<typeof migrateWorkspaceData>[0])
+      // On the unvalidated fast path the returned projection IS the parsed file,
+      // so the original file text serializes it exactly. Cache that text to skip
+      // a redundant O(N) re-stringify when the load handler ships the projection.
+      this.deferredLegacyProjectionJson = canProjectBeforeValidation && rawText !== undefined ? rawText : null
       this.deferredLegacyInput = undefined
       this.statusValue.migratedLegacyData = true
       return this.deferredLegacyData
@@ -434,7 +471,7 @@ export class WorkspaceStore {
 
   private storeValidatedWorkspaceDocument(parsed: WorkspaceDocumentV4) {
     const json = stringify(parsed)
-    this.db.prepare(`INSERT INTO workspace_v4(id, revision, updated_at, json, content_hash) VALUES (1, ?, ?, ?, ?)
+    this.prep(`INSERT INTO workspace_v4(id, revision, updated_at, json, content_hash) VALUES (1, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET revision=excluded.revision, updated_at=excluded.updated_at, json=excluded.json, content_hash=excluded.content_hash`)
       .run(parsed.workspace.revision, parsed.workspace.updatedAt, json, sha256(Buffer.from(json)))
     this.db.exec('DELETE FROM workspace_journal')
@@ -443,7 +480,7 @@ export class WorkspaceStore {
 
   private appendJournal(kind: 'changes' | 'core-patch', value: unknown) {
     const json = stringify(value)
-    this.db.prepare('INSERT INTO workspace_journal(kind, json, content_hash, created_at) VALUES (?, ?, ?, ?)').run(kind, json, sha256(Buffer.from(json)), new Date().toISOString())
+    this.prep('INSERT INTO workspace_journal(kind, json, content_hash, created_at) VALUES (?, ?, ?, ?)').run(kind, json, sha256(Buffer.from(json)), new Date().toISOString())
   }
 
   private storeWorkspaceDocument(document: WorkspaceDocumentV4) { this.storeValidatedWorkspaceDocument(parseWorkspaceDocumentV4(document)) }
@@ -487,6 +524,19 @@ export class WorkspaceStore {
     const deferred = this.readDeferredLegacyData()
     this.projectionCache = deferred || this.loadFromDatabase(this.db)
     return this.projectionCache
+  }
+
+  /**
+   * Serialize the current projection for cross-process transfer. On the
+   * unvalidated legacy fast path the original file text already serializes the
+   * projection exactly, so it is returned verbatim to skip a redundant O(N)
+   * re-stringify; every other path falls back to a fresh stringify.
+   */
+  loadSerialized(): string | null {
+    const data = this.load()
+    if (data === null) return null
+    if (this.deferredLegacyProjectionJson !== null && this.projectionCache === this.deferredLegacyData) return this.deferredLegacyProjectionJson
+    return JSON.stringify(data)
   }
 
   private upsertAsset(input: unknown, suppliedBytes?: Uint8Array) {
@@ -721,7 +771,7 @@ export class WorkspaceStore {
         const settings = userSettingsSchema.parse(changes.meta.settings)
         const updatedAt = new Date(changes.meta.updatedAt)
         if (!changes.meta.deviceId || !Number.isFinite(updatedAt.getTime())) throw new Error('Workspace metadata is invalid.')
-        this.db.prepare('INSERT INTO workspace_meta(id, version, device_id, settings_json, updated_at) VALUES (1, 3, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET version=3, device_id=excluded.device_id, settings_json=excluded.settings_json, updated_at=excluded.updated_at').run(changes.meta.deviceId, stringify(settings), updatedAt.toISOString())
+        this.prep('INSERT INTO workspace_meta(id, version, device_id, settings_json, updated_at) VALUES (1, 3, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET version=3, device_id=excluded.device_id, settings_json=excluded.settings_json, updated_at=excluded.updated_at').run(changes.meta.deviceId, stringify(settings), updatedAt.toISOString())
       }
       if (this.hasWorkspace()) {
         const existingDocument = this.readWorkspaceDocument(this.db)
@@ -904,10 +954,16 @@ export class WorkspaceStore {
   workspaceV4EditorDocument() {
     const document = this.readWorkspaceDocument(this.db)
     if (!document) throw new Error('Workspace v4 is not active.')
+    // Pick one representative note per note type in a single O(notes) pass
+    // rather than an O(noteTypes x notes) scan (find per type). The editor only
+    // needs a sample note/card per type to render previews.
+    const pendingTypes = new Set(document.workspace.noteTypes.map((type) => type.id))
     const noteIds = new Set<string>()
-    for (const type of document.workspace.noteTypes) {
-      const note = document.workspace.notes.find((candidate) => candidate.noteTypeId === type.id)
-      if (note) noteIds.add(note.id)
+    for (const note of document.workspace.notes) {
+      if (pendingTypes.delete(note.noteTypeId)) {
+        noteIds.add(note.id)
+        if (!pendingTypes.size) break
+      }
     }
     return {
       ...document,

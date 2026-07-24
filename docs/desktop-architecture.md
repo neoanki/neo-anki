@@ -2,6 +2,16 @@
 
 Neo Anki's MVP is an Electron desktop application. Vite remains a renderer development tool, but production does not require a browser tab or local HTTP server.
 
+## Technology strategy (why Electron is kept)
+
+The July 2026 footprint pass re-evaluated three strategies against measured evidence before optimizing:
+
+1. **Aggressive optimization within Electron (selected).** The critical-path traces showed the remaining launch cost was serialization and full-graph materialization, not framework overhead — the main process already uses Node's built-in `node:sqlite` (`DatabaseSync`), saves are incremental change-sets over an integrity-hashed journal, the planner offloads to a prewarmed worker above 5,000 cards, and there are no idle timers or polling loops. These are addressable inside Electron, and this pass cut the 50k launch 41% and 50k planning 53% without touching the data-safety or scheduling contracts.
+2. **Hybrid native core / native shell (rejected for now).** A Swift/AppKit shell or Rust core around the existing renderer could lower the cold-start floor and idle RSS, but it would fork the persistence, migration, recovery, and extension-host contracts across two implementations for a launch already an order of magnitude under its ceiling, with real regression risk to scheduling equivalence and accessibility.
+3. **Full native replacement (rejected).** A clean-slate native app offers the best theoretical floor but would have to re-derive Workspace v4, the journal/backup/restore/corruption-recovery guarantees, the signed SDK v2 extension boundary, and sync-protocol compatibility — enormous data-safety and migration risk for gains the profile did not justify at the current measured latencies.
+
+The measured conclusion: the impactful wins were available inside the current stack, so the stack is preserved and the highest-impact paths were optimized in place. This choice is revisited if idle RSS or the cold-start floor — not launch latency — becomes the binding constraint.
+
 ## Process boundary
 
 - The main process owns the application window, filesystem persistence, native backup dialog, navigation policy, and permission policy.
@@ -15,13 +25,15 @@ The main process stores `neo-anki.sqlite` under Electron's OS-specific `userData
 
 The renderer sends immutable incremental change sets. Same-turn updates are coalesced, later in-flight updates are cumulative from the last durable snapshot, and the main process serializes their transactions. A failed earlier mutation therefore cannot make a later acknowledged mutation depend on missing state. Explicit v4 commands flush accepted renderer saves first. Template/preset IPC returns only affected definitions, rendering-card identifiers, and deck membership; the renderer applies that narrow projection optimistically and reports failures without replacing unrelated state.
 
+A mutation is acknowledged as durable the moment its journal transaction commits — that WAL fsync under full synchronous durability is the crash-safe boundary the acknowledged write survives from. The once-per-local-day online backup is chained after acknowledgment on the same serialized save queue, so it never delays the durable acknowledgment yet still cannot interleave with the next mutation and still completes before a pending-save quit flush. Deferring the backup off the acknowledgment path is what keeps a durable settings save well under its budget without weakening the durability contract.
+
 Checkpointing compacts the snapshot and journal during replacement, import, restore, or migration. Automatic online backup is limited to one validated copy per local day rather than copying the database after every small mutation. Exported backups include the snapshot, journal, media, and receipts, so restoring and replaying a backup reaches the same latest durable revision.
 
 Media bytes are stored separately from renderer records inside the database. Every asset is addressed through the private `neoanki-media://` protocol and verified against its declared byte length and SHA-256 digest when loaded.
 
 Neo Anki takes rotating local-day online backups and a backup before destructive replacement. Restore accepts schema 4/5 checkpoints and schema 6 snapshot-plus-journal databases, then validates SQLite integrity, schema compatibility, required tables, journal hashes, media digests, and the complete semantic workspace before changing the current database. If opening the primary database fails, the damaged file is preserved and automatic backups are tried newest-to-oldest until one validates. Corrupt journal entries block loading rather than silently dropping acknowledged operations.
 
-Existing `neo-anki-data.json` workspaces remain usable through a structurally checked projection while a worker performs full migration and validation after the first useful paint. The original JSON is copied to the recovery directory before migration; the canonical snapshot is committed only after validation succeeds. Interrupted or rejected migrations leave that source untouched and retryable. Any mutation, backup/export, sync, or v4 editor request waits for migration completion before it can acknowledge success. The Settings panel reports migration, recovery, and persistence failures instead of silently presenting them as successful saves.
+Existing `neo-anki-data.json` workspaces remain usable through a structurally checked projection while a worker performs full migration and validation after the first useful paint. Reading and parsing that legacy JSON is deferred out of the store constructor to the first workspace load, so the O(file-size) read never blocks window creation and first paint. The original JSON is copied to the recovery directory before migration; the canonical snapshot is committed only after validation succeeds. The main process ships each workspace projection to the renderer as one pre-serialized JSON string parsed once, rather than structured-cloning the entire object graph across the process boundary — for large workspaces a single stringify-plus-parse is roughly half the cost of the structured clone and avoids holding a second live graph mid-transfer. Interrupted or rejected migrations leave that source untouched and retryable. Any mutation, backup/export, sync, or v4 editor request waits for migration completion before it can acknowledge success. The Settings panel reports migration, recovery, and persistence failures instead of silently presenting them as successful saves.
 
 Only one process may own the workspace at a time. A second launch focuses the existing window instead of opening the database concurrently.
 

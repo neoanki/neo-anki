@@ -38,8 +38,8 @@ describe('application workflows', () => {
   afterEach(() => { vi.unstubAllGlobals(); window.neoAnkiDesktop = undefined })
   it('paints a themed startup shell while desktop data loads asynchronously', async () => {
     const data = createSeedData(); data.settings.onboardingComplete = true
-    let finishLoad!: (value: NeoAnkiDesktopLoadResult) => void
-    const pending = new Promise<NeoAnkiDesktopLoadResult>((resolve) => { finishLoad = resolve })
+    let finishLoad!: (value: NeoAnkiDesktopLoadResultAsync) => void
+    const pending = new Promise<NeoAnkiDesktopLoadResultAsync>((resolve) => { finishLoad = resolve })
     const synchronousLoad = vi.fn(() => { throw new Error('The synchronous loader must not run during startup.') })
     window.neoAnkiDesktop = {
       isDesktop: true,
@@ -53,7 +53,7 @@ describe('application workflows', () => {
     expect(screen.getByRole('status', { name: 'Opening Neo Anki' })).toHaveTextContent('Opening your workspace…')
     expect(synchronousLoad).not.toHaveBeenCalled()
 
-    finishLoad({ data, storagePath: '/tmp/neo-anki.sqlite', recoveredFromBackup: false })
+    finishLoad({ dataJson: JSON.stringify(data), storagePath: '/tmp/neo-anki.sqlite', recoveredFromBackup: false })
     expect(await screen.findByRole('heading', { name: 'Today' })).toBeInTheDocument()
     expect(synchronousLoad).not.toHaveBeenCalled()
   })

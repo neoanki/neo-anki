@@ -265,14 +265,25 @@ const installApplicationMenu = () => {
 
 const queueSave = (changes: WorkspaceChangeSet) => {
   benchmarkMark('save-enqueued')
-  saveQueue = saveQueue.catch(() => undefined).then(async () => {
+  // The journal COMMIT inside applyChanges (WAL + synchronous=FULL) is the true
+  // crash-safe durable boundary: the acknowledged write already survives restart
+  // and the crash boundary from there. Resolve the caller at that point so the
+  // renderer reports "saved" without waiting on the once-per-local-day online
+  // backup. The backup still runs, but chained afterward on the same saveQueue,
+  // so it cannot interleave with the next mutation and still completes before the
+  // quit flush awaits saveQueue.
+  const committed = saveQueue.catch(() => undefined).then(async () => {
     benchmarkMark('save-started')
     await awaitDeferredLegacyMigration()
     workspaceStore.applyChanges(changes)
-    await workspaceStore.createRollingBackup()
     benchmarkMark('save-completed')
   })
-  return saveQueue
+  saveQueue = committed.then(async () => {
+    try { await workspaceStore.createRollingBackup() }
+    catch (error) { void diagnosticsLog.record({ source: 'main', level: 'warning', code: 'rolling-backup-deferred-failed', message: error instanceof Error ? error.message : 'The automatic daily backup could not be written.' }) }
+    benchmarkMark('rolling-backup-completed')
+  })
+  return committed
 }
 
 const isTrustedUrl = (url: string) => devServerUrl ? url.startsWith(devServerUrl) : url.startsWith(`${APP_SCHEME}://app/`)
@@ -331,14 +342,20 @@ const registerDesktopIpc = () => {
     benchmarkMark('workspace-load-started')
     try {
       assertTrustedSender(event)
-      const data = workspaceStore.load()
+      // Transfer the projection as one pre-serialized JSON string rather than a
+      // live object graph. Electron would otherwise structured-clone the whole
+      // 200k-entity graph (measured ~2x the cost of a single stringify+parse);
+      // the renderer parses this once and already skips Zod re-validation.
+      // loadSerialized reuses the original legacy file text when the fast path
+      // applies, avoiding even the stringify.
+      const dataJson = workspaceStore.loadSerialized()
       const status = workspaceStore.status()
-      const result = { data, storagePath: status.path, recoveredFromBackup: status.recoveredFromBackup, migratedLegacyData: status.migratedLegacyData, error: status.recoveryError, recoverySourcePath: status.recoverySourcePath }
+      const result = { dataJson, storagePath: status.path, recoveredFromBackup: status.recoveredFromBackup, migratedLegacyData: status.migratedLegacyData, error: status.recoveryError, recoverySourcePath: status.recoverySourcePath }
       benchmarkMark('workspace-load-completed')
       return result
     } catch (error) {
       benchmarkMark('workspace-load-failed')
-      return { data: null, storagePath: '', recoveredFromBackup: false, error: error instanceof Error ? error.message : 'Could not load data.' }
+      return { dataJson: null, storagePath: '', recoveredFromBackup: false, error: error instanceof Error ? error.message : 'Could not load data.' }
     }
   })
 

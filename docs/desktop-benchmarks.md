@@ -103,6 +103,37 @@ The remaining measured critical paths are:
 - The first template-manager expansion is still initialization-bound (324.79 ms p95 pooled with its fast second expansion). Saving the template itself is 168.75 ms durable.
 - Large Library first render materializes its first 100 rows before progressively deriving health/search indexes; this produces the 67 ms worst task while remaining below the 100 ms ceiling.
 
+## July 24, 2026 launch, durability, and footprint pass
+
+This pass targeted the remaining large-workspace launch cost, settings durability, first Template Manager initialization, and avoidable footprint. It was recorded on the same Apple M3 Pro / macOS 26.5.2 machine using the standard calibration (one warm-up, 20 measured iterations; the large scenario uses its three). Before/after are p95 unless noted; the paired comparison passed all three regression guards (>15%, >10 ms, >3 pooled MADs) with no regression.
+
+| Target | Before p95 | After p95 | After median | Result |
+| --- | ---: | ---: | ---: | --- |
+| 50,000-card launch | 1,659.1 ms | 982.0 ms | 849.3 ms | −41%; well under the 2 s ceiling, above the 750 ms stretch (see constraint below) |
+| Established launch | 768.2 ms | 502.5 ms | 483.9 ms | −35% |
+| Fresh launch | 477.8 ms | 463.0 ms | 433.9 ms | Within noise |
+| Learning settings durable | 312.5 ms | 277.6 ms | 273.5 ms | −11%; feedback stays ~18 ms |
+| Template Manager load (pooled) | 325.9 ms | 322.7 ms | 121.8 ms | Median −15%; p95 renderer-init bound (below) |
+| 50,000-card planning | 182.6 ms | 171.1 ms | 86.9 ms | −53% median |
+
+### What changed
+
+- **Launch, main process.** The legacy `neo-anki-data.json` preserve-copy and `JSON.parse` moved out of the `WorkspaceStore` constructor to the first workspace load, so the O(file-size) read no longer blocks window creation. The trace now reaches `application-window-ready` around 230 ms and `renderer-ready` around 245 ms even for the 50k fixture.
+- **Launch, IPC transfer.** The projection crosses to the renderer as one pre-serialized JSON string parsed once, instead of a structured clone of the whole 200k-entity graph. A synthetic 50k/100k graph measured the structured-clone round-trip at ~456 ms of V8 work versus ~293 ms for stringify+parse, with the renderer-side deserialize dropping from ~271 ms to ~147 ms. On the unvalidated legacy fast path the original file text is reused verbatim, skipping even the main-side re-stringify.
+- **Durability.** The once-per-local-day online backup no longer sits on the mutation acknowledgment path. The journal COMMIT (WAL + `synchronous = FULL`) is the crash-safe boundary; the backup runs afterward, still serialized on the save queue, so it cannot interleave and still completes before a pending-save quit flush.
+- **Template Manager.** The main-process editor-document builder selects one representative note per note type in a single O(notes) pass instead of an O(noteTypes × notes) `find` per type, cutting the load median from 142 ms to 122 ms.
+- **Footprint & CPU.** Route code is served as one initial bundle again after a code-split experiment regressed first navigation (cold route 46 ms → 833 ms) — the split's ~100 KB initial-parse saving was not worth an ~800 ms first-navigation penalty, so it was reverted. `sql.js` (~18 MiB, no production use — only a desktop test imports it) moved to devDependencies, trimming the install/`node_modules` footprint. SQLite gained a bounded 16 MiB page cache and a 256 MiB `mmap_size` cap, and the hottest per-mutation statements (journal append, meta and workspace_v4 upsert) are prepared once and cached. Large-workspace planning improved 53% (the worker's DB reads benefit from the cache and mmap).
+
+### Resource results
+
+Peak aggregate Electron CPU across calibrated samples stayed in the same ~25% band. The 100-operation endurance loop retained 51,134,464 bytes (9.69%), passing the gate and improving on the prior 52.6 MB / 9.98% (this machine's fresh baseline before the pass was 55.2 MB / 10.48%, which failed). The worst renderer task (98 ms) and worst frame gap (100 ms) both occur in the large-Library progressive first-page render, which stays below the 100 ms ceiling; no other operation approaches those figures.
+
+### Remaining measured constraints
+
+- **50k launch stretch (≤750 ms).** After removing the redundant serialization, the remaining ~980 ms is dominated by two mandatory 60 MB JSON parses on the critical path: the main-process validation parse (~150 ms, on the measured `workspace-load` span) that gates the unvalidated fast path and preserves the write-before-migration safety invariant, plus the renderer materialization parse (~147 ms) and the React render of the 50k/50k/100k arrays. Eliminating the main-side parse would require restructuring the deferred-migration data-safety contract (`hasDeferredLegacyMigration`, `finishDeferredLegacyMigration`, and the write-before-migration guard all depend on the parsed projection); a Today-first bootstrap that paints before the full parse would trip Today's `items.length === 0` empty-state and flash content on a real workspace. Both were judged too risky against the "do not worsen UX" and data-safety constraints for a stretch (not ceiling) target, so they are documented rather than shipped.
+- **Learning-settings durable (~278 ms).** The journal commit lands well under 250 ms and feedback is ~18 ms; the residual is Playwright `expect.poll` quantizing the DOM `.persistence-status` signal up to its ~250 ms tick. This is a harness measurement artifact, not product latency, and was not gamed.
+- **Template Manager first expansion (~322 ms pooled p95).** The main-process document build is now O(notes); the residual p95 is renderer-side React initialization of the editor form on first mount, which the median improvement (−15%) reflects once warm.
+
 ## Sync safety
 
 The operation catalog includes core sync. Account and credential benchmarks require an ephemeral macOS keychain plus the local sync service; they must never use the developer’s login Keychain. All normal local commands skip the credential journey before launching its app profile, so they do not probe Keychain or show an authorization dialog. CI or release QA may set `NEO_ANKI_BENCHMARK_SYNC_CREDENTIALS=1` only after provisioning an isolated keychain and must restore the original keychain search list afterward.
