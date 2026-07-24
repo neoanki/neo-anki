@@ -17,3 +17,6 @@ vite.config.d.ts
 .expo/
 examples/study-pulse-extension/build/
 test-extensions/
+.agents/
+.codex/
+.impeccable/
