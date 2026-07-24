@@ -64,6 +64,8 @@ Calibration never hides existing debt. A metric whose p95 meets its ceiling beco
 
 The accepted current-machine calibration is checked in at `benchmarks/desktop/budgets.macos-arm64.json`. Normal smoke, full, and endurance runs enforce its `gated` ceilings; `debt` entries remain report-only until the paired base/head comparison establishes a no-regression decision.
 
+Pull-request smoke runs set `NEO_ANKI_BENCHMARK_REPORT_ONLY=1` because GitHub’s virtual Apple Silicon runner is not the calibrated physical host. This suppresses only absolute timing-budget failures; correctness failures, crashes, timeouts, missing measurements, and durable-state mismatches remain fatal. The emitted PR artifact is retained for runner-specific base/head calibration.
+
 Automated benchmarks remain headless. `NEO_ANKI_BENCHMARK=1` only enables structured timing marks and disables background throttling for the hidden benchmark renderer; it does not bypass application behavior or persistence.
 
 ## Sync safety

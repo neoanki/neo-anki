@@ -154,6 +154,8 @@ jobs:
       - run: npm run benchmark:desktop:catalog
       - run: npm run benchmark:desktop:pack
       - run: npm run benchmark:desktop:smoke
+        env:
+          NEO_ANKI_BENCHMARK_REPORT_ONLY: '1'
       - uses: actions/upload-artifact@v7
         if: always()
         with:
