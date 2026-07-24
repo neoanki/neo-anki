@@ -50,7 +50,7 @@
     "test:unit": "vitest run",
     "test:timezones": "cross-env TZ=America/New_York vitest run src/lib/date.test.ts src/lib/planner.test.ts && cross-env TZ=Europe/Kyiv vitest run src/lib/date.test.ts src/lib/planner.test.ts",
     "benchmark:planner": "tsx scripts/benchmark-planner.ts",
-    "benchmark:desktop:pack": "npm run build && npm run desktop:prepare && electron-builder --dir --mac --arm64 -c.electronDist=node_modules/electron/dist",
+    "benchmark:desktop:pack": "npm run desktop:runtime && npm run build && npm run desktop:prepare && electron-builder --dir --mac --arm64 -c.electronDist=node_modules/electron/dist",
     "benchmark:desktop": "npm run benchmark:desktop:smoke",
     "benchmark:desktop:smoke": "cross-env NEO_ANKI_BENCHMARK_MODE=smoke NEO_ANKI_BENCHMARK_ITERATIONS=1 playwright test --config=playwright.benchmark.config.ts",
     "benchmark:desktop:full": "cross-env NEO_ANKI_BENCHMARK_MODE=full NEO_ANKI_BENCHMARK_ITERATIONS=1 playwright test --config=playwright.benchmark.config.ts",

@@ -33,7 +33,7 @@ Build the current Apple Silicon package once:
 npm run benchmark:desktop:pack
 ```
 
-The pack command uses the arm64 Electron distribution already installed by `npm ci`, avoiding a second release download and keeping CI package preparation reproducible.
+The pack command provisions and validates the arm64 Electron runtime through `desktop:runtime`, then gives that local distribution to electron-builder. This avoids a second release download and keeps CI package preparation reproducible.
 
 Then run the desired tier:
 
