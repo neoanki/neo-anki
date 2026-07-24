@@ -126,17 +126,34 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [plannerFailure, setPlannerFailure] = useState<{ key: string; message: string } | null>(null)
   const [plannerAttempt, setPlannerAttempt] = useState(0)
   const corePatchQueue = useRef<Promise<void>>(Promise.resolve())
+  const persistenceAttempt = useRef(0)
+  const explicitPersistenceInFlight = useRef(0)
+  const skipPassiveSaveFor = useRef<AppData | null>(null)
 
   useEffect(() => {
     if (workspaceLoading || workspaceLoadFailure) return
+    if (explicitPersistenceInFlight.current > 0) return
     // An explicitly awaited mutation can advance dataRef before React runs an
     // older render's passive effect. Never let that stale render enqueue a
     // regressive desktop snapshot after the newer mutation has committed.
     if (dataRef.current !== data) return
+    // An explicitly awaited mutation already reported this rollback as a
+    // failure. Do not let the passive effect immediately relabel it "saved"
+    // merely because the restored snapshot is already durable.
+    if (skipPassiveSaveFor.current === data) {
+      skipPassiveSaveFor.current = null
+      return
+    }
+    const attempt = ++persistenceAttempt.current
     let current = true
-    queueMicrotask(() => { if (current) setPersistenceState('saving') })
-    void saveData(data).then(() => { if (current) { setPersistenceError(''); setPersistenceState('saved') } }).catch((error) => {
-      if (current) { setPersistenceError(error instanceof Error ? error.message : 'Neo Anki could not save your latest changes.'); setPersistenceState('failed') }
+    queueMicrotask(() => { if (current && persistenceAttempt.current === attempt) setPersistenceState('saving') })
+    void saveData(data).then(() => {
+      if (current && persistenceAttempt.current === attempt) { setPersistenceError(''); setPersistenceState('saved') }
+    }).catch((error) => {
+      if (current && persistenceAttempt.current === attempt) {
+        setPersistenceError(error instanceof Error ? error.message : 'Neo Anki could not save your latest changes.')
+        setPersistenceState('failed')
+      }
     })
     return () => { current = false }
   }, [data, workspaceLoadFailure, workspaceLoading])
@@ -149,12 +166,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [])
 
   const retryPersistence = useCallback(async () => {
+    const attempt = ++persistenceAttempt.current
     setPersistenceState('saving')
     try {
       await saveData(dataRef.current)
+      if (persistenceAttempt.current !== attempt) return
       setPersistenceError('')
       setPersistenceState('saved')
     } catch (error) {
+      if (persistenceAttempt.current !== attempt) return
       setPersistenceError(error instanceof Error ? error.message : 'Neo Anki could not save your latest changes.')
       setPersistenceState('failed')
     }
@@ -354,15 +374,24 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       ],
       updatedAt: now,
     }
+    skipPassiveSaveFor.current = next
+    const attempt = ++persistenceAttempt.current
+    explicitPersistenceInFlight.current += 1
     setData(next)
     setPersistenceState('saving')
     try {
       await saveData(next)
+      explicitPersistenceInFlight.current -= 1
+      if (persistenceAttempt.current !== attempt) return itemId
       setPersistenceError('')
       setPersistenceState('saved')
     } catch (error) {
+      explicitPersistenceInFlight.current -= 1
+      if (persistenceAttempt.current !== attempt) throw error
       dataRef.current = current
+      skipPassiveSaveFor.current = current
       setRenderedData(current)
+      persistenceAttempt.current += 1
       setPersistenceError(error instanceof Error ? error.message : 'Neo Anki could not save this knowledge item.')
       setPersistenceState('failed')
       throw error
@@ -397,13 +426,21 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       }),
       updatedAt,
     }
+    skipPassiveSaveFor.current = next
+    const attempt = ++persistenceAttempt.current
+    explicitPersistenceInFlight.current += 1
     setData(next)
     setPersistenceState('saving')
     try {
       await saveData(next)
+      explicitPersistenceInFlight.current -= 1
+      if (persistenceAttempt.current !== attempt) return
       setPersistenceError('')
       setPersistenceState('saved')
     } catch (error) {
+      explicitPersistenceInFlight.current -= 1
+      if (persistenceAttempt.current !== attempt) throw error
+      persistenceAttempt.current += 1
       setPersistenceError(error instanceof Error ? error.message : 'Neo Anki could not save your latest changes.')
       setPersistenceState('failed')
       throw error
