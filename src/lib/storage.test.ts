@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createEmptyWorkspaceData, createSeedData } from '../data/seed'
 import { adoptPersistedData, clearStoredData, downloadBackup, exportRecoverySource, loadData, loadWorkspaceData, migrateData, parseBackupText, saveData, unlockPersistence } from './storage'
+import { appDataToWorkspaceDocumentV4, workspaceDocumentV4ToAppData } from './workspace-v4'
 
 describe('storage and migrations', () => {
   it('migrates v1 items and cards without data loss', () => {
@@ -58,6 +59,21 @@ describe('storage and migrations', () => {
     expect(click).toHaveBeenCalledTimes(2)
     await clearStoredData()
     expect(localStorage.getItem('neo-anki:data:v1')).toBeNull()
+  })
+
+  it('keeps the validated native template graph authoritative in browser storage', async () => {
+    const document = appDataToWorkspaceDocumentV4(createSeedData())
+    document.workspace.templates[0].name = 'Browser-native recall'
+    document.workspace.templates[0].revision += 1
+    document.workspace.templates[0].updatedAt = new Date().toISOString()
+    document.workspace.revision += 1
+    const projection = workspaceDocumentV4ToAppData(document)
+    projection.workspaceDocumentV4 = document
+
+    await saveData(projection)
+    const loaded = loadData()
+    expect(loaded.workspaceDocumentV4).toBeTruthy()
+    expect(appDataToWorkspaceDocumentV4(loaded).workspace.templates[0].name).toBe('Browser-native recall')
   })
 
   it('reports desktop read and migration failures and uses preserved-source export', async () => {

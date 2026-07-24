@@ -178,7 +178,7 @@ test('desktop security policy permits the WebAssembly Anki importer', async () =
   }
 })
 
-test('current Anki migration renders custom CSS, typed fields, and media in a sandbox', async () => {
+test('legacy package import becomes native typed card content with media', async () => {
   const userData = await mkdtemp(join(tmpdir(), 'neo-anki-current-migration-'))
   const app = await electron.launch({ args: extensionArgs, env: hiddenDesktopEnv({ NEO_ANKI_USER_DATA_DIR: userData }) })
   try {
@@ -193,16 +193,15 @@ test('current Anki migration renders custom CSS, typed fields, and media in a sa
     await window.getByRole('button', { name: 'Today' }).first().click()
     await window.locator('button.study-button').click()
     await expect(window.getByLabel('Type your answer')).toBeVisible()
-    const prompt = window.locator('iframe[title^="Prompt for"]')
-    await expect(prompt).toBeVisible()
-    await expect(prompt.contentFrame().getByText(/Capital of France/i)).toBeVisible()
-    await expect(prompt.contentFrame().locator('img')).toHaveAttribute('src', /neoanki-media:\/\/asset\//)
+    const prompt = window.locator('.native-card-face[aria-label="Practice question"]')
+    await expect(prompt).toContainText(/Capital of France/i)
+    await expect(window.locator('.review-card img')).toHaveAttribute('src', /neoanki-media:\/\/asset\//)
+    await expect(window.locator('.review-card iframe')).toHaveCount(0)
+    await expect(window.locator('.native-card-content [style]')).toHaveCount(0)
     await window.getByLabel('Type your answer').fill('Paris')
     await window.getByRole('button', { name: /check answer/i }).click()
     await expect(window.getByText('Exact match')).toBeVisible()
-    const answer = window.locator('iframe[title^="Answer for"]')
-    await expect(answer.contentFrame().getByText('Paris', { exact: true })).toBeVisible()
-    await expect.poll(() => answer.contentFrame().locator('body').evaluate((body) => getComputedStyle(body).color)).toBe('rgb(18, 52, 86)')
+    await expect(window.locator('.native-card-face[aria-label="Revealed response"]')).toContainText('Paris')
   } finally {
     await app.close()
     await rm(userData, { recursive: true, force: true })
@@ -216,12 +215,12 @@ test('imported named-field edits and bulk card states survive a desktop restart'
     let window = await firstReadyWindow(app)
     await migrate(window, join(process.cwd(), 'test-fixtures/anki/25.9.4/current-stable.apkg'))
     await window.getByRole('button', { name: 'Library' }).first().click()
-    await window.getByPlaceholder(/Search prompts/i).fill('note:"Migration Custom"')
+    await window.getByPlaceholder(/Search prompts/i).fill('type:"Migration Custom"')
     const row = window.locator('.library-row').filter({ hasText: 'Capital of' }).first()
     await expect(row).toBeVisible()
     await row.getByRole('checkbox', { name: /Select Capital of/i }).check()
     await row.getByRole('button', { name: /^Edit / }).click()
-    await expect(window.getByText('Named fields · Migration Custom')).toBeVisible()
+    await expect(window.getByText('Fields · Migration Custom')).toBeVisible()
     const hint = window.getByLabel('Hint')
     await hint.fill('Persisted migration hint')
     await expect(hint).toHaveValue('Persisted migration hint')
@@ -238,7 +237,7 @@ test('imported named-field edits and bulk card states survive a desktop restart'
     await window.getByRole('button', { name: /bury until tomorrow/i }).click()
     await window.getByLabel('Tag for selected knowledge items').fill('verified-migration')
     await window.getByRole('button', { name: 'Add tag' }).click()
-    await window.getByPlaceholder(/Search prompts/i).fill('flag:5 is:buried tag:verified-migration note:"Migration Custom"')
+    await window.getByPlaceholder(/Search prompts/i).fill('flag:5 is:buried tag:verified-migration type:"Migration Custom"')
     await expect(window.locator('.library-row').filter({ hasText: 'Capital of' })).toBeVisible()
     await expect.poll(() => window.evaluate(async () => {
       const payload = await window.neoAnkiDesktop!.loadWorkspaceV4ExportPayload()
@@ -253,7 +252,7 @@ test('imported named-field edits and bulk card states survive a desktop restart'
     app = await electron.launch({ args: extensionArgs, env: hiddenDesktopEnv({ NEO_ANKI_USER_DATA_DIR: userData }) })
     window = await firstReadyWindow(app)
     await window.getByRole('button', { name: 'Library' }).first().click()
-    await window.getByPlaceholder(/Search prompts/i).fill('flag:5 is:buried tag:verified-migration note:"Migration Custom"')
+    await window.getByPlaceholder(/Search prompts/i).fill('flag:5 is:buried tag:verified-migration type:"Migration Custom"')
     const restored = window.locator('.library-row').filter({ hasText: 'Capital of' }).first()
     await expect(restored).toBeVisible()
     await restored.getByRole('button', { name: /^Edit / }).click()
@@ -264,23 +263,26 @@ test('imported named-field edits and bulk card states survive a desktop restart'
   }
 })
 
-test('imported templates, CSS, fields, and deck presets are editable without flattening and survive restart', async () => {
+test('imported fields, native templates, and deck presets are editable and survive restart', async () => {
   const userData = await mkdtemp(join(tmpdir(), 'neo-anki-compatibility-editor-'))
   let app = await electron.launch({ args: extensionArgs, env: hiddenDesktopEnv({ NEO_ANKI_USER_DATA_DIR: userData }) })
   try {
     let window = await firstReadyWindow(app)
     await migrate(window, join(process.cwd(), 'test-fixtures/anki/25.9.4/current-stable.apkg'))
     await window.getByRole('button', { name: 'Settings', exact: true }).click()
-    const structure = window.locator('details').filter({ hasText: 'Note types, fields, templates, and CSS' })
+    const structure = window.locator('.template-manager details').filter({ hasText: 'Fields and card layouts' })
     await structure.locator('summary').dispatchEvent('click')
-    await structure.getByLabel('Note type').selectOption({ label: 'Migration Custom' })
+    await structure.getByLabel('Content type', { exact: true }).selectOption({ label: 'Migration Custom' })
     await structure.getByLabel('Field 3 name').fill('Migration hint')
-    await structure.getByLabel('Question template').fill('<section class="edited-card">{{Front}}<small>{{Migration hint}}</small></section>')
-    await structure.getByLabel('Card CSS').fill('.card { color: rgb(68, 34, 136); } .edited-card { font-weight: 600; }')
-    const saveNoteType = structure.getByRole('button', { name: /save note type/i })
-    await expect(saveNoteType).toBeEnabled()
-    await saveNoteType.dispatchEvent('click')
-    await expect(window.getByText('Note type and template saved atomically.')).toBeVisible()
+    await structure.getByLabel('Template name').fill('Direct recall')
+    await structure.getByLabel('Prompt field').selectOption({ label: 'Prompt' })
+    await structure.getByLabel('Answer field').selectOption({ label: 'Answer' })
+    await structure.getByLabel('Answer interaction').selectOption({ label: 'Type, then compare' })
+    await structure.getByLabel('Migration hint supporting field').check()
+    const saveTemplate = structure.getByRole('button', { name: /save fields and templates/i })
+    await expect(saveTemplate).toBeEnabled()
+    await saveTemplate.dispatchEvent('click')
+    await expect(window.getByText('Content type and template saved atomically.')).toBeVisible()
 
     const presets = window.locator('details').filter({ hasText: 'Deck presets and scheduling limits' })
     await presets.locator('summary').dispatchEvent('click')
@@ -298,26 +300,41 @@ test('imported templates, CSS, fields, and deck presets are editable without fla
       const field = document.workspace.fields.find((value) => value.noteTypeId === type.id && value.ordinal === 2)!
       const deck = document.workspace.decks.find((value) => value.name === 'Migration Corpus')!
       const preset = document.workspace.presets.find((value) => value.id === deck.presetId)!
-      return { field: field.name, question: template.questionFormat, css: type.css, retention: preset.desiredRetention, steps: preset.learningStepsMinutes }
-    })).toEqual({ field: 'Migration hint', question: '<section class="edited-card">{{Front}}<small>{{Migration hint}}</small></section>', css: '.card { color: rgb(68, 34, 136); } .edited-card { font-weight: 600; }', retention: 0.91, steps: [2, 12] })
+      const fieldName = (id: string) => document.workspace.fields.find((value) => value.id === id)?.name
+      return {
+        field: field.name,
+        template: template.name,
+        prompt: fieldName(template.promptFieldId),
+        answer: fieldName(template.answerFieldId),
+        supporting: template.supportingFieldIds.map(fieldName),
+        responseMode: template.responseMode,
+        legacyPresentation: 'questionFormat' in template || 'answerFormat' in template || 'css' in type,
+        retention: preset.desiredRetention,
+        steps: preset.learningStepsMinutes,
+      }
+    })).toEqual({ field: 'Migration hint', template: 'Direct recall', prompt: 'Prompt', answer: 'Answer', supporting: ['Migration hint'], responseMode: 'type', legacyPresentation: false, retention: 0.91, steps: [2, 12] })
     await app.close()
 
     app = await electron.launch({ args: extensionArgs, env: hiddenDesktopEnv({ NEO_ANKI_USER_DATA_DIR: userData }) })
     window = await firstReadyWindow(app)
     await window.getByRole('button', { name: 'Settings', exact: true }).click()
-    const restored = window.locator('details').filter({ hasText: 'Note types, fields, templates, and CSS' })
+    const restored = window.locator('.template-manager details').filter({ hasText: 'Fields and card layouts' })
     await restored.locator('summary').dispatchEvent('click')
-    await restored.getByLabel('Note type').selectOption({ label: 'Migration Custom' })
+    await restored.getByLabel('Content type', { exact: true }).selectOption({ label: 'Migration Custom' })
     await expect(restored.getByLabel('Field 3 name')).toHaveValue('Migration hint')
-    await expect(restored.getByLabel('Question template')).toContainText('{{Migration hint}}')
-    await expect(restored.getByLabel('Card CSS')).toContainText('rgb(68, 34, 136)')
+    await expect(restored.getByLabel('Template name')).toHaveValue('Direct recall')
+    await expect(restored.getByLabel('Prompt field').locator('option:checked')).toHaveText('Prompt')
+    await expect(restored.getByLabel('Answer field').locator('option:checked')).toHaveText('Answer')
+    await expect(restored.getByLabel('Migration hint supporting field')).toBeChecked()
+    await expect(restored.getByLabel('Question template')).toHaveCount(0)
+    await expect(restored.getByLabel('Card CSS')).toHaveCount(0)
   } finally {
     await app.close().catch(() => undefined)
     await rm(userData, { recursive: true, force: true })
   }
 })
 
-test('card browser preserves per-card deck ownership and explicit Anki due-date edits', async () => {
+test('card browser preserves per-card deck ownership and native due-date edits', async () => {
   const userData = await mkdtemp(join(tmpdir(), 'neo-anki-card-browser-'))
   let app = await electron.launch({ args: extensionArgs, env: hiddenDesktopEnv({ NEO_ANKI_USER_DATA_DIR: userData }) })
   try {
@@ -325,7 +342,7 @@ test('card browser preserves per-card deck ownership and explicit Anki due-date 
     await migrate(window, join(process.cwd(), 'test-fixtures/anki/25.9.4/current-stable.apkg'))
     await window.getByRole('button', { name: 'Library' }).first().click()
     await window.getByRole('button', { name: 'Practice prompts', exact: true }).click()
-    await window.getByPlaceholder(/Search prompts/i).fill('is:learn note:"Migration Custom"')
+    await window.getByPlaceholder(/Search prompts/i).fill('is:learn type:"Migration Custom"')
     const row = window.locator('.card-browser-row').filter({ hasText: 'Capital of' }).first()
     await expect(row).toBeVisible()
     await row.getByRole('checkbox', { name: /Select practice prompt Capital of/i }).check()

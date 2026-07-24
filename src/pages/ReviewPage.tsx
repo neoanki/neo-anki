@@ -5,12 +5,13 @@ import { formatDue, formatDuration } from '../lib/date'
 import { previewReview } from '../lib/fsrs'
 import { rectStyle } from '../lib/occlusion'
 import { useApp } from '../state/AppContext'
-import type { CardRenderingProjection, ReviewRating } from '../types'
-import { compareExtensionPromptV2, extensionUiContributionsV2, hasExtensionPromptTypeV2, renderExtensionPromptV2 } from '../extensions/v2/registry'
+import type { ReviewRating } from '../types'
+import { extensionUiContributionsV2 } from '../extensions/v2/registry'
 import { ExtensionUiFrameV2 } from '../extensions/v2/ExtensionUiFrameV2'
-import { SandboxedCardFrame } from '../components/SandboxedCardFrame'
 import { safeExternalUrl } from '../lib/urls'
 import { KnowledgeItemEditor } from '../components/KnowledgeItemEditor'
+import { NativeCardContent } from '../components/NativeCardContent'
+import { resolveCardContent } from '../lib/card-content'
 
 export const ReviewPage = () => {
   const { activeSession, data, endSession, navigate, reviewCard, undoLastReview } = useApp()
@@ -22,8 +23,6 @@ export const ReviewPage = () => {
   const startedAtRef = useRef(0)
   const [typedAnswer, setTypedAnswer] = useState('')
   const [editing, setEditing] = useState(false)
-  const [renderError, setRenderError] = useState('')
-  const [mediaPlaybackError, setMediaPlaybackError] = useState('')
   const [atTransition, setAtTransition] = useState(false)
   const gradingRef = useRef(false)
   const currentCardIdRef = useRef<string | undefined>(undefined)
@@ -35,25 +34,7 @@ export const ReviewPage = () => {
   const entry = activeSession?.queue[index]
   const card = data.cards.find((candidate) => candidate.id === entry?.card.id)
   const item = data.items.find((candidate) => candidate.id === card?.itemId)
-  const [externalContentState, setExternalContentState] = useState<{ cardId: string; value: Awaited<ReturnType<typeof renderExtensionPromptV2>> } | null>(null)
-  const [templateRenderingState, setTemplateRenderingState] = useState<{ cardId: string; value: CardRenderingProjection } | null>(null)
-  const [templateRenderErrorState, setTemplateRenderErrorState] = useState<{ cardId: string; message: string } | null>(null)
-  const [typedResultState, setTypedResultState] = useState<{ key: string; value: { result: 'exact' | 'close' | 'incorrect'; similarity: number } | null } | null>(null)
-  const externalContent = externalContentState && externalContentState.cardId === card?.id ? externalContentState.value : null
-  const fallbackContent = useMemo(() => item ? ({ prompt: item.prompt, answer: item.answer, context: item.context, typed: false, mediaId: item.mediaIds[0], citations: item.citations }) : null, [item])
-  const content = externalContent || fallbackContent
-  const templateRenderError = templateRenderErrorState && templateRenderErrorState.cardId === card?.id ? templateRenderErrorState.message : ''
-
-  useEffect(() => {
-    let current = true
-    if (!card || card.rendering?.source === 'anki-template' || card.scheduling?.strategy !== 'anki' || !window.neoAnkiDesktop?.loadCardRendering) return () => { current = false }
-    void window.neoAnkiDesktop.loadCardRendering(card.id).then((value) => {
-      if (!current) return
-      if (value) setTemplateRenderingState({ cardId: card.id, value })
-      else setTemplateRenderErrorState({ cardId: card.id, message: 'This imported template could not be resolved. Neo Anki is showing the saved fields instead.' })
-    }).catch(() => { if (current) setTemplateRenderErrorState({ cardId: card.id, message: 'This imported template could not be rendered. Neo Anki is showing the saved fields instead.' }) })
-    return () => { current = false }
-  }, [card])
+  const cardContent = useMemo(() => item && card ? resolveCardContent(item, card) : null, [item, card])
 
   const preview = useMemo(() => card ? previewReview(card, card.schedulerOptions || data.settings.retention) : null, [card, data.settings.retention])
 
@@ -112,32 +93,7 @@ export const ReviewPage = () => {
   useEffect(() => {
     currentCardIdRef.current = card?.id
     gradingRef.current = false
-    queueMicrotask(() => setMediaPlaybackError(''))
   }, [card?.id])
-
-  useEffect(() => {
-    let current = true
-    queueMicrotask(() => {
-      if (!current) return
-      setRenderError('')
-      setExternalContentState(null)
-      if (item && card && card.variant !== 'forward' && !hasExtensionPromptTypeV2(card.variant)) setRenderError(`The extension for “${card.variant}” is unavailable. Neo Anki is showing the saved Prompt and Answer as a compatibility fallback; re-enable the extension to restore its intended behavior.`)
-    })
-    if (item && card && card.variant !== 'forward') {
-      if (hasExtensionPromptTypeV2(card.variant)) void renderExtensionPromptV2(item, card).then((value) => { if (current) setExternalContentState({ cardId: card.id, value }) }).catch((error) => { if (current) setRenderError(error instanceof Error ? error.message : 'The extension could not render this practice prompt.') })
-    }
-    return () => { current = false }
-  }, [card, item])
-
-  useEffect(() => {
-    let current = true
-    if (revealed && card && (content?.typed || card.rendering?.typedAnswer)) {
-      const expected = card.rendering?.typedAnswer?.expected || content?.answer || ''
-      const key = `${card.id}:${typedAnswer}:${expected}`
-      if (!card.rendering?.typedAnswer) void compareExtensionPromptV2(card.variant, typedAnswer, expected).then((value) => { if (current) setTypedResultState({ key, value: value || compareTypedAnswer(typedAnswer, expected) }) }).catch(() => { if (current) setTypedResultState({ key, value: compareTypedAnswer(typedAnswer, expected) }) })
-    }
-    return () => { current = false }
-  }, [card, content, revealed, typedAnswer])
 
   useEffect(() => {
     const now = performance.now()
@@ -231,15 +187,11 @@ export const ReviewPage = () => {
     )
   }
 
-  if (!content) return <div className="route-loading" role="status">Loading prompt…</div>
-  const templateRendering = card.rendering?.source === 'anki-template' ? card.rendering : templateRenderingState?.cardId === card.id ? templateRenderingState.value : undefined
-  if (card.scheduling?.strategy === 'anki' && !templateRendering && !templateRenderError && window.neoAnkiDesktop?.loadCardRendering) return <div className="route-loading" role="status">Preparing imported template…</div>
-  const asset = content.mediaId ? data.assets.find((candidate) => candidate.id === content.mediaId) : getAssetForCard(item, data.assets)
-  const missingRequestedAsset = Boolean(content.mediaId && !asset)
-  const typedExpected = templateRendering?.typedAnswer?.expected || content.answer
-  const isTyped = Boolean(templateRendering?.typedAnswer || content.typed)
-  const typedKey = `${card.id}:${typedAnswer}:${typedExpected}`
-  const typedResult = revealed && isTyped ? templateRendering?.typedAnswer ? compareTypedAnswer(typedAnswer, typedExpected) : typedResultState?.key === typedKey ? typedResultState.value : null : null
+  if (!cardContent) return <div className="route-loading" role="status">Loading prompt…</div>
+  const asset = getAssetForCard(item, data.assets)
+  const typedExpected = cardContent.answer.value
+  const isTyped = cardContent.responseMode === 'type'
+  const typedResult = revealed && isTyped ? compareTypedAnswer(typedAnswer, typedExpected) : null
   const progress = ((index + 1) / activeSession.queue.length) * 100
   const isolatedReviewTools = extensionUiContributionsV2('review')
 
@@ -259,28 +211,19 @@ export const ReviewPage = () => {
       {activeSession.request.kind === 'custom' && <div className="custom-study-banner" role="status"><strong>Custom study</strong><span>{activeSession.request.reschedule === false ? 'Preview only · ratings are recorded, scheduling is unchanged' : 'Ratings update normal scheduling'}</span></div>}
 
       <div className="visually-hidden" role="status" aria-live="polite">{revealed ? 'Answer revealed. Choose Forgot, Recalled with effort, Recalled, or Easy recall.' : 'Practice prompt ready.'}</div>
-      {renderError && <div className="inline-message warning extension-render-warning" role="alert"><span>{renderError}</span><button className="text-button" onClick={() => navigate('extensions')}>Open Extensions</button></div>}
-      {templateRenderError && <div className="inline-message warning extension-render-warning" role="alert"><span>{templateRenderError}</span></div>}
-      {missingRequestedAsset && <div className="inline-message error" role="alert">This practice prompt’s selected media file is missing. Open the knowledge item to replace it.</div>}
-      {mediaPlaybackError && <div className="inline-message error" role="alert">Audio could not play. {mediaPlaybackError}</div>}
       <article className={revealed ? 'review-card revealed' : 'review-card'}>
         <div className="review-meta"><span>Block {entry.blockIndex + 1} · {item.collection}</span><span>{card.fsrs.state === 0 ? 'New' : 'Review'}</span></div>
-        {templateRendering ? <div className="prompt-content template-card-content">
-          <p className="review-label">{revealed ? 'Answer' : 'Prompt'}</p>
-          <h1 ref={revealedHeadingRef} className="visually-hidden" tabIndex={-1}>{revealed ? 'Answer' : 'Prompt'}</h1>
-          <SandboxedCardFrame html={revealed ? templateRendering.answerHtml : templateRendering.questionHtml} css={templateRendering.css || data.renderingStyles?.[templateRendering.cssRef || ''] || ''} title={`${revealed ? 'Answer' : 'Prompt'} for ${item.collection}`} theme={data.settings.theme} autoPlayAudio={revealed} onMediaStatus={(status, message) => setMediaPlaybackError(status === 'error' ? message : '')} />
-        </div> : <div className="prompt-content"><p className="review-label">Prompt</p><h1>{content.prompt}</h1></div>}
-        {!templateRendering && asset?.mimeType.startsWith('image/') && <div className="review-media image-stage"><img src={asset.dataUrl} alt={asset.altText || asset.filename}/>{!revealed && item.occlusions.filter((rect) => !card.occlusionId || rect.id === card.occlusionId).map((rect) => <span className="occlusion-mask" style={rectStyle(rect)} key={rect.id}>Hidden</span>)}</div>}
+        <h1 ref={revealedHeadingRef} className="visually-hidden" tabIndex={-1}>{revealed ? 'Answer' : 'Prompt'}</h1>
+        <NativeCardContent content={cardContent} revealed={revealed} />
+        {asset?.mimeType.startsWith('image/') && <div className="review-media image-stage"><img src={asset.dataUrl} alt={asset.altText || asset.filename}/>{!revealed && item.occlusions.filter((rect) => !card.occlusionId || rect.id === card.occlusionId).map((rect) => <span className="occlusion-mask" style={rectStyle(rect)} key={rect.id}>Hidden</span>)}</div>}
         {/* User-supplied study audio may not have a caption track. */}
         {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-        {!templateRendering && asset?.mimeType.startsWith('audio/') && <audio className="review-audio" controls src={asset.dataUrl}>Your browser cannot play this audio.</audio>}
+        {asset?.mimeType.startsWith('audio/') && <audio className="review-audio" controls src={asset.dataUrl}>Your browser cannot play this audio.</audio>}
         {isTyped && !revealed && <div className="form-field typed-answer"><label htmlFor="typed-answer">Type your answer</label><input ref={typedInputRef} id="typed-answer" autoComplete="off" spellCheck={false} value={typedAnswer} onChange={(event) => setTypedAnswer(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') setRevealed(true) }}/><small>Leave it blank when you do not know; your answer stays on this device.</small></div>}
         {revealed && (
           <div className="answer-content">
-            {!templateRendering && <><h2 ref={revealedHeadingRef} className="review-label answer-focus-heading" tabIndex={-1}>Answer</h2><div className="answer-text">{content.answer}</div></>}
             {typedResult && <div className="typed-comparison"><p className={`typed-result ${typedResult.result}`}>{typedResult.result === 'exact' ? 'Exact match' : typedResult.result === 'close' ? 'Almost—check the difference' : 'Different answer'}</p><dl><div><dt>Your answer</dt><dd>{typedAnswer}</dd></div><div><dt>Expected</dt><dd>{typedExpected}</dd></div></dl><p>Use the suggested result as evidence, then choose your own grade.</p></div>}
-            {content.context && <p className="answer-context">{content.context}</p>}
-            {content.citations.length > 0 && <div className="review-citations"><strong>Sources</strong>{content.citations.map((citation) => { const url = safeExternalUrl(citation.url); return url ? <a key={citation.id} href={url} target="_blank" rel="noopener noreferrer">{citation.title}</a> : <span key={citation.id}>{citation.title}</span> })}</div>}
+            {item.citations.length > 0 && <div className="review-citations"><strong>Sources</strong>{item.citations.map((citation) => { const url = safeExternalUrl(citation.url); return url ? <a key={citation.id} href={url} target="_blank" rel="noopener noreferrer">{citation.title}</a> : <span key={citation.id}>{citation.title}</span> })}</div>}
           </div>
         )}
         <button className="edit-card-button" aria-label="Edit this knowledge item" onClick={() => setEditing(true)}><Edit3 size={17} /> Edit</button>

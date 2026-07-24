@@ -7,11 +7,12 @@ import { adoptPersistedData, adoptTrustedDesktopData, clearStoredData, downloadB
 import { createDemoWorkspaceData, createEmptyWorkspaceData } from '../data/seed'
 import { extensionRuntime } from '../extensions/runtime'
 import { mergeImportGraph } from '../lib/import-merge'
-import { createExtensionCardsV2, planningSignalsForItemV2, refreshExtensionPlanningSignalsV2, scoreQueuePolicyV2 } from '../extensions/v2/registry'
+import { planningSignalsForItemV2, refreshExtensionPlanningSignalsV2, scoreQueuePolicyV2 } from '../extensions/v2/registry'
 import type { WorkspaceDocumentV4, WorkspacePatchV2 } from '../../packages/compatibility-domain/src/index'
 import { applyWorkspacePatchV2, createWorkspaceDocumentV4 } from '../../packages/compatibility-domain/src/index'
 import { appDataToWorkspaceDocumentV4, workspaceDocumentV4ToAppData } from '../lib/workspace-v4'
 import { buildDailyPlanInWorker } from '../lib/planner-worker-client'
+import { renderCardFields } from '../lib/card-rendering'
 
 const LARGE_PLANNER_CARD_THRESHOLD = 5_000
 const yieldPlannerPreparation = () => new Promise<void>((resolve) => window.setTimeout(resolve, 0))
@@ -81,7 +82,7 @@ interface AppContextValue {
   toggleTheme: () => void
   completeOnboarding: (minutes: number) => void
   addItem: (input: CreateKnowledgeInput) => Promise<string>
-  updateItem: (id: string, changes: Partial<Pick<KnowledgeItem, 'prompt' | 'answer' | 'context' | 'collection' | 'tags' | 'source' | 'citations' | 'mediaIds' | 'occlusions' | 'noteModel'>>) => Promise<void>
+  updateItem: (id: string, changes: Partial<Pick<KnowledgeItem, 'prompt' | 'answer' | 'context' | 'collection' | 'tags' | 'source' | 'citations' | 'mediaIds' | 'occlusions' | 'contentModel'>>) => Promise<void>
   updateItemsBulk: (ids: string[], changes: { collection?: string; addTags?: string[]; removeTags?: string[] }) => void
   deleteItem: (id: string) => void
   deleteItems: (ids: string[]) => void
@@ -326,26 +327,26 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       citations: input.citations.map((citation) => ({ ...citation, id: crypto.randomUUID() })),
       mediaIds: input.assets.map((asset) => asset.id),
       occlusions: input.occlusions,
+      contentModel: structuredClone(input.contentModel),
       createdAt: now,
       updatedAt: now,
     }
-    const cardSeeds = await createExtensionCardsV2(input)
+    const fieldValues = Object.fromEntries(input.contentModel.fields.map((field) => [field.id, field.value]))
     const current = dataRef.current
     const next: AppData = {
       ...current,
       items: [item, ...current.items],
       assets: [...input.assets, ...current.assets.filter((asset) => !input.assets.some((candidate) => candidate.id === asset.id))],
       cards: [
-        ...cardSeeds.map((seed) => ({
+        ...input.templates.map((template) => ({
           id: crypto.randomUUID(),
           itemId,
-          variant: seed.promptType as CreateKnowledgeInput['variants'][number],
-          occlusionId: seed.occlusionId,
-          promptData: seed.extensionData,
+          variant: template.responseMode === 'type' ? 'typed' : 'forward',
           suspended: false,
           flags: 0 as const,
           fsrs: makeEmptyFSRSCard(),
-          estimatedSeconds: seed.estimatedSeconds,
+          rendering: renderCardFields(template, fieldValues, input.contentModel.fields.map((field) => ({ id: field.id, name: field.name }))),
+          estimatedSeconds: 14,
           createdAt: now,
           updatedAt: now,
         })),
@@ -371,9 +372,29 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const updateItem: AppContextValue['updateItem'] = async (id, changes) => {
     const updatedAt = new Date().toISOString()
+    const currentItem = dataRef.current.items.find((item) => item.id === id)
+    if (!currentItem) throw new Error('This knowledge item no longer exists.')
+    const updatedItem = { ...currentItem, ...changes, updatedAt }
+    const fieldValues = updatedItem?.contentModel ? Object.fromEntries(updatedItem.contentModel.fields.map((field) => [field.id, field.value])) : null
+    const fieldDefinitions = updatedItem?.contentModel?.fields.map((field) => ({ id: field.id, name: field.name })) || []
     const next = {
       ...dataRef.current,
-      items: dataRef.current.items.map((item) => item.id === id ? { ...item, ...changes, updatedAt } : item),
+      items: dataRef.current.items.map((item) => item.id === id ? updatedItem : item),
+      cards: dataRef.current.cards.map((card) => {
+        if (card.itemId !== id || !card.rendering || !fieldValues) return card
+        return {
+          ...card,
+          rendering: renderCardFields({
+            id: card.rendering.templateId,
+            name: card.rendering.templateName,
+            promptFieldId: card.rendering.prompt.id,
+            answerFieldId: card.rendering.answer.id,
+            supportingFieldIds: card.rendering.supporting.map((field) => field.id),
+            responseMode: card.rendering.responseMode,
+          }, fieldValues, fieldDefinitions),
+          updatedAt,
+        }
+      }),
       updatedAt,
     }
     setData(next)
@@ -519,7 +540,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         nextDue: nextCard.due,
         previousCard: structuredClone(card.fsrs),
         previousScheduling: card.scheduling ? structuredClone(card.scheduling) : undefined,
-        scheduler: 'neo-fsrs' as const,
         previousEstimatedSeconds: card.estimatedSeconds,
         previousCardState: { suspended: card.suspended, buriedUntil: card.buriedUntil, buriedBy: card.buriedBy, flags: card.flags, leech: card.leech },
         siblingChanges,
@@ -564,7 +584,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         nextDue: event.previousDue,
         previousCard: structuredClone(card.fsrs),
         previousScheduling: card.scheduling ? structuredClone(card.scheduling) : undefined,
-        scheduler: card.scheduling?.strategy || 'neo-fsrs',
         previousEstimatedSeconds: card.estimatedSeconds,
       }
       return {
@@ -600,6 +619,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const previous = appDataToWorkspaceDocumentV4(dataRef.current)
       const document = createWorkspaceDocumentV4(applyWorkspacePatchV2(previous.workspace, patch), previous.clientState)
       const projected = workspaceDocumentV4ToAppData(document)
+      projected.workspaceDocumentV4 = document
       const urls = new Map(dataRef.current.assets.map((asset) => [asset.id, asset.dataUrl]))
       projected.assets = projected.assets.map((asset) => ({ ...asset, dataUrl: urls.get(asset.id) || asset.dataUrl }))
       setData(projected)
@@ -629,14 +649,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const selected = new Set(cardIds)
     const cards = document.workspace.cards.filter((card) => selected.has(card.id))
     if (cards.some((card) => card.scheduling.queue === 'new')) throw new Error('New cards use deck position rather than a due date. Select learning or review cards to reschedule.')
-    const calendarDay = (value: Date) => Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()) / 86_400_000
     const targetIso = target.toISOString(); const now = new Date().toISOString()
     const operations = cards.map((card) => {
-      const scheduling = card.scheduling.strategy === 'neo-fsrs'
-        ? { ...card.scheduling, dueAt: targetIso, continuityOverrideDueAt: targetIso }
-        : card.scheduling.queue === 'review'
-          ? { ...card.scheduling, dueAt: targetIso, due: Math.max(0, card.scheduling.due + Math.round(calendarDay(target) - calendarDay(new Date(card.scheduling.dueAt || now)))) }
-          : { ...card.scheduling, dueAt: targetIso, due: Math.floor(target.getTime() / 1000) }
+      const scheduling = { ...card.scheduling, dueAt: targetIso, continuityOverrideDueAt: targetIso }
       return { op: 'update' as const, kind: 'card' as const, id: card.id, expectedRevision: card.revision, value: { ...card, scheduling, revision: card.revision + 1, updatedAt: now } }
     })
     if (!operations.length) return

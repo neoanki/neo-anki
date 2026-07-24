@@ -55,7 +55,6 @@ declare global {
     commitWorkspaceV4Import(input: { document: unknown; media: MediaAsset[]; sourceArchive?: Uint8Array; operation: 'additive' | 'replace-profile' }): Promise<AppData>
     loadWorkspaceV4ExportPayload(): Promise<{ document: unknown; media: MediaAsset[] }>
     loadWorkspaceV4Document(): Promise<WorkspaceDocumentV4>
-    loadCardRendering?(cardId: string): Promise<import('./types').CardRenderingProjection | null>
     applyCoreWorkspacePatchV2(patch: WorkspacePatchV2): Promise<{ workspaceRevision: number; data: AppData }>
     reportDiagnostic(diagnostic: { source: 'renderer' | 'extension-host'; level: 'info' | 'warning' | 'error'; code: string; message: string; stack?: string }): Promise<void>
     exportDiagnostics(): Promise<{ canceled: boolean; path?: string }>

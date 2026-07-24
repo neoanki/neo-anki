@@ -17,16 +17,16 @@ describe('Workspace v4 production document adapter', () => {
     expect(projected.cards[0]).toMatchObject({ id: source.cards[0].id, buriedUntil: source.cards[0].buriedUntil })
   })
 
-  it('updates named fields by stable field id without flattening the note model', () => {
+  it('updates named fields by stable field id without flattening the content model', () => {
     const document = appDataToWorkspaceDocumentV4(createSeedData())
     const projected = workspaceDocumentV4ToAppData(document)
     const item = projected.items[0]
-    expect(item.noteModel?.fields.length).toBe(3)
-    const target = item.noteModel!.fields[2]
-    item.noteModel = { ...item.noteModel!, fields: item.noteModel!.fields.map((field) => field.id === target.id ? { ...field, value: 'Edited named context' } : field) }
+    expect(item.contentModel?.fields.length).toBe(3)
+    const target = item.contentModel!.fields[2]
+    item.contentModel = { ...item.contentModel!, fields: item.contentModel!.fields.map((field) => field.id === target.id ? { ...field, value: 'Edited named context' } : field) }
     const refreshed = refreshWorkspaceDocumentV4FromProjection(projected, document)
     expect(refreshed.workspace.notes.find((note) => note.id === item.id)?.fields[target.id]).toBe('Edited named context')
-    expect(workspaceDocumentV4ToAppData(refreshed).items.find((candidate) => candidate.id === item.id)?.noteModel?.fields.find((field) => field.id === target.id)?.value).toBe('Edited named context')
+    expect(workspaceDocumentV4ToAppData(refreshed).items.find((candidate) => candidate.id === item.id)?.contentModel?.fields.find((field) => field.id === target.id)?.value).toBe('Edited named context')
   })
 
   it('durably round-trips native rich semantics and does not churn unchanged revisions', () => {
@@ -40,13 +40,13 @@ describe('Workspace v4 production document adapter', () => {
       source: 'Native source',
       updatedAt: '2026-07-19T10:00:00.000Z',
     }
-    const card = { ...source.cards[0], variant: 'cloze', promptData: { clozeOrdinal: 2 }, occlusionId: 'occ-1', updatedAt: item.updatedAt }
+    const card = { ...source.cards[0], variant: 'targeted-recall', promptData: { targetOrdinal: 2 }, occlusionId: 'occ-1', updatedAt: item.updatedAt }
     const asset = { id: 'asset-1', filename: 'diagram.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==', byteLength: 1, hash: 'a'.repeat(64), altText: 'A labeled diagram', createdAt: item.updatedAt, updatedAt: item.updatedAt }
     const rich = { ...source, items: [item, ...source.items.slice(1)], cards: [card, ...source.cards.slice(1)], assets: [asset], updatedAt: item.updatedAt }
     const refreshed = refreshWorkspaceDocumentV4FromProjection(rich, initial)
     const projected = workspaceDocumentV4ToAppData(refreshed)
     expect(projected.items[0]).toMatchObject({ citations: item.citations, mediaIds: item.mediaIds, occlusions: item.occlusions, source: item.source })
-    expect(projected.cards[0]).toMatchObject({ variant: 'cloze', promptData: { clozeOrdinal: 2 }, occlusionId: 'occ-1' })
+    expect(projected.cards[0]).toMatchObject({ variant: 'targeted-recall', promptData: { targetOrdinal: 2 }, occlusionId: 'occ-1' })
     expect(projected.assets[0].altText).toBe('A labeled diagram')
 
     const unchanged = refreshWorkspaceDocumentV4FromProjection(projected, refreshed)

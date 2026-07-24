@@ -1,5 +1,5 @@
-import type { AppData, CreateKnowledgeInput, KnowledgeItem, PracticeCard } from '../../types.js'
-import type { ExtensionAuthoringActionContributionV2, ExtensionAuthoringActionStatusV1, ExtensionCardInputV2, ExtensionManifestV2, ExtensionPromptInputV2, ExtensionPromptValidationV2, ExtensionRenderedCardV2, ExtensionSettingsContributionV1, ExtensionUiSurfaceV2, KnowledgeDraftV1 } from '../../../packages/extension-sdk/src/index.js'
+import type { AppData, KnowledgeItem, PracticeCard } from '../../types.js'
+import type { ExtensionAuthoringActionContributionV2, ExtensionAuthoringActionStatusV1, ExtensionCardInputV2, ExtensionManifestV2, ExtensionSettingsContributionV1, ExtensionUiSurfaceV2, KnowledgeDraftV1 } from '../../../packages/extension-sdk/src/index.js'
 import type { KnowledgeItemProjection } from '../../../packages/compatibility-domain/src/index.js'
 import { createExtensionHostV2 } from './host.js'
 import { ExtensionWorkerRuntimeV2 } from './runtime.js'
@@ -103,61 +103,10 @@ export const rollbackPendingExtensionActivationV2 = async (extensionId: string, 
 export const extensionUiContributionsV2 = (surface?: ExtensionUiContributionV2['surface']) => uiContributions.filter((value) => !surface || value.surface === surface)
 export const extensionSettingsContributionsV2 = () => [...settingsContributions]
 export const extensionPageV2 = (route: string) => uiContributions.find((value) => value.surface === 'page' && value.route === route)
-export const extensionPromptTypesV2 = () => [...workers.values()].flatMap((runtime) => (runtime.manifest.contributions?.promptTypes || []).map((value) => ({ ...value, extensionId: runtime.manifest.id })))
 export const extensionAuthoringActionsV2 = (): Array<ExtensionAuthoringActionContributionV2 & { extensionId: string; extensionName: string }> => [...workers.values()].flatMap((runtime) => (runtime.manifest.contributions?.authoringActions || []).map((value) => ({ ...value, extensionId: runtime.manifest.id, extensionName: runtime.manifest.name })))
-export const hasExtensionPromptTypeV2 = (promptTypeId: string) => Boolean(promptRuntime(promptTypeId))
 export const extensionQueuePoliciesV2 = () => [...workers.values()].flatMap((runtime) => (runtime.manifest.contributions?.queuePolicies || []).map((value) => ({ ...value, extensionId: runtime.manifest.id })))
 export const extensionLibraryPresetsV2 = () => [...libraryPresets]
-
-const promptRuntime = (promptTypeId: string) => {
-  for (const runtime of workers.values()) if (runtime.manifest.contributions?.promptTypes?.some((value) => value.id === promptTypeId)) return runtime
-  return undefined
-}
-const promptInput = (input: CreateKnowledgeInput | KnowledgeItem): ExtensionPromptInputV2 => ({
-  prompt: input.prompt, answer: input.answer, context: input.context, collection: input.collection, tags: [...input.tags], citations: input.citations.map((value) => ({ ...value })),
-  mediaIds: 'mediaIds' in input ? [...input.mediaIds] : input.assets.map((value) => value.id), occlusions: input.occlusions.map((value) => ({ ...value })),
-  ...('assets' in input ? { assets: input.assets.map((value) => ({ ...value })) } : {}), ...('variants' in input ? { variants: [...input.variants] } : {}),
-})
 const cardInput = (card: PracticeCard): ExtensionCardInputV2 => ({ id: card.id, itemId: card.itemId, variant: card.variant, occlusionId: card.occlusionId, promptData: card.promptData, estimatedSeconds: card.estimatedSeconds, suspended: card.suspended, dueAt: card.fsrs.due, difficulty: card.fsrs.difficulty, lapses: card.fsrs.lapses })
-
-export const createExtensionCardsV2 = async (input: CreateKnowledgeInput) => {
-  const result: Array<{ promptType: string; estimatedSeconds: number; extensionData?: Record<string, unknown>; occlusionId?: string }> = []
-  for (const promptTypeId of input.variants) {
-    if (promptTypeId === 'forward') { result.push({ promptType: 'forward', estimatedSeconds: 14 }); continue }
-    const runtime = promptRuntime(promptTypeId)
-    if (!runtime) throw new Error(`The selected practice prompt type “${promptTypeId}” is unavailable. Re-enable its extension or deselect it before saving.`)
-    if (promptTypeId === 'cloze' && !/{{c\d+::.+?}}/.test(input.prompt)) throw new Error('Fill in the blank needs at least one deletion such as {{c1::answer}}.')
-    if (promptTypeId === 'audio' && !input.assets.some((asset) => asset.mimeType.startsWith('audio/'))) throw new Error('Audio prompt needs an audio file before it can be created.')
-    const requestId = crypto.randomUUID(); const response = await runtime.execute({ type: 'prompt-create', requestId, promptTypeId, input: promptInput(input) }, 30_000)
-    if (response.type === 'error') throw new Error(response.message)
-    if (response.type !== 'result' || !Array.isArray(response.value)) throw new Error(`Prompt type ${promptTypeId} returned invalid practice prompts.`)
-    if (response.value.length === 0) throw new Error(`Prompt type ${promptTypeId} did not create any practice prompts. Check its required fields and try again.`)
-    for (const seed of response.value as Array<{ promptType?: unknown; estimatedSeconds?: unknown; extensionData?: unknown; occlusionId?: unknown }>) {
-      if (seed.promptType !== promptTypeId || !Number.isFinite(seed.estimatedSeconds) || Number(seed.estimatedSeconds) < 1 || Number(seed.estimatedSeconds) > 600) throw new Error(`Prompt type ${promptTypeId} returned an invalid card seed.`)
-      result.push({ promptType: promptTypeId, estimatedSeconds: Number(seed.estimatedSeconds), ...(seed.extensionData && typeof seed.extensionData === 'object' ? { extensionData: seed.extensionData as Record<string, unknown> } : {}), ...(typeof seed.occlusionId === 'string' ? { occlusionId: seed.occlusionId } : {}) })
-    }
-  }
-  return result
-}
-
-export const validateExtensionPromptsV2 = async (input: CreateKnowledgeInput) => {
-  const fieldErrors: ExtensionPromptValidationV2['fieldErrors'] = {}
-  for (const promptTypeId of input.variants) {
-    if (promptTypeId === 'forward') continue
-    const runtime = promptRuntime(promptTypeId)
-    if (!runtime) { fieldErrors.prompt = `The selected practice prompt type “${promptTypeId}” is unavailable.`; continue }
-    const requestId = crypto.randomUUID()
-    const response = await runtime.execute({ type: 'prompt-validate', requestId, promptTypeId, input: promptInput(input) }, 30_000)
-    if (response.type === 'error') {
-      if (response.code !== 'unsupported') fieldErrors.prompt = response.message
-      continue
-    }
-    if (response.type !== 'result' || !response.value || typeof response.value !== 'object') continue
-    const validation = response.value as ExtensionPromptValidationV2
-    if (!validation.valid) Object.assign(fieldErrors, validation.fieldErrors)
-  }
-  return { valid: Object.keys(fieldErrors).length === 0, fieldErrors } satisfies ExtensionPromptValidationV2
-}
 
 export const executeAuthoringActionV2 = async (extensionId: string, actionId: string, itemId: string, idempotencyKey: string, draft: KnowledgeDraftV1) => {
   const runtime = workers.get(extensionId)
@@ -186,18 +135,6 @@ export const authoringActionStatusesV2 = async (draft: KnowledgeDraftV1) => {
   return statuses
 }
 
-export const renderExtensionPromptV2 = async (item: KnowledgeItem, card: PracticeCard): Promise<ExtensionRenderedCardV2 | null> => {
-  const runtime = promptRuntime(card.variant); if (!runtime) return null
-  const requestId = crypto.randomUUID(); const response = await runtime.execute({ type: 'prompt-render', requestId, promptTypeId: card.variant, item: promptInput(item), card: cardInput(card) })
-  if (response.type !== 'result' || !response.value || typeof response.value !== 'object') throw new Error(`Prompt type ${card.variant} returned invalid content.`)
-  return response.value as ExtensionRenderedCardV2
-}
-
-export const compareExtensionPromptV2 = async (promptTypeId: string, attempt: string, expected: string) => {
-  const runtime = promptRuntime(promptTypeId); if (!runtime) return null
-  const requestId = crypto.randomUUID(); const response = await runtime.execute({ type: 'prompt-compare', requestId, promptTypeId, attempt, expected })
-  return response.type === 'result' ? response.value as { result: 'exact' | 'close' | 'incorrect'; similarity: number } : null
-}
 export const scoreQueuePolicyV2 = (policyId: string, cardId: string) => queueScores.get(`${policyId}:${cardId}`)
 
 const projections = async (data: AppData): Promise<KnowledgeItemProjection[]> => {

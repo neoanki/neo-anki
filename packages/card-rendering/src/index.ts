@@ -1,21 +1,79 @@
-import type { Card, CardTemplate, MediaAsset, Note, NoteType } from '@neo-anki/compatibility-domain'
+import type { Card, CardTemplate, Note } from '@neo-anki/compatibility-domain'
 
-export interface CardRenderingProjection { questionHtml: string; answerHtml: string; css: string; typedAnswer?: { fieldName: string; expected: string }; source: 'neo-native' | 'anki-template' }
-const escapeHtml = (value: string) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
-const htmlTextEntities: Record<string, string> = { nbsp: ' ', lt: '<', gt: '>', amp: '&', quot: '"' }
-const stripHtml = (value: string) => value.replace(/<br\s*\/?\s*>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&(nbsp|lt|gt|amp|quot);/gi, (_entity, name: string) => htmlTextEntities[name.toLowerCase()])
-const cloze = (value: string, ordinal: number, side: 'question' | 'answer') => value.replace(/{{c(\d+)::([\s\S]*?)(?:::(.*?))?}}/gi, (_match, rawOrdinal: string, content: string, hint: string | undefined) => { const active = Number(rawOrdinal) === ordinal; if (!active) return `<span class="cloze-inactive" data-ordinal="${rawOrdinal}">${content}</span>`; if (side === 'question') return `<span class="cloze" data-ordinal="${rawOrdinal}" data-cloze="${escapeHtml(stripHtml(content))}">[${hint ? escapeHtml(stripHtml(hint)) : '…'}]</span>`; return `<span class="cloze" data-ordinal="${rawOrdinal}">${content}</span>` })
-const applyConditionals = (format: string, fields: Record<string, string>) => { let current = format; for (let pass = 0; pass < 20; pass += 1) { let changed = false; current = current.replace(/{{([#^])([^{}]+)}}([\s\S]*?){{\/\2}}/g, (_match, mode: string, name: string, body: string) => { changed = true; const present = Boolean(stripHtml(fields[name.trim()] || '').trim()); return mode === '#' ? present ? body : '' : present ? '' : body }); if (!changed) break } return current }
-const decodedMediaName = (value: string) => { try { return decodeURIComponent(value) } catch { return value } }
-const replaceMedia = (html: string, mediaByFilename: ReadonlyMap<string, string>) => { const withAttributes = html.replace(/\b(src|href)=(['"])([^'"]+)\2/gi, (match, attribute: string, quote: string, source: string) => { if (/^(?:[a-z][a-z\d+.-]*:|#|\/)/i.test(source)) return match; const resolved = mediaByFilename.get(decodedMediaName(source)); return resolved ? `${attribute}=${quote}${escapeHtml(resolved)}${quote}` : match }); return withAttributes.replace(/\[sound:([^\]]+)]/gi, (_match, filename: string) => { const source = mediaByFilename.get(filename); return source ? `<audio controls preload="metadata" src="${escapeHtml(source)}">Audio: ${escapeHtml(filename)}</audio>` : `<span class="media-missing" role="note">Missing audio: ${escapeHtml(filename)}</span>` }) }
-interface RenderSideInput { format: string; fields: Record<string, string>; special: Record<string, string>; clozeOrdinal: number; side: 'question' | 'answer'; frontSide?: string; typed: { fieldName: string; expected: string } | undefined }
-const renderSide = (input: RenderSideInput) => { const values: Record<string, string> = { ...input.fields, ...input.special, FrontSide: input.frontSide || '' }; const conditioned = applyConditionals(input.format, values); return conditioned.replace(/{{([^{}]+)}}/g, (_match, rawToken: string) => { const token = rawToken.trim(); if (token === 'FrontSide') return input.frontSide || ''; const separator = token.indexOf(':'); const filter = separator > 0 ? token.slice(0, separator).trim().toLowerCase() : ''; const name = separator > 0 ? token.slice(separator + 1).trim() : token; const value = values[name] || ''; if (filter === 'type') { if (!input.typed) input.typed = { fieldName: name, expected: stripHtml(value).trim() }; return '<span class="neoanki-type-answer" aria-hidden="true"></span>' } if (filter === 'cloze' || filter === 'cloze-only') return cloze(value, input.clozeOrdinal, input.side); if (filter === 'text') return escapeHtml(stripHtml(value)); if (filter === 'hint') return value ? `<details class="field-hint"><summary>Show ${escapeHtml(name)} hint</summary>${value}</details>` : ''; return value }) }
-
-export const renderWorkspaceCard = (card: Card, note: Note, noteType: NoteType, template: CardTemplate, fieldNames: Array<{ id: string; name: string }>, deckName: string, media: MediaAsset[], mediaUrl: (asset: MediaAsset) => string, cachedMediaByFilename?: ReadonlyMap<string, string>): CardRenderingProjection => {
-  const fields = Object.fromEntries(fieldNames.map((field) => [field.name, note.fields[field.id] || ''])); const special = { Tags: note.tags.join(' '), Deck: deckName, Subdeck: deckName.split('::').at(-1) || deckName, Card: template.name, Type: noteType.name }; const typed = { current: undefined as { fieldName: string; expected: string } | undefined }; const mediaByFilename = cachedMediaByFilename || new Map(media.map((asset) => [asset.filename, mediaUrl(asset)])); const clozeOrdinal = card.clozeOrdinal || card.ordinal + 1
-  const questionInput: RenderSideInput = { format: template.questionFormat, fields, special, clozeOrdinal, side: 'question', typed: typed.current }; let questionHtml = renderSide(questionInput); typed.current = questionInput.typed
-  const answerInput: RenderSideInput = { format: template.answerFormat, fields, special, clozeOrdinal, side: 'answer', frontSide: questionHtml.replaceAll('<span class="neoanki-type-answer" aria-hidden="true"></span>', ''), typed: typed.current }; let answerHtml = renderSide(answerInput); typed.current = answerInput.typed
-  if (noteType.kind === 'cloze') { questionHtml = cloze(questionHtml, clozeOrdinal, 'question'); answerHtml = cloze(answerHtml, clozeOrdinal, 'answer') }
-  return { questionHtml: replaceMedia(questionHtml, mediaByFilename), answerHtml: replaceMedia(answerHtml, mediaByFilename), css: noteType.css, typedAnswer: typed.current, source: noteType.name === 'Neo Basic' ? 'neo-native' : 'anki-template' }
+export interface RenderedCardField {
+  id: string
+  label: string
+  value: string
 }
-export const plainTextAnswer = stripHtml
+
+export interface CardRenderingProjection {
+  templateId: string
+  templateName: string
+  prompt: RenderedCardField
+  answer: RenderedCardField
+  supporting: RenderedCardField[]
+  responseMode: 'reveal' | 'type'
+}
+
+const entities: Record<string, string> = { nbsp: ' ', lt: '<', gt: '>', amp: '&', quot: '"', apos: "'" }
+
+const replaceSoundReferences = (value: string) => {
+  const lowerValue = value.toLowerCase()
+  let cursor = 0
+  let output = ''
+  while (cursor < value.length) {
+    const start = lowerValue.indexOf('[sound:', cursor)
+    if (start < 0) return output + value.slice(cursor)
+    const end = value.indexOf(']', start + 7)
+    if (end < 0) return output + value.slice(cursor)
+    output += value.slice(cursor, start)
+    output += `Audio: ${value.slice(start + 7, end)}`
+    cursor = end + 1
+  }
+  return output
+}
+
+export const plainTextAnswer = (value: string) => replaceSoundReferences(value)
+  .replace(/<br[\s/]*>/gi, '\n')
+  .replace(/<\/(?:div|p|li|tr|h[1-6])>/gi, '\n')
+  .replace(/<[^>]+>/g, ' ')
+  .replace(/&([a-z]+);/gi, (match, name: string) => entities[name.toLowerCase()] ?? match)
+  .replace(/[ \t]+\n/g, '\n')
+  .replace(/\n[ \t]+/g, '\n')
+  .replace(/[ \t]{2,}/g, ' ')
+  .replace(/\n{3,}/g, '\n\n')
+  .trim()
+
+export const renderCardFields = (
+  template: Pick<CardTemplate, 'id' | 'name' | 'promptFieldId' | 'answerFieldId' | 'supportingFieldIds' | 'responseMode'>,
+  values: Record<string, string>,
+  fields: Array<{ id: string; name: string }>,
+): CardRenderingProjection => {
+  const byId = new Map(fields.map((field) => [field.id, field]))
+  const promptField = byId.get(template.promptFieldId)
+  const answerField = byId.get(template.answerFieldId)
+  if (!promptField || !answerField) throw new Error('Card template fields are incomplete.')
+  const fieldValue = (field: { id: string; name: string }): RenderedCardField => ({
+    id: field.id,
+    label: field.name,
+    value: plainTextAnswer(values[field.id] || ''),
+  })
+  return {
+    templateId: template.id,
+    templateName: template.name,
+    prompt: fieldValue(promptField),
+    answer: fieldValue(answerField),
+    supporting: template.supportingFieldIds.map((id) => byId.get(id)).filter((field): field is { id: string; name: string } => Boolean(field)).map(fieldValue).filter((field) => field.value.length > 0),
+    responseMode: template.responseMode,
+  }
+}
+
+export const renderWorkspaceCard = (
+  card: Card,
+  note: Note,
+  template: CardTemplate,
+  fields: Array<{ id: string; name: string }>,
+): CardRenderingProjection => {
+  if (card.noteId !== note.id || card.templateId !== template.id) throw new Error('Card rendering references are inconsistent.')
+  return renderCardFields(template, note.fields, fields)
+}

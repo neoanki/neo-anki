@@ -2,6 +2,7 @@ import type { AppData } from '../types'
 import { createEmptyWorkspaceData } from '../data/seed'
 import { migrateWorkspaceData, parseWorkspaceData, type LegacyWorkspaceData } from './workspace-schema'
 import { createWorkspaceChangeSet, hasWorkspaceChanges } from './workspace-changes'
+import { appDataToWorkspaceDocumentV4 } from './workspace-v4'
 
 const STORAGE_KEY = 'neo-anki:data:v1'
 
@@ -137,7 +138,7 @@ export const saveData = async (data: AppData) => {
     desktopSaveQueue = save
     return save
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...data, workspaceDocumentV4: appDataToWorkspaceDocumentV4(data) }))
 }
 
 export const unlockPersistence = (data?: AppData) => {

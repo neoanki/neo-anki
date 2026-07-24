@@ -8,8 +8,8 @@ A TypeScript-first, device-first desktop spaced-repetition app that plans learni
 
 - FSRS scheduling with a forecast-aware daily target and any-size practice sessions; optional marketplace extensions add alternate backlog ordering.
 - Adaptive session composition: a balanced mix, one-area focus, or urgent reviews, sequenced as coherent context blocks instead of random category switching.
-- A basic prompt over a canonical knowledge model; optional marketplace extensions add reverse, cloze, typed-answer, audio, and image-occlusion prompts.
-- Visual authoring with media, multiple citations, duplicate detection, and actionable prompt-health diagnostics.
+- Native content types with named fields and reusable card templates. Templates select prompt, answer, supporting fields, and reveal or typed interaction without HTML, inline CSS, or card iframes.
+- Schema-driven authoring with a native live preview, media, multiple citations, duplicate detection, and actionable prompt-health diagnostics. Desktop, browser, and mobile use the same structured card projector.
 - Today, focused Review, searchable Library, and extension surfaces for goals, saved searches, import and export, and learning packs.
 - Goals & Saved Searches lets learners set goals that influence daily priorities and reopen frequently used Library searches.
 - Anki & CSV Import/Export previews and imports `.apkg`, `.colpkg`, and CSV files, exports the current collection, and creates a rollback checkpoint before every import. Known format limitations are documented in the [compatibility contract](docs/anki-compatibility.md).
@@ -33,7 +33,7 @@ Download the current macOS, Windows, or Linux build from the [latest GitHub rele
 - [Windows](docs/install-windows.md)
 - [Linux](docs/install-linux.md)
 
-On first launch, **Start fresh** creates an empty local workspace. Add your first knowledge item from Today, or open Extensions to install import, prompt-type, audio, planning, and sharing features. Keep an independent backup of important collections while Neo Anki remains pre-1.0.
+On first launch, **Start fresh** creates an empty local workspace. Add your first knowledge item from Today, customize fields and card templates in Settings, or open Extensions to install import, audio, planning, and sharing features. See [Card templates](docs/card-templates.md) for the native content model. Keep an independent backup of important collections while Neo Anki remains pre-1.0.
 
 ## Develop the desktop app
 

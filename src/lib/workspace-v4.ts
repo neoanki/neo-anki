@@ -6,7 +6,6 @@ import {
   type SourceEnvelope,
   type WorkspaceDocumentV4,
 } from '../../packages/compatibility-domain/src/index.js'
-import { projectAnkiSchedulingToFsrs } from './scheduler-strategy.js'
 import { renderWorkspaceCard } from './card-rendering.js'
 
 const legacyFrom = <T>(envelope: SourceEnvelope | undefined): Partial<T> => {
@@ -14,11 +13,11 @@ const legacyFrom = <T>(envelope: SourceEnvelope | undefined): Partial<T> => {
   return value && typeof value === 'object' ? structuredClone(value) as Partial<T> : {}
 }
 
-export const appDataToWorkspaceDocumentV4 = (data: AppData): WorkspaceDocumentV4 => migrateWorkspaceDocumentV3ToV4(structuredClone(data) as unknown as Parameters<typeof migrateWorkspaceDocumentV3ToV4>[0])
+const migrateAppDataToWorkspaceDocumentV4 = (data: AppData): WorkspaceDocumentV4 => migrateWorkspaceDocumentV3ToV4(structuredClone(data) as unknown as Parameters<typeof migrateWorkspaceDocumentV3ToV4>[0])
 
-const fallbackFsrs = (due: string): StoredFSRSCard => ({
-  due, stability: 0, difficulty: 0, elapsed_days: 0, scheduled_days: 0, reps: 0, lapses: 0, state: 0, learning_steps: 0,
-})
+export const appDataToWorkspaceDocumentV4 = (data: AppData): WorkspaceDocumentV4 => data.workspaceDocumentV4
+  ? refreshWorkspaceDocumentV4FromProjection(data, parseWorkspaceDocumentV4(data.workspaceDocumentV4))
+  : migrateAppDataToWorkspaceDocumentV4(data)
 
 /**
  * Compatibility adapter for the legacy UI projection. The durable authority is
@@ -34,10 +33,8 @@ const projectWorkspaceDocumentV4ToAppData = (document: WorkspaceDocumentV4): App
   const presetById = new Map(workspace.presets.map((value) => [value.id, value]))
   const noteById = new Map(workspace.notes.map((value) => [value.id, value]))
   const cardsByNote = new Map<string, WorkspaceDocumentV4['workspace']['cards']>()
-  const reviewsByCard = new Map<string, WorkspaceDocumentV4['workspace']['reviews']>()
   const cardById = new Map(workspace.cards.map((value) => [value.id, value]))
   for (const card of workspace.cards) { const values = cardsByNote.get(card.noteId); if (values) values.push(card); else cardsByNote.set(card.noteId, [card]) }
-  for (const review of workspace.reviews) { const values = reviewsByCard.get(review.cardId); if (values) values.push(review); else reviewsByCard.set(review.cardId, [review]) }
   const tombstonedNotes = new Set((clientState.tombstones || []).filter((value) => value.kind === 'note').map((value) => value.id))
   const tombstonedCards = new Set((clientState.tombstones || []).filter((value) => value.kind === 'card').map((value) => value.id))
   const extensionDataByNote = new Map<string, Record<string, unknown>>()
@@ -63,9 +60,9 @@ const projectWorkspaceDocumentV4ToAppData = (document: WorkspaceDocumentV4): App
       citations: Array.isArray(legacy.citations) ? legacy.citations : [],
       mediaIds: Array.isArray(legacy.mediaIds) ? legacy.mediaIds : [],
       occlusions: Array.isArray(legacy.occlusions) ? legacy.occlusions : [],
-      noteModel: noteType ? {
-        noteTypeId: noteType.id,
-        noteTypeName: noteType.name,
+      contentModel: noteType ? {
+        contentTypeId: noteType.id,
+        contentTypeName: noteType.name,
         fields: noteType.fieldIds.map((fieldId) => {
           const field = fieldById.get(fieldId)
           return { id: fieldId, name: field?.name || fieldId, ordinal: field?.ordinal || 0, value: note.fields[fieldId] || '' }
@@ -84,21 +81,14 @@ const projectWorkspaceDocumentV4ToAppData = (document: WorkspaceDocumentV4): App
   const cards = workspace.cards.filter((card) => !tombstonedCards.has(card.id) && !tombstonedNotes.has(card.noteId)).map((card): PracticeCard => {
     const legacy = legacyFrom<PracticeCard>(envelopeById.get(card.sourceEnvelopeId || ''))
     const scheduling = card.scheduling
-    const due = scheduling.strategy === 'neo-fsrs' ? scheduling.dueAt : scheduling.dueAt || workspace.updatedAt
     const preset = presetById.get(card.presetId)
-    const importedReviews = (reviewsByCard.get(card.id) || []).map((review): ReviewEvent => ({
-      id: review.id, cardId: review.cardId, rating: review.rating, kind: review.kind,
-      reversesReviewId: review.reversesReviewId, reviewedAt: review.reviewedAt,
-      durationSeconds: review.durationMilliseconds / 1000,
-      previousDue: review.reviewedAt, nextDue: review.reviewedAt, scheduler: review.scheduler,
-    }))
-    const fsrs = (scheduling.strategy === 'neo-fsrs' ? {
+    const fsrs = {
       due: scheduling.dueAt, stability: scheduling.stability, difficulty: scheduling.difficulty,
       elapsed_days: scheduling.elapsedDays, scheduled_days: scheduling.scheduledDays,
       reps: scheduling.reps, lapses: scheduling.lapses, state: scheduling.state,
       learning_steps: 0,
       last_review: scheduling.lastReviewAt,
-    } : preset ? projectAnkiSchedulingToFsrs(scheduling, importedReviews, preset, workspace.updatedAt) : { ...fallbackFsrs(due), scheduled_days: Math.max(0, scheduling.intervalDays), reps: Math.max(0, scheduling.repetitions), lapses: Math.max(0, scheduling.lapses) }) as StoredFSRSCard
+    } as StoredFSRSCard
     const template = templateById.get(card.templateId)
     const deck = deckById.get(card.deckId)
     return {
@@ -106,7 +96,7 @@ const projectWorkspaceDocumentV4ToAppData = (document: WorkspaceDocumentV4): App
       deckName: deck?.name || 'Default',
       presetId: card.presetId,
       schedulerOptions: preset ? { desiredRetention: preset.desiredRetention, maximumIntervalDays: preset.maximumIntervalDays, learningStepsMinutes: [...preset.learningStepsMinutes], relearningStepsMinutes: [...preset.relearningStepsMinutes], newCardsPerDay: preset.newCardsPerDay, reviewsPerDay: preset.reviewsPerDay, buryNewSiblings: preset.buryNewSiblings, buryReviewSiblings: preset.buryReviewSiblings, leechThreshold: preset.leechThreshold, leechAction: preset.leechAction } : undefined,
-      variant: typeof legacy.variant === 'string' ? legacy.variant : noteTypeById.get(noteById.get(card.noteId)?.noteTypeId || '')?.kind === 'cloze' ? 'cloze' : /type:/i.test(template?.questionFormat || '') ? 'typed' : card.ordinal > 0 ? 'reverse' : 'forward',
+      variant: typeof legacy.variant === 'string' ? legacy.variant : noteTypeById.get(noteById.get(card.noteId)?.noteTypeId || '')?.kind === 'deletion' ? 'deletion' : template?.responseMode === 'type' ? 'typed' : card.ordinal > 0 ? 'reverse' : 'forward',
       occlusionId: legacy.occlusionId,
       promptData: legacy.promptData,
       suspended: card.suspended,
@@ -116,6 +106,9 @@ const projectWorkspaceDocumentV4ToAppData = (document: WorkspaceDocumentV4): App
       leech: card.leech ?? legacy.leech,
       fsrs,
       scheduling: structuredClone(scheduling),
+      rendering: template && noteById.get(card.noteId) && noteTypeById.get(noteById.get(card.noteId)!.noteTypeId)
+        ? renderWorkspaceCard(card, noteById.get(card.noteId)!, template, noteTypeById.get(noteById.get(card.noteId)!.noteTypeId)!.fieldIds.map((id) => ({ id, name: fieldById.get(id)?.name || id })))
+        : undefined,
       estimatedSeconds: typeof legacy.estimatedSeconds === 'number' ? legacy.estimatedSeconds : 14,
       createdAt: card.createdAt,
       updatedAt: card.updatedAt,
@@ -133,11 +126,10 @@ const projectWorkspaceDocumentV4ToAppData = (document: WorkspaceDocumentV4): App
       durationSeconds: review.durationMilliseconds / 1000,
       deviceId: legacy.deviceId,
       rawDurationSeconds: legacy.rawDurationSeconds,
-      previousDue: legacy.previousDue || (storedCard?.scheduling.strategy === 'neo-fsrs' ? storedCard.scheduling.dueAt : storedCard?.scheduling.dueAt) || projectedCard?.fsrs.due || review.reviewedAt,
-      nextDue: legacy.nextDue || (storedCard?.scheduling.strategy === 'neo-fsrs' ? storedCard.scheduling.dueAt : storedCard?.scheduling.dueAt) || projectedCard?.fsrs.due || review.reviewedAt,
+      previousDue: legacy.previousDue || storedCard?.scheduling.dueAt || projectedCard?.fsrs.due || review.reviewedAt,
+      nextDue: legacy.nextDue || storedCard?.scheduling.dueAt || projectedCard?.fsrs.due || review.reviewedAt,
       previousCard: legacy.previousCard,
       previousScheduling: review.previousScheduling || legacy.previousScheduling,
-      scheduler: review.scheduler,
       previousEstimatedSeconds: review.previousEstimatedSeconds ?? legacy.previousEstimatedSeconds,
       previousCardState: review.previousCardState || legacy.previousCardState,
       siblingChanges: review.siblingChanges || legacy.siblingChanges,
@@ -154,7 +146,7 @@ const projectWorkspaceDocumentV4ToAppData = (document: WorkspaceDocumentV4): App
   return {
     version: 3,
     deviceId: workspace.deviceId,
-    items, cards, reviews, assets, renderingStyles: Object.fromEntries(workspace.noteTypes.map((value) => [value.id, value.css])),
+    items, cards, reviews, assets,
     goals: structuredClone(clientState.goals) as AppData['goals'],
     views: structuredClone(clientState.views) as AppData['views'],
     packs: structuredClone(clientState.packs) as AppData['packs'],
@@ -176,14 +168,7 @@ const createValidatedWorkspaceCardRenderer = (document: WorkspaceDocumentV4) => 
   const notes = new Map(workspace.notes.map((value) => [value.id, value]))
   const noteTypes = new Map(workspace.noteTypes.map((value) => [value.id, value]))
   const templates = new Map(workspace.templates.map((value) => [value.id, value]))
-  const decks = new Map(workspace.decks.map((value) => [value.id, value]))
   const fields = new Map(workspace.fields.map((value) => [value.id, value]))
-  const envelopes = new Map(workspace.sourceEnvelopes.map((value) => [value.id, value]))
-  const mediaUrl = (asset: WorkspaceDocumentV4['workspace']['media'][number]) => {
-    const legacy = legacyFrom<MediaAsset>(envelopes.get(asset.sourceEnvelopeId || ''))
-    return legacy.dataUrl || `neoanki-media://asset/${encodeURIComponent(asset.id)}?v=${asset.sha256.slice(0, 16)}`
-  }
-  const mediaByFilename = new Map(workspace.media.map((asset) => [asset.filename, mediaUrl(asset)]))
   return (cardId: string): CardRenderingProjection | null => {
     const card = cards.get(cardId)
     if (!card) return null
@@ -191,19 +176,17 @@ const createValidatedWorkspaceCardRenderer = (document: WorkspaceDocumentV4) => 
     const noteType = note && noteTypes.get(note.noteTypeId)
     const template = templates.get(card.templateId)
     if (!note || !noteType || !template) return null
-    const deckName = decks.get(card.deckId)?.name || 'Default'
-    return renderWorkspaceCard(card, note, noteType, template, noteType.fieldIds.map((id) => ({ id, name: fields.get(id)?.name || id })), deckName, workspace.media, mediaUrl, mediaByFilename)
+    return renderWorkspaceCard(card, note, template, noteType.fieldIds.map((id) => ({ id, name: fields.get(id)?.name || id })))
   }
 }
 
 export const renderValidatedWorkspaceCard = (document: WorkspaceDocumentV4, cardId: string): CardRenderingProjection | null => createValidatedWorkspaceCardRenderer(document)(cardId)
 
-/** Materialize imported templates once at commit time instead of rebuilding indexes during study. */
+/** Build the same native presentation projection for every practice card. */
 export const renderAllValidatedWorkspaceCards = (document: WorkspaceDocumentV4) => {
   const render = createValidatedWorkspaceCardRenderer(document)
   const rendered = new Map<string, CardRenderingProjection>()
   for (const card of document.workspace.cards) {
-    if (card.scheduling.strategy !== 'anki') continue
     const projection = render(card.id)
     if (projection) rendered.set(card.id, projection)
   }
@@ -211,29 +194,29 @@ export const renderAllValidatedWorkspaceCards = (document: WorkspaceDocumentV4) 
 }
 
 export const refreshWorkspaceDocumentV4FromProjection = (data: AppData, previous?: WorkspaceDocumentV4) => {
-  if (!previous) return appDataToWorkspaceDocumentV4(data)
+  if (!previous) return migrateAppDataToWorkspaceDocumentV4(data)
   const next = structuredClone(previous)
   const workspace = next.workspace
   const now = data.updatedAt
   const profile = workspace.profiles.find((value) => value.active) || workspace.profiles[0]
-  if (!profile) return appDataToWorkspaceDocumentV4(data)
+  if (!profile) return migrateAppDataToWorkspaceDocumentV4(data)
   let preset = workspace.presets.find((value) => value.profileId === profile.id)
   if (!preset) {
-    preset = { id: `preset:neo:${crypto.randomUUID()}`, revision: 1, createdAt: now, updatedAt: now, profileId: profile.id, name: 'Neo defaults', scheduler: 'neo-fsrs', desiredRetention: data.settings.retention, maximumIntervalDays: 36500, learningStepsMinutes: [1, 10], relearningStepsMinutes: [10], newCardsPerDay: 20, reviewsPerDay: 200, buryNewSiblings: data.settings.burySiblings, buryReviewSiblings: data.settings.burySiblings, leechThreshold: data.settings.leechThreshold, leechAction: data.settings.leechAction }
+    preset = { id: `preset:neo:${crypto.randomUUID()}`, revision: 1, createdAt: now, updatedAt: now, profileId: profile.id, name: 'Neo defaults', desiredRetention: data.settings.retention, maximumIntervalDays: 36500, learningStepsMinutes: [1, 10], relearningStepsMinutes: [10], newCardsPerDay: 20, reviewsPerDay: 200, buryNewSiblings: data.settings.burySiblings, buryReviewSiblings: data.settings.burySiblings, leechThreshold: data.settings.leechThreshold, leechAction: data.settings.leechAction }
     workspace.presets.push(preset)
   }
-  let neoType = workspace.noteTypes.find((value) => value.profileId === profile.id && value.name === 'Neo Basic')
+  let neoType = workspace.noteTypes.find((value) => value.profileId === profile.id && (value.name === 'Basic' || value.name === 'Neo Basic'))
   if (!neoType) {
     const typeId = `note-type:neo:${crypto.randomUUID()}`
-    const fieldIds = [`field:neo-front:${crypto.randomUUID()}`, `field:neo-back:${crypto.randomUUID()}`, `field:neo-context:${crypto.randomUUID()}`]
+    const fieldIds = [`field:neo-prompt:${crypto.randomUUID()}`, `field:neo-answer:${crypto.randomUUID()}`, `field:neo-context:${crypto.randomUUID()}`]
     const templateId = `template:neo-forward:${crypto.randomUUID()}`
     workspace.fields.push(
-      { id: fieldIds[0], revision: 1, createdAt: now, updatedAt: now, noteTypeId: typeId, name: 'Front', ordinal: 0, rtl: false, sticky: false },
-      { id: fieldIds[1], revision: 1, createdAt: now, updatedAt: now, noteTypeId: typeId, name: 'Back', ordinal: 1, rtl: false, sticky: false },
+      { id: fieldIds[0], revision: 1, createdAt: now, updatedAt: now, noteTypeId: typeId, name: 'Prompt', ordinal: 0, rtl: false, sticky: false },
+      { id: fieldIds[1], revision: 1, createdAt: now, updatedAt: now, noteTypeId: typeId, name: 'Answer', ordinal: 1, rtl: false, sticky: false },
       { id: fieldIds[2], revision: 1, createdAt: now, updatedAt: now, noteTypeId: typeId, name: 'Context', ordinal: 2, rtl: false, sticky: false },
     )
-    workspace.templates.push({ id: templateId, revision: 1, createdAt: now, updatedAt: now, noteTypeId: typeId, name: 'Forward', ordinal: 0, questionFormat: '{{Front}}', answerFormat: '{{FrontSide}}<hr>{{Back}}' })
-    neoType = { id: typeId, revision: 1, createdAt: now, updatedAt: now, profileId: profile.id, name: 'Neo Basic', fieldIds, templateIds: [templateId], css: '.card { font-family: system-ui, sans-serif; }', kind: 'standard' }
+    workspace.templates.push({ id: templateId, revision: 1, createdAt: now, updatedAt: now, noteTypeId: typeId, name: 'Forward', ordinal: 0, promptFieldId: fieldIds[0], answerFieldId: fieldIds[1], supportingFieldIds: [fieldIds[2]], responseMode: 'reveal' })
+    neoType = { id: typeId, revision: 1, createdAt: now, updatedAt: now, profileId: profile.id, name: 'Basic', fieldIds, templateIds: [templateId], kind: 'standard' }
     workspace.noteTypes.push(neoType)
   }
   const envelopeById = new Map(workspace.sourceEnvelopes.map((value) => [value.id, value]))
@@ -301,16 +284,17 @@ export const refreshWorkspaceDocumentV4FromProjection = (data: AppData, previous
     let note = notesById.get(item.id)
     const created = !note
     if (!note) {
-      note = { id: item.id, revision: 1, createdAt: item.createdAt, updatedAt: item.updatedAt, profileId: profile.id, noteTypeId: neoType.id, fields: {}, tags: [], marked: false }
+      const contentType = item.contentModel ? typeById.get(item.contentModel.contentTypeId) : undefined
+      note = { id: item.id, revision: 1, createdAt: item.createdAt, updatedAt: item.updatedAt, profileId: profile.id, noteTypeId: contentType?.id || neoType.id, fields: {}, tags: [], marked: false }
       workspace.notes.push(note)
       notesById.set(note.id, note)
     }
     const type = typeById.get(note.noteTypeId) || neoType
     const fields = type.fieldIds
     const updateNote = () => {
-      if (item.noteModel?.noteTypeId === type.id) {
+      if (item.contentModel?.contentTypeId === type.id) {
         const allowed = new Set(fields)
-        note!.fields = Object.fromEntries(item.noteModel!.fields.filter((field) => allowed.has(field.id)).map((field) => [field.id, field.value]))
+        note!.fields = Object.fromEntries(item.contentModel!.fields.filter((field) => allowed.has(field.id)).map((field) => [field.id, field.value]))
       } else {
         note!.fields = Object.fromEntries(fields.map((fieldId, index) => [fieldId, index === 0 ? item.prompt : index === 1 ? item.answer : index === 2 ? item.context : note!.fields[fieldId] || '']))
       }
@@ -331,7 +315,10 @@ export const refreshWorkspaceDocumentV4FromProjection = (data: AppData, previous
     let entity = cardsById.get(card.id)
     const created = !entity
     if (!entity) {
-      const template = workspace.templates.find((value) => value.noteTypeId === neoType!.id)!
+      const note = notesById.get(item.id)
+      const template = workspace.templates.find((value) => value.id === card.rendering?.templateId && value.noteTypeId === note?.noteTypeId)
+        || workspace.templates.find((value) => value.noteTypeId === note?.noteTypeId)
+        || workspace.templates.find((value) => value.noteTypeId === neoType!.id)!
       entity = { id: card.id, revision: 1, createdAt: card.createdAt, updatedAt: card.updatedAt, profileId: profile.id, noteId: item.id, templateId: template.id, deckId: deckFor(item.collection).id, presetId: preset.id, ordinal: template.ordinal, flags: card.flags || 0, suspended: card.suspended, scheduling: { strategy: 'neo-fsrs', queue: card.fsrs.reps ? 'review' : 'new', dueAt: card.fsrs.due, stability: card.fsrs.stability, difficulty: card.fsrs.difficulty, elapsedDays: card.fsrs.elapsed_days, scheduledDays: card.fsrs.scheduled_days, reps: card.fsrs.reps, lapses: card.fsrs.lapses, state: card.fsrs.state, lastReviewAt: card.fsrs.last_review } }
       workspace.cards.push(entity)
       cardsById.set(entity.id, entity)
@@ -346,9 +333,7 @@ export const refreshWorkspaceDocumentV4FromProjection = (data: AppData, previous
       entity!.buriedBy = card.buriedBy
       entity!.flags = card.flags || 0
       entity!.leech = card.leech
-      entity!.scheduling = card.scheduling?.strategy === 'anki'
-        ? structuredClone(card.scheduling)
-        : { strategy: 'neo-fsrs', queue: card.scheduling?.queue || (card.fsrs.reps ? 'review' : 'new'), dueAt: card.fsrs.due, stability: card.fsrs.stability, difficulty: card.fsrs.difficulty, elapsedDays: card.fsrs.elapsed_days, scheduledDays: card.fsrs.scheduled_days, reps: card.fsrs.reps, lapses: card.fsrs.lapses, state: card.fsrs.state, lastReviewAt: card.fsrs.last_review, continuityOverrideDueAt: card.scheduling?.strategy === 'neo-fsrs' ? card.scheduling.continuityOverrideDueAt : undefined }
+      entity!.scheduling = { strategy: 'neo-fsrs', queue: card.scheduling?.queue || (card.fsrs.reps ? 'review' : 'new'), dueAt: card.fsrs.due, stability: card.fsrs.stability, difficulty: card.fsrs.difficulty, elapsedDays: card.fsrs.elapsed_days, scheduledDays: card.fsrs.scheduled_days, reps: card.fsrs.reps, lapses: card.fsrs.lapses, state: card.fsrs.state, lastReviewAt: card.fsrs.last_review, continuityOverrideDueAt: card.scheduling?.continuityOverrideDueAt }
     }
     if (created) updateCard(); else mutate(entity, updateCard, card.updatedAt)
     syncLegacy(entity, { variant: card.variant, occlusionId: card.occlusionId, promptData: card.promptData, estimatedSeconds: card.estimatedSeconds, leech: card.leech })
@@ -356,7 +341,7 @@ export const refreshWorkspaceDocumentV4FromProjection = (data: AppData, previous
   const existingReviews = new Set(workspace.reviews.map((value) => value.id))
   for (const review of data.reviews) if (!existingReviews.has(review.id)) {
     const currentCard = cardsById.get(review.cardId)
-    const entity = { id: review.id, revision: 1, createdAt: review.reviewedAt, updatedAt: review.reviewedAt, profileId: profile.id, cardId: review.cardId, kind: review.kind || 'review' as const, rating: review.rating, reviewedAt: review.reviewedAt, durationMilliseconds: Math.max(0, Math.round(review.durationSeconds * 1000)), intervalBefore: review.previousCard?.scheduled_days || 0, intervalAfter: Math.max(0, Math.round((Date.parse(review.nextDue) - Date.parse(review.reviewedAt)) / 86_400_000)), scheduler: review.scheduler || 'neo-fsrs' as const, reversesReviewId: review.reversesReviewId, previousScheduling: review.previousScheduling ? structuredClone(review.previousScheduling) : undefined, nextScheduling: currentCard ? structuredClone(currentCard.scheduling) : undefined, previousEstimatedSeconds: review.previousEstimatedSeconds, previousCardState: review.previousCardState ? structuredClone(review.previousCardState) : undefined, siblingChanges: review.siblingChanges ? structuredClone(review.siblingChanges) : undefined, sourceEnvelopeId: undefined }
+    const entity = { id: review.id, revision: 1, createdAt: review.reviewedAt, updatedAt: review.reviewedAt, profileId: profile.id, cardId: review.cardId, kind: review.kind || 'review' as const, rating: review.rating, reviewedAt: review.reviewedAt, durationMilliseconds: Math.max(0, Math.round(review.durationSeconds * 1000)), intervalBefore: review.previousCard?.scheduled_days || 0, intervalAfter: Math.max(0, Math.round((Date.parse(review.nextDue) - Date.parse(review.reviewedAt)) / 86_400_000)), reversesReviewId: review.reversesReviewId, previousScheduling: review.previousScheduling ? structuredClone(review.previousScheduling) : undefined, nextScheduling: currentCard ? structuredClone(currentCard.scheduling) : undefined, previousEstimatedSeconds: review.previousEstimatedSeconds, previousCardState: review.previousCardState ? structuredClone(review.previousCardState) : undefined, siblingChanges: review.siblingChanges ? structuredClone(review.siblingChanges) : undefined, sourceEnvelopeId: undefined }
     workspace.reviews.push(entity)
     syncLegacy(entity, { deviceId: review.deviceId, rawDurationSeconds: review.rawDurationSeconds, previousDue: review.previousDue, nextDue: review.nextDue, previousCard: review.previousCard })
   }

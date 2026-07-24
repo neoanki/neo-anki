@@ -334,12 +334,6 @@ const registerDesktopIpc = () => {
     return workspaceStore.workspaceV4Document()
   })
 
-  ipcMain.handle('neo-anki:load-card-rendering', async (event, cardId: string) => {
-    assertTrustedSender(event)
-    await saveQueue.catch(() => undefined)
-    return workspaceStore.cardRendering(cardId)
-  })
-
   ipcMain.handle('neo-anki:apply-core-workspace-patch-v2', async (event, patch: WorkspacePatchV2) => {
     assertTrustedSender(event)
     await saveQueue.catch(() => undefined)

@@ -19,6 +19,6 @@ export const projectKnowledgeItems = (workspace: WorkspaceV4): KnowledgeItemProj
     deckName: workspace.decks.find((deck) => deck.id === card.deckId)?.name || 'Missing deck',
     tags: [...text.tags],
     suspended: card.suspended,
-    dueAt: card.scheduling.strategy === 'neo-fsrs' ? card.scheduling.dueAt : undefined,
+    dueAt: card.scheduling.dueAt,
   }
 })
