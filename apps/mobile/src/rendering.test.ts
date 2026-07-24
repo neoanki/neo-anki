@@ -14,8 +14,8 @@ describe('mobile native card rendering', () => {
     expect(rendering).toEqual({
       templateId: document.workspace.templates[0]?.id,
       templateName: 'Recall',
-      prompt: expect.objectContaining({ label: 'Front', value: 'Question' }),
-      answer: expect.objectContaining({ label: 'Back', value: 'Answer' }),
+      prompt: expect.objectContaining({ label: 'Prompt', value: 'Question' }),
+      answer: expect.objectContaining({ label: 'Answer', value: 'Answer' }),
       supporting: [],
       responseMode: 'reveal',
     })

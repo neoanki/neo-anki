@@ -104,6 +104,11 @@ describe('Workspace v4 compatibility domain', () => {
     const migrated = migrateWorkspaceV3ToV4(legacy, 'workspace')
     expect(legacy).toEqual(snapshot)
     expect(migrated.cards[0]).toMatchObject({ suspended: true, scheduling: { dueAt: '2026-08-01T12:00:00.000Z', stability: 12 } })
+    expect(migrated.fields.map((field) => [field.id, field.name])).toEqual([
+      ['field:prompt', 'Prompt'],
+      ['field:answer', 'Answer'],
+      ['field:context', 'Context'],
+    ])
     expect(migrated.sourceEnvelopes[0].opaque).toMatchObject({ extensionData: { plugin: { safe: true } }, legacy: { id: 'item', prompt: 'P' } })
   })
 
@@ -114,20 +119,23 @@ describe('Workspace v4 compatibility domain', () => {
       presets: Array<Record<string, unknown>>
       cards: Array<Record<string, unknown>>
       fields: Array<{ id: string }>
-      notes: Array<{ fields: Record<string, string> }>
+      notes: Array<{ fields: Record<string, string>; sourceEnvelopeId?: string }>
       [key: string]: unknown
     }
     legacy.noteTypes[0].kind = 'cloze'
     legacy.noteTypes[0].css = '.card { color: red; }'
-    legacy.templates[0] = { ...legacy.templates[0], questionFormat: '{{Front}}', answerFormat: '{{FrontSide}}<hr>{{Back}}' }
-    legacy.notes[0].fields[legacy.fields[0].id] = '&amp;lt;b&amp;gt;Prompt&amp;lt;/b&amp;gt;'
+    legacy.templates[0] = { ...legacy.templates[0], questionFormat: '{{Front}}{{type:Back}}', answerFormat: '{{FrontSide}}<hr>{{Back}}' }
+    legacy.notes[0].fields[legacy.fields[0].id] = '&amp;lt;b&amp;gt;Prompt&amp;lt;/b&amp;gt;<img src="legacy.png">'
+    legacy.notes[0].sourceEnvelopeId = 'source:legacy-note'
+    legacy.media = [{ ...base, id: 'media:legacy-image', profileId: 'profile', filename: 'legacy.png', mimeType: 'application/octet-stream', byteLength: 8, sha256: 'a'.repeat(64), storageKey: 'a'.repeat(64) }]
+    legacy.sourceEnvelopes = [{ ...base, id: 'source:legacy-note', profileId: 'profile', format: 'anki-apkg', sourceId: 'legacy-note', schemaVersion: 'legacy', opaque: { row: {} } }]
     delete legacy.templates[0].promptFieldId
     delete legacy.templates[0].answerFieldId
     delete legacy.templates[0].supportingFieldIds
     delete legacy.templates[0].responseMode
     legacy.presets[0].scheduler = 'anki'
     legacy.cards[0].clozeOrdinal = 1
-    legacy.cards[0].scheduling = { strategy: 'anki', queue: 'review', due: 10, intervalDays: 4, easeFactor: 2500, repetitions: 3, lapses: 1, remainingSteps: 0, mod: 1_700_000_000 }
+    legacy.cards[0].scheduling = { strategy: 'anki', queue: 'learn', due: 10, intervalDays: 0, easeFactor: 2500, repetitions: 1, lapses: 0, remainingSteps: 1, mod: 1_700_000_000 }
 
     const imported = parseWorkspaceDocumentV4({
       format: 'neo-anki-workspace',
@@ -138,10 +146,13 @@ describe('Workspace v4 compatibility domain', () => {
 
     expect(imported.workspace.noteTypes[0]).toMatchObject({ kind: 'deletion' })
     expect(imported.workspace.noteTypes[0]).not.toHaveProperty('css')
-    expect(imported.workspace.templates[0]).toMatchObject({ promptFieldId: expect.any(String), answerFieldId: expect.any(String), responseMode: 'reveal' })
+    expect(imported.workspace.templates[0]).toMatchObject({ promptFieldId: expect.any(String), answerFieldId: expect.any(String), responseMode: 'type' })
     expect(imported.workspace.templates[0]).not.toHaveProperty('questionFormat')
     expect(imported.workspace.notes[0].fields[imported.workspace.templates[0].promptFieldId]).toBe('&lt;b&gt;Prompt&lt;/b&gt;')
-    expect(imported.workspace.cards[0]).toMatchObject({ deletionOrdinal: 1, scheduling: { strategy: 'neo-fsrs', dueAt: now, scheduledDays: 4, reps: 3 } })
+    expect(imported.workspace.notes[0].fields[imported.workspace.templates[0].answerFieldId]).toBe('Answer')
+    expect(imported.workspace.media[0]).toMatchObject({ id: 'media:legacy-image', mimeType: 'image/png' })
+    expect(imported.workspace.sourceEnvelopes[0].opaque).toMatchObject({ legacy: { mediaIds: ['media:legacy-image'] } })
+    expect(imported.workspace.cards[0]).toMatchObject({ deletionOrdinal: 1, scheduling: { strategy: 'neo-fsrs', queue: 'learn', dueAt: now, stability: 0.1, difficulty: 5, scheduledDays: 0, reps: 1 } })
     expect(imported.workspace.presets[0]).not.toHaveProperty('scheduler')
   })
 })

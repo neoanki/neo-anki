@@ -13,7 +13,11 @@ const legacyFrom = <T>(envelope: SourceEnvelope | undefined): Partial<T> => {
   return value && typeof value === 'object' ? structuredClone(value) as Partial<T> : {}
 }
 
-export const appDataToWorkspaceDocumentV4 = (data: AppData): WorkspaceDocumentV4 => migrateWorkspaceDocumentV3ToV4(structuredClone(data) as unknown as Parameters<typeof migrateWorkspaceDocumentV3ToV4>[0])
+const migrateAppDataToWorkspaceDocumentV4 = (data: AppData): WorkspaceDocumentV4 => migrateWorkspaceDocumentV3ToV4(structuredClone(data) as unknown as Parameters<typeof migrateWorkspaceDocumentV3ToV4>[0])
+
+export const appDataToWorkspaceDocumentV4 = (data: AppData): WorkspaceDocumentV4 => data.workspaceDocumentV4
+  ? refreshWorkspaceDocumentV4FromProjection(data, parseWorkspaceDocumentV4(data.workspaceDocumentV4))
+  : migrateAppDataToWorkspaceDocumentV4(data)
 
 /**
  * Compatibility adapter for the legacy UI projection. The durable authority is
@@ -190,12 +194,12 @@ export const renderAllValidatedWorkspaceCards = (document: WorkspaceDocumentV4) 
 }
 
 export const refreshWorkspaceDocumentV4FromProjection = (data: AppData, previous?: WorkspaceDocumentV4) => {
-  if (!previous) return appDataToWorkspaceDocumentV4(data)
+  if (!previous) return migrateAppDataToWorkspaceDocumentV4(data)
   const next = structuredClone(previous)
   const workspace = next.workspace
   const now = data.updatedAt
   const profile = workspace.profiles.find((value) => value.active) || workspace.profiles[0]
-  if (!profile) return appDataToWorkspaceDocumentV4(data)
+  if (!profile) return migrateAppDataToWorkspaceDocumentV4(data)
   let preset = workspace.presets.find((value) => value.profileId === profile.id)
   if (!preset) {
     preset = { id: `preset:neo:${crypto.randomUUID()}`, revision: 1, createdAt: now, updatedAt: now, profileId: profile.id, name: 'Neo defaults', desiredRetention: data.settings.retention, maximumIntervalDays: 36500, learningStepsMinutes: [1, 10], relearningStepsMinutes: [10], newCardsPerDay: 20, reviewsPerDay: 200, buryNewSiblings: data.settings.burySiblings, buryReviewSiblings: data.settings.burySiblings, leechThreshold: data.settings.leechThreshold, leechAction: data.settings.leechAction }
@@ -204,11 +208,11 @@ export const refreshWorkspaceDocumentV4FromProjection = (data: AppData, previous
   let neoType = workspace.noteTypes.find((value) => value.profileId === profile.id && (value.name === 'Basic' || value.name === 'Neo Basic'))
   if (!neoType) {
     const typeId = `note-type:neo:${crypto.randomUUID()}`
-    const fieldIds = [`field:neo-front:${crypto.randomUUID()}`, `field:neo-back:${crypto.randomUUID()}`, `field:neo-context:${crypto.randomUUID()}`]
+    const fieldIds = [`field:neo-prompt:${crypto.randomUUID()}`, `field:neo-answer:${crypto.randomUUID()}`, `field:neo-context:${crypto.randomUUID()}`]
     const templateId = `template:neo-forward:${crypto.randomUUID()}`
     workspace.fields.push(
-      { id: fieldIds[0], revision: 1, createdAt: now, updatedAt: now, noteTypeId: typeId, name: 'Front', ordinal: 0, rtl: false, sticky: false },
-      { id: fieldIds[1], revision: 1, createdAt: now, updatedAt: now, noteTypeId: typeId, name: 'Back', ordinal: 1, rtl: false, sticky: false },
+      { id: fieldIds[0], revision: 1, createdAt: now, updatedAt: now, noteTypeId: typeId, name: 'Prompt', ordinal: 0, rtl: false, sticky: false },
+      { id: fieldIds[1], revision: 1, createdAt: now, updatedAt: now, noteTypeId: typeId, name: 'Answer', ordinal: 1, rtl: false, sticky: false },
       { id: fieldIds[2], revision: 1, createdAt: now, updatedAt: now, noteTypeId: typeId, name: 'Context', ordinal: 2, rtl: false, sticky: false },
     )
     workspace.templates.push({ id: templateId, revision: 1, createdAt: now, updatedAt: now, noteTypeId: typeId, name: 'Forward', ordinal: 0, promptFieldId: fieldIds[0], answerFieldId: fieldIds[1], supportingFieldIds: [fieldIds[2]], responseMode: 'reveal' })

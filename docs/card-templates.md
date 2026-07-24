@@ -21,6 +21,12 @@ Every template on the selected content type creates one card when a knowledge it
 
 Templates contain no HTML, CSS, scripts, or presentation markup. Review, Library, the authoring preview, desktop persistence, and mobile all call the same structured projector. Typography, spacing, colors, focus behavior, and responsive layout therefore stay consistent with the rest of the app.
 
+## Storage
+
+The authoritative Workspace v4 document stores content types, field definitions, card templates, notes, and cards as separate structured entities linked by stable IDs. A note stores only a map of field ID to plain text. A card stores the template ID it uses; prompt, answer, supporting fields, and interaction mode come from that template.
+
+Desktop stores the validated v4 graph in the SQLite `workspace_v4` record and keeps indexed relational projections for operational queries. Mobile stores the same validated document in its SQLite `workspace` record. The browser build persists the v4 document beside its temporary UI projection so template edits remain authoritative across reloads.
+
 ## Import and export
 
 External imports may contain legacy template markup or scheduling fields. The importer materializes their visible prompt and answer into native fields before the workspace is accepted. Original source metadata may be retained for rollback and export, but it is never used to render cards at runtime.

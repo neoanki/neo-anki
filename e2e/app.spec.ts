@@ -43,14 +43,14 @@ test('daily time changes the automatically planned workload', async ({ page }) =
 test('creates core forward prompts without optional extensions', async ({ page }) => {
   await startWith(page)
   await page.getByRole('button', { name: /new item/i }).click()
-  await page.getByLabel('Prompt').fill('What is the stable core prompt?')
-  await page.getByLabel('Answer').fill('Forward recall')
+  await page.getByLabel('Prompt', { exact: true }).fill('What is the stable core prompt?')
+  await page.getByLabel('Answer', { exact: true }).fill('Forward recall')
   await page.getByRole('button', { name: /add knowledge/i }).click()
   await expect(page.getByRole('status')).toContainText('safe new-material queue')
   await page.getByRole('button', { name: 'Library' }).first().click()
   const created = page.locator('.library-row').filter({ hasText: 'What is the stable core prompt?' })
   await expect(created).toBeVisible()
-  await expect(created.getByRole('button', { name: 'Basic' })).toBeVisible()
+  await expect(created.getByRole('button', { name: 'Recall' })).toBeVisible()
 })
 
 test('preserves an unfinished knowledge draft across an automatic reload', async ({ page }) => {
@@ -58,24 +58,24 @@ test('preserves an unfinished knowledge draft across an automatic reload', async
   await page.getByRole('button', { name: /new item/i }).click()
   await page.getByLabel('Prompt', { exact: true }).fill('Draft retained across extension reload?')
   await page.getByLabel('Answer', { exact: true }).fill('Yes, in session-scoped draft storage.')
-  await page.getByLabel('Extra context').fill('Do not lose this context either.')
+  await page.getByLabel('Context').fill('Do not lose this context either.')
   await page.getByLabel('Collection').fill('Reload acceptance')
   await page.getByLabel('Tags').fill('draft, reload')
 
   await page.reload()
 
   await expect(page.getByRole('heading', { name: 'New knowledge' })).toBeVisible()
-  await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('Draft retained across extension reload?')
-  await expect(page.getByLabel('Answer', { exact: true })).toHaveValue('Yes, in session-scoped draft storage.')
-  await expect(page.getByLabel('Extra context')).toHaveValue('Do not lose this context either.')
+  await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Draft retained across extension reload?')
+  await expect(page.getByRole('textbox', { name: 'Answer', exact: true })).toHaveValue('Yes, in session-scoped draft storage.')
+  await expect(page.getByRole('textbox', { name: /^Context/ })).toHaveValue('Do not lose this context either.')
   await expect(page.getByLabel('Collection')).toHaveValue('Reload acceptance')
   await expect(page.getByLabel('Tags')).toHaveValue('draft, reload')
 
   await page.getByRole('button', { name: 'Add knowledge item' }).click()
   await expect(page.getByRole('status')).toContainText('safe new-material queue')
   await page.reload()
-  await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('')
-  await expect(page.getByLabel('Answer', { exact: true })).toHaveValue('')
+  await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
+  await expect(page.getByRole('textbox', { name: 'Answer', exact: true })).toHaveValue('')
 })
 
 test('reload preserves a failed extension retry checkpoint without enabling a duplicate item', async ({ page }) => {
@@ -116,7 +116,7 @@ test('core forward review reveals the answer before grading', async ({ page }) =
   await expect(completionHeading).toBeFocused()
 })
 
-test('sandboxed imported templates resize without CSP or renderer errors', async ({ page }) => {
+test('native card fields expand without iframes or renderer errors', async ({ page }) => {
   const failures = observeRuntimeFailures(page)
   const data = onboarded()
   data.items = [data.items[0]]
@@ -124,67 +124,63 @@ test('sandboxed imported templates resize without CSP or renderer errors', async
     ...data.cards[0],
     itemId: data.items[0].id,
     rendering: {
-      questionHtml: '<div style="height:420px">Tall imported question</div>',
-      answerHtml: '<div style="height:460px">Tall imported answer</div>',
-      css: '.card { padding: 8px; }',
-      source: 'anki-template',
+      templateId: 'template:long-form',
+      templateName: 'Long-form recall',
+      prompt: { id: 'prompt', label: 'Prompt', value: Array.from({ length: 20 }, (_, index) => `Prompt line ${index + 1}`).join('\n') },
+      answer: { id: 'answer', label: 'Answer', value: 'A concise answer' },
+      supporting: [],
+      responseMode: 'reveal',
     },
   }]
   data.reviews = []
   await startWith(page, data)
 
   await page.locator('button.study-button').click()
-  const frame = page.locator('.sandboxed-card-frame')
-  await expect(frame).toBeVisible()
-  await expect.poll(() => frame.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(400)
+  const content = page.locator('.native-card-content')
+  await expect(content).toBeVisible()
+  await expect(content).toContainText('Prompt line 20')
+  await expect(page.locator('.review-card iframe')).toHaveCount(0)
+  await expect(content.locator('[style]')).toHaveCount(0)
   expect(failures).toEqual([])
 })
 
-test('sandboxed imported audio keeps a safe native replay control', async ({ page }) => {
+test('card media uses the host native audio control', async ({ page }) => {
   const data = onboarded()
-  data.items = [data.items[0]]
-  data.cards = [{
-    ...data.cards[0],
-    itemId: data.items[0].id,
-    rendering: {
-      questionHtml: '<p>Audio prompt</p>',
-      answerHtml: '<button class="audio-button" onclick="this.querySelector(\'audio\').play()"><audio src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="></audio></button>',
-      css: '',
-      source: 'anki-template',
-    },
+  const item = { ...data.items[0], mediaIds: ['audio-fixture'] }
+  data.items = [item]
+  data.cards = [{ ...data.cards[0], itemId: item.id }]
+  data.assets = [{
+    id: 'audio-fixture',
+    filename: 'prompt.wav',
+    mimeType: 'audio/wav',
+    dataUrl: 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=',
+    byteLength: 44,
+    hash: 'audio-fixture-hash',
+    altText: 'Spoken prompt',
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
   }]
   data.reviews = []
   await startWith(page, data)
 
   await page.locator('button.study-button').click()
-  await page.getByRole('button', { name: /reveal answer/i }).click()
-  const frame = page.locator('.sandboxed-card-frame').contentFrame()
-  await expect(frame.locator('button.audio-button')).toHaveCount(0)
-  await expect(frame.locator('audio[controls]')).toHaveCount(1)
+  await expect(page.locator('.review-card audio[controls]')).toHaveAttribute('src', /^data:audio\/wav/)
+  await expect(page.locator('.review-card iframe')).toHaveCount(0)
 })
 
-test('sandboxed imported templates cannot navigate away from the reviewed card', async ({ page }) => {
+test('card field text cannot inject markup or navigate the app', async ({ page }) => {
   const data = onboarded()
-  data.items = [data.items[0]]
-  data.cards = [{
-    ...data.cards[0],
-    itemId: data.items[0].id,
-    rendering: {
-      questionHtml: '<meta http-equiv="refresh" content="0;url=data:text/html,escaped-card"><p>Expected prompt</p><img src="neoanki-media://asset/local-image">',
-      answerHtml: '<p>Expected answer</p>',
-      css: '</style><meta http-equiv="refresh" content="0;url=data:text/html,escaped-css"><style>',
-      source: 'anki-template',
-    },
-  }]
+  const item = { ...data.items[0], prompt: '<meta http-equiv="refresh" content="0;url=data:text/html,escaped-card"><p>Expected prompt</p><img src="neoanki-media://asset/local-image">', answer: '<strong>Expected answer</strong>' }
+  data.items = [item]
+  data.cards = [{ ...data.cards[0], itemId: item.id }]
   data.reviews = []
   await startWith(page, data)
   await page.locator('button.study-button').click()
 
-  const cardFrame = page.locator('.sandboxed-card-frame')
-  await expect(cardFrame).toBeVisible()
   await page.waitForTimeout(250)
-  expect(await cardFrame.contentFrame().locator('body').textContent()).toContain('Expected prompt')
-  await expect(cardFrame.contentFrame().locator('img')).toHaveAttribute('src', 'neoanki-media://asset/local-image')
+  await expect(page.locator('.native-card-face[aria-label="Practice question"]')).toContainText('Expected prompt')
+  await expect(page.locator('.native-card-content meta, .native-card-content img, .native-card-content iframe')).toHaveCount(0)
+  expect(page.url()).not.toContain('escaped-card')
 })
 
 test('undo restores the previous review exactly enough to grade again', async ({ page }) => {
@@ -195,11 +191,11 @@ test('undo restores the previous review exactly enough to grade again', async ({
   data.reviews = []
   await startWith(page, data)
   await page.locator('button.study-button').click()
-  const firstPrompt = await page.locator('.prompt-content h1').textContent()
+  const firstPrompt = await page.locator('.native-card-face[aria-label="Practice question"]').textContent()
   await page.getByRole('button', { name: /reveal answer/i }).click()
   await page.locator('button.grade-button.recalled').click()
   await page.getByRole('button', { name: /^undo$/i }).click()
-  await expect(page.locator('.prompt-content h1')).toHaveText(firstPrompt || '')
+  await expect(page.locator('.native-card-face[aria-label="Practice question"]')).toHaveText(firstPrompt || '')
   await expect(page.locator('.answer-content')).toBeVisible()
   await expect(page.locator('button.grade-button.recalled')).toBeVisible()
 })

@@ -143,8 +143,8 @@ describe('application workflows', () => {
   it('creates basic knowledge and exposes it in the library', async () => {
     renderApp()
     await userEvent.click(screen.getByRole('button', { name: /new item/i }))
-    await userEvent.type(await screen.findByLabelText('Front'), 'What is the testing pyramid?')
-    await userEvent.type(screen.getByLabelText('Back'), 'Unit, integration, and end-to-end tests')
+    await userEvent.type(await screen.findByLabelText('Prompt'), 'What is the testing pyramid?')
+    await userEvent.type(screen.getByLabelText('Answer'), 'Unit, integration, and end-to-end tests')
     await userEvent.click(screen.getByRole('button', { name: 'Add knowledge item' }))
     expect(screen.getByRole('status')).toHaveTextContent(/safe new-material queue/i)
     await userEvent.click(screen.getAllByRole('button', { name: 'Library' })[0])
@@ -162,7 +162,7 @@ describe('application workflows', () => {
     expect(save).toBeEnabled()
   })
 
-  it('edits Neo Basic with product terminology while preserving named custom models and field synchronization', async () => {
+  it('edits native and imported content through their stored field definitions', async () => {
     const data = createSeedData()
     data.settings.onboardingComplete = true
     const core = data.items[0]
@@ -171,10 +171,19 @@ describe('application workflows', () => {
       contentTypeId: 'note-type:neo-basic',
       contentTypeName: 'Neo Basic',
       fields: [
-        { id: 'field:front', name: 'Front', ordinal: 0, value: core.prompt },
-        { id: 'field:back', name: 'Back', ordinal: 1, value: core.answer },
+        { id: 'field:prompt', name: 'Prompt', ordinal: 0, value: core.prompt },
+        { id: 'field:answer', name: 'Answer', ordinal: 1, value: core.answer },
         { id: 'field:context', name: 'Context', ordinal: 2, value: core.context },
       ],
+    }
+    const coreCard = data.cards.find((card) => card.itemId === core.id)!
+    coreCard.rendering = {
+      templateId: 'template:recall',
+      templateName: 'Recall',
+      prompt: { id: 'field:prompt', label: 'Prompt', value: core.prompt },
+      answer: { id: 'field:answer', label: 'Answer', value: core.answer },
+      supporting: [{ id: 'field:context', label: 'Context', value: core.context }],
+      responseMode: 'reveal',
     }
     custom.contentModel = {
       contentTypeId: 'note-type:imported-custom',
@@ -190,12 +199,10 @@ describe('application workflows', () => {
     await userEvent.click(screen.getAllByRole('button', { name: 'Library' })[0])
 
     await userEvent.click(screen.getByRole('button', { name: `Edit ${core.prompt}` }))
-    expect(screen.getByRole('group', { name: 'Knowledge content' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Fields · Neo Basic' })).toBeInTheDocument()
     expect(screen.getByLabelText('Prompt')).toHaveValue(core.prompt)
     expect(screen.getByLabelText('Answer')).toHaveValue(core.answer)
     expect(screen.getByRole('textbox', { name: 'Context' })).toHaveValue(core.context)
-    expect(screen.queryByLabelText('Front')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Back')).not.toBeInTheDocument()
 
     await userEvent.clear(screen.getByLabelText('Prompt'))
     await userEvent.type(screen.getByLabelText('Prompt'), 'Edited product prompt')
@@ -210,13 +217,18 @@ describe('application workflows', () => {
       const item = stored.items.find((candidate) => candidate.id === core.id)!
       expect(item).toMatchObject({ prompt: 'Edited product prompt', answer: 'Edited product answer', context: 'Edited optional context' })
       expect(item.contentModel?.fields.map((field) => field.value)).toEqual(['Edited product prompt', 'Edited product answer', 'Edited optional context'])
+      expect(stored.cards.find((card) => card.itemId === core.id)?.rendering).toMatchObject({
+        prompt: { value: 'Edited product prompt' },
+        answer: { value: 'Edited product answer' },
+        supporting: [{ value: 'Edited optional context' }],
+      })
     })
 
     await userEvent.click(screen.getByRole('button', { name: `Edit ${custom.prompt}` }))
     expect(screen.getByRole('group', { name: 'Fields · Imported Custom' })).toBeInTheDocument()
     expect(screen.getByLabelText('Question text')).toHaveValue(custom.prompt)
     expect(screen.getByLabelText('Expected response')).toHaveValue(custom.answer)
-    expect(screen.getByLabelText('Hint')).toHaveValue(custom.context)
+    expect(screen.getByRole('textbox', { name: /^Hint/ })).toHaveValue(custom.context)
     expect(screen.queryByLabelText('Prompt')).not.toBeInTheDocument()
   })
 

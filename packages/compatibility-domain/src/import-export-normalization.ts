@@ -9,6 +9,23 @@ type UnknownRecord = Record<string, unknown>
 const record = (value: unknown): UnknownRecord => value && typeof value === 'object' ? value as UnknownRecord : {}
 const list = (value: unknown): UnknownRecord[] => Array.isArray(value) ? value.map(record) : []
 const text = (value: unknown) => typeof value === 'string' ? value : ''
+const inferredMediaType = (filename: string) => {
+  const extension = filename.slice(filename.lastIndexOf('.') + 1).toLowerCase()
+  return ({
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    svg: 'image/svg+xml',
+    mp3: 'audio/mpeg',
+    m4a: 'audio/mp4',
+    ogg: 'audio/ogg',
+    wav: 'audio/wav',
+    mp4: 'video/mp4',
+    webm: 'video/webm',
+  } as Record<string, string>)[extension]
+}
 
 const legacyEntities: Record<string, string> = {
   nbsp: ' ',
@@ -82,6 +99,13 @@ const applyConditionals = (format: string, values: Record<string, string>) => {
   return current
 }
 
+const typedAnswerField = (format: string) => {
+  const start = format.toLowerCase().indexOf('{{type:')
+  if (start < 0) return ''
+  const end = format.indexOf('}}', start + 7)
+  return end < 0 ? '' : format.slice(start + 7, end).trim()
+}
+
 const deletionSide = (value: string, ordinal: number, side: 'prompt' | 'answer') => value.replace(
   /{{c(\d+)::([\s\S]*?)(?:::(.*?))?}}/gi,
   (_match, rawOrdinal: string, content: string, hint: string | undefined) =>
@@ -104,6 +128,7 @@ const renderLegacySide = (
     const name = separator > 0 ? token.slice(separator + 1).trim() : token
     const value = values[name] || ''
     if (filter === 'cloze' || filter === 'cloze-only') return deletionSide(value, ordinal, side)
+    if (filter === 'type') return ''
     return value
   })
   return plainText(deletionSide(rendered, ordinal, side))
@@ -117,17 +142,18 @@ const nativeSchedule = (value: unknown, fallbackDueAt: string) => {
   const queue = source.queue === 'new' || source.queue === 'learn' || source.queue === 'review' || source.queue === 'relearn' || source.queue === 'preview'
     ? source.queue
     : repetitions ? 'review' : 'new'
+  const isNew = queue === 'new'
   return {
     strategy: 'neo-fsrs',
     queue,
     dueAt: Number.isFinite(Date.parse(text(source.dueAt))) ? source.dueAt : fallbackDueAt,
-    stability: Math.max(0, Number(source.stability) || interval),
-    difficulty: Math.min(10, Math.max(0, Number(source.difficulty) || 5)),
+    stability: isNew ? 0 : Math.max(0.1, Number(source.stability) || interval),
+    difficulty: isNew ? 0 : Math.min(10, Math.max(1, Number(source.difficulty) || 5)),
     elapsedDays: interval,
     scheduledDays: interval,
     reps: repetitions,
     lapses: Math.max(0, Math.trunc(Number(source.lapses) || 0)),
-    state: queue === 'new' ? 0 : queue === 'learn' ? 1 : queue === 'relearn' ? 3 : 2,
+    state: isNew ? 0 : queue === 'learn' ? 1 : queue === 'relearn' ? 3 : 2,
     ...(Number.isFinite(Date.parse(text(source.lastReviewAt))) ? { lastReviewAt: source.lastReviewAt } : {}),
   }
 }
@@ -138,7 +164,16 @@ const materializeLegacyTemplates = (workspace: UnknownRecord) => {
   const templates = list(workspace.templates)
   const notes = list(workspace.notes)
   const cards = list(workspace.cards)
+  const media = list(workspace.media)
+  const sourceEnvelopes = list(workspace.sourceEnvelopes)
+  const sourceEnvelopeById = new Map(sourceEnvelopes.map((envelope) => [text(envelope.id), envelope]))
   const now = text(workspace.updatedAt) || new Date(0).toISOString()
+
+  for (const asset of media) {
+    if (text(asset.mimeType) !== 'application/octet-stream') continue
+    const mimeType = inferredMediaType(text(asset.filename))
+    if (mimeType) asset.mimeType = mimeType
+  }
 
   for (const noteType of noteTypes) {
     const typeId = text(noteType.id)
@@ -154,6 +189,7 @@ const materializeLegacyTemplates = (workspace: UnknownRecord) => {
       const matchingCards = cards.filter((card) => text(card.templateId) === templateId)
       const questionFormat = text(template.questionFormat) || '{{Front}}'
       const answerFormat = text(template.answerFormat) || '{{Back}}'
+      const typedField = typedAnswerField(questionFormat)
       const legacyTemplate = structuredClone(template)
       const ordinals = legacyKind
         ? [...new Set(matchingCards.map((card) => Math.max(1, Math.trunc(Number(card.clozeOrdinal) || Number(card.ordinal) + 1))))].sort((a, b) => a - b)
@@ -175,7 +211,7 @@ const materializeLegacyTemplates = (workspace: UnknownRecord) => {
         target.promptFieldId = promptFieldId
         target.answerFieldId = answerFieldId
         target.supportingFieldIds = []
-        target.responseMode = /{{\s*type:/i.test(text(template.questionFormat)) ? 'type' : 'reveal'
+        target.responseMode = typedField ? 'type' : 'reveal'
         delete target.questionFormat
         delete target.answerFormat
         delete target.browserQuestionFormat
@@ -185,7 +221,7 @@ const materializeLegacyTemplates = (workspace: UnknownRecord) => {
           const noteFields = record(note.fields)
           const values = Object.fromEntries([...fieldNameById].map(([fieldId, name]) => [name, text(noteFields[fieldId])]))
           const prompt = renderLegacySide(questionFormat, values, 'prompt', ordinal || 1)
-          const answer = renderLegacySide(answerFormat, values, 'answer', ordinal || 1, prompt)
+          const answer = typedField ? plainText(values[typedField] || '') : renderLegacySide(answerFormat, values, 'answer', ordinal || 1, prompt)
           noteFields[promptFieldId] = prompt
           noteFields[answerFieldId] = answer
           note.fields = noteFields
@@ -199,6 +235,32 @@ const materializeLegacyTemplates = (workspace: UnknownRecord) => {
       }
     }
 
+    for (const note of ownedNotes) {
+      const noteFields = record(note.fields)
+      const fieldValues = Object.values(noteFields).map(text)
+      const mediaIds = media
+        .filter((asset) => {
+          const filename = text(asset.filename)
+          return filename.length > 0 && fieldValues.some((value) => value.includes(filename))
+        })
+        .map((asset) => text(asset.id))
+        .filter(Boolean)
+      const sourceEnvelope = sourceEnvelopeById.get(text(note.sourceEnvelopeId))
+      if (sourceEnvelope && mediaIds.length) {
+        const opaque = record(sourceEnvelope.opaque)
+        opaque.legacy = { ...record(opaque.legacy), mediaIds }
+        sourceEnvelope.opaque = opaque
+      }
+      for (const field of ownedFields) {
+        const fieldId = text(field.id)
+        noteFields[fieldId] = plainText(text(noteFields[fieldId]))
+      }
+      note.fields = noteFields
+    }
+    for (const field of ownedFields) {
+      delete field.font
+      delete field.fontSize
+    }
     noteType.fieldIds = fields.filter((field) => text(field.noteTypeId) === typeId).sort((left, right) => Number(left.ordinal) - Number(right.ordinal)).map((field) => field.id)
     noteType.templateIds = templates.filter((template) => text(template.noteTypeId) === typeId).sort((left, right) => Number(left.ordinal) - Number(right.ordinal)).map((template) => template.id)
     noteType.kind = legacyKind ? 'deletion' : 'standard'

@@ -372,9 +372,29 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const updateItem: AppContextValue['updateItem'] = async (id, changes) => {
     const updatedAt = new Date().toISOString()
+    const currentItem = dataRef.current.items.find((item) => item.id === id)
+    if (!currentItem) throw new Error('This knowledge item no longer exists.')
+    const updatedItem = { ...currentItem, ...changes, updatedAt }
+    const fieldValues = updatedItem?.contentModel ? Object.fromEntries(updatedItem.contentModel.fields.map((field) => [field.id, field.value])) : null
+    const fieldDefinitions = updatedItem?.contentModel?.fields.map((field) => ({ id: field.id, name: field.name })) || []
     const next = {
       ...dataRef.current,
-      items: dataRef.current.items.map((item) => item.id === id ? { ...item, ...changes, updatedAt } : item),
+      items: dataRef.current.items.map((item) => item.id === id ? updatedItem : item),
+      cards: dataRef.current.cards.map((card) => {
+        if (card.itemId !== id || !card.rendering || !fieldValues) return card
+        return {
+          ...card,
+          rendering: renderCardFields({
+            id: card.rendering.templateId,
+            name: card.rendering.templateName,
+            promptFieldId: card.rendering.prompt.id,
+            answerFieldId: card.rendering.answer.id,
+            supportingFieldIds: card.rendering.supporting.map((field) => field.id),
+            responseMode: card.rendering.responseMode,
+          }, fieldValues, fieldDefinitions),
+          updatedAt,
+        }
+      }),
       updatedAt,
     }
     setData(next)
@@ -599,6 +619,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const previous = appDataToWorkspaceDocumentV4(dataRef.current)
       const document = createWorkspaceDocumentV4(applyWorkspacePatchV2(previous.workspace, patch), previous.clientState)
       const projected = workspaceDocumentV4ToAppData(document)
+      projected.workspaceDocumentV4 = document
       const urls = new Map(dataRef.current.assets.map((asset) => [asset.id, asset.dataUrl]))
       projected.assets = projected.assets.map((asset) => ({ ...asset, dataUrl: urls.get(asset.id) || asset.dataUrl }))
       setData(projected)

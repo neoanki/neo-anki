@@ -247,6 +247,7 @@ code { padding: 2px 5px; border-radius: 4px; background: var(--surface-muted); c
 .editor-card, .create-preview, .insight-panel, .metric-card { border: 1px solid var(--border); border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-soft); }
 .editor-card { position: relative; padding: 28px; }
 .content-fields .form-field { margin-bottom: 4px; }
+.content-type-select { min-height: 46px !important; height: 46px; padding-block: 11px; }
 .template-summary { display: grid; gap: 5px; margin: -4px 0 22px; padding: 13px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-muted); }
 .template-summary strong { font-size: .78rem; }
 .template-summary span { color: var(--text-soft); font-size: .72rem; }

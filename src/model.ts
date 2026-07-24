@@ -203,7 +203,7 @@ export interface PackManifestItem {
   tags: string[]
   citations?: Omit<Citation, 'id'>[]
   cards?: Array<{ id: string; variant: PromptVariant; promptData?: Record<string, unknown>; occlusionId?: string }>
-  /** @deprecated Use cards for stable per-card identities and cloze ordinals. */
+  /** @deprecated Use cards for stable per-card identities and template targets. */
   variants?: PromptVariant[]
 }
 
@@ -276,6 +276,8 @@ export interface UserSettings {
 
 export interface AppData {
   version: 3
+  /** Browser-only durable authority while the legacy UI projection is retired. */
+  workspaceDocumentV4?: unknown
   deviceId: string
   items: KnowledgeItem[]
   cards: PracticeCard[]

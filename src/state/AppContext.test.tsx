@@ -78,13 +78,13 @@ const CustomStudyProbe = () => {
 const FailedAuthoringProbe = () => {
   const { addItem, data, persistenceState } = useApp()
   const fields = [
-    { id: 'field:front', name: 'Front', ordinal: 0, value: 'Ghost item' },
-    { id: 'field:back', name: 'Back', ordinal: 1, value: 'Must roll back' },
+    { id: 'field:prompt', name: 'Prompt', ordinal: 0, value: 'Ghost item' },
+    { id: 'field:answer', name: 'Answer', ordinal: 1, value: 'Must roll back' },
     { id: 'field:context', name: 'Context', ordinal: 2, value: '' },
   ]
   return <div>
     <output aria-label="failed authoring state">{`${data.items.length}:${persistenceState}`}</output>
-    <button onClick={() => void addItem({ prompt: 'Ghost item', answer: 'Must roll back', context: '', contentModel: { contentTypeId: 'note-type:neo-basic', contentTypeName: 'Basic', fields }, templates: [{ id: 'template:forward', name: 'Forward', promptFieldId: 'field:front', answerFieldId: 'field:back', supportingFieldIds: ['field:context'], responseMode: 'reveal' }], collection: '', tags: [], citations: [], assets: [], occlusions: [] }).catch(() => undefined)}>Fail add</button>
+    <button onClick={() => void addItem({ prompt: 'Ghost item', answer: 'Must roll back', context: '', contentModel: { contentTypeId: 'note-type:neo-basic', contentTypeName: 'Basic', fields }, templates: [{ id: 'template:forward', name: 'Forward', promptFieldId: 'field:prompt', answerFieldId: 'field:answer', supportingFieldIds: ['field:context'], responseMode: 'reveal' }], collection: '', tags: [], citations: [], assets: [], occlusions: [] }).catch(() => undefined)}>Fail add</button>
   </div>
 }
 

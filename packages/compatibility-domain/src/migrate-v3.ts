@@ -28,7 +28,7 @@ export const migrateWorkspaceV3ToV4 = (legacy: LegacyWorkspaceV3, workspaceId: s
   const now = new Date().toISOString()
   const profileId = 'profile:neo-v3'
   const noteTypeId = 'note-type:neo-basic'
-  const fieldIds = ['field:front', 'field:back', 'field:context']
+  const fieldIds = ['field:prompt', 'field:answer', 'field:context']
   const templateKind = (variant: string) => variant === 'reverse' ? 'reverse' : variant === 'typed' ? 'typed' : 'forward'
   const templateKinds = [...new Set(['forward', ...legacy.cards.map((card) => templateKind(card.variant))])]
   const templates: CardTemplate[] = templateKinds.map((kind, ordinal) => ({
@@ -59,8 +59,8 @@ export const migrateWorkspaceV3ToV4 = (legacy: LegacyWorkspaceV3, workspaceId: s
     profiles: [{ id: profileId, revision: 1, createdAt: now, updatedAt: now, name: 'Migrated Neo workspace', active: true }],
     noteTypes: [noteType],
     fields: [
-      { id: fieldIds[0], revision: 1, createdAt: now, updatedAt: now, noteTypeId, name: 'Front', ordinal: 0, rtl: false, sticky: false },
-      { id: fieldIds[1], revision: 1, createdAt: now, updatedAt: now, noteTypeId, name: 'Back', ordinal: 1, rtl: false, sticky: false },
+      { id: fieldIds[0], revision: 1, createdAt: now, updatedAt: now, noteTypeId, name: 'Prompt', ordinal: 0, rtl: false, sticky: false },
+      { id: fieldIds[1], revision: 1, createdAt: now, updatedAt: now, noteTypeId, name: 'Answer', ordinal: 1, rtl: false, sticky: false },
       { id: fieldIds[2], revision: 1, createdAt: now, updatedAt: now, noteTypeId, name: 'Context', ordinal: 2, rtl: false, sticky: false },
     ], templates, decks,
     presets: [{ id: 'preset:neo-v3', revision: 1, createdAt: now, updatedAt: now, profileId, name: 'Migrated Neo defaults', desiredRetention: legacy.settings.retention, maximumIntervalDays: 36500, learningStepsMinutes: [1, 10], relearningStepsMinutes: [10], newCardsPerDay: 20, reviewsPerDay: 200, buryNewSiblings: true, buryReviewSiblings: true, leechThreshold: 8, leechAction: 'flag' }],

@@ -40,13 +40,13 @@ describe('Workspace v4 production document adapter', () => {
       source: 'Native source',
       updatedAt: '2026-07-19T10:00:00.000Z',
     }
-    const card = { ...source.cards[0], variant: 'cloze', promptData: { clozeOrdinal: 2 }, occlusionId: 'occ-1', updatedAt: item.updatedAt }
+    const card = { ...source.cards[0], variant: 'targeted-recall', promptData: { targetOrdinal: 2 }, occlusionId: 'occ-1', updatedAt: item.updatedAt }
     const asset = { id: 'asset-1', filename: 'diagram.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==', byteLength: 1, hash: 'a'.repeat(64), altText: 'A labeled diagram', createdAt: item.updatedAt, updatedAt: item.updatedAt }
     const rich = { ...source, items: [item, ...source.items.slice(1)], cards: [card, ...source.cards.slice(1)], assets: [asset], updatedAt: item.updatedAt }
     const refreshed = refreshWorkspaceDocumentV4FromProjection(rich, initial)
     const projected = workspaceDocumentV4ToAppData(refreshed)
     expect(projected.items[0]).toMatchObject({ citations: item.citations, mediaIds: item.mediaIds, occlusions: item.occlusions, source: item.source })
-    expect(projected.cards[0]).toMatchObject({ variant: 'cloze', promptData: { clozeOrdinal: 2 }, occlusionId: 'occ-1' })
+    expect(projected.cards[0]).toMatchObject({ variant: 'targeted-recall', promptData: { targetOrdinal: 2 }, occlusionId: 'occ-1' })
     expect(projected.assets[0].altText).toBe('A labeled diagram')
 
     const unchanged = refreshWorkspaceDocumentV4FromProjection(projected, refreshed)

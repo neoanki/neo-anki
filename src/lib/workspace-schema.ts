@@ -424,6 +424,7 @@ export const migrateWorkspaceData = (input: LegacyWorkspaceData): AppData => {
   }))
   return parseWorkspaceData({
     version: 3,
+    workspaceDocumentV4: input.workspaceDocumentV4,
     deviceId: input.deviceId || crypto.randomUUID(),
     items,
     cards,

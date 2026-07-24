@@ -10,12 +10,12 @@ export const NativeCardContent = ({
   className?: string
 }) => (
   <div className={`native-card-content ${revealed ? 'revealed' : ''} ${className}`.trim()}>
-    <section className="native-card-face" aria-label="Prompt">
+    <section className="native-card-face" aria-label="Practice question">
       <span className="native-card-field-label">{content.prompt.label}</span>
       <div className="native-card-primary">{content.prompt.value || 'Empty prompt'}</div>
     </section>
     {revealed && (
-      <section className="native-card-face native-card-answer" aria-label="Answer">
+      <section className="native-card-face native-card-answer" aria-label="Revealed response">
         <span className="native-card-field-label">{content.answer.label}</span>
         <div className="native-card-primary">{content.answer.value || 'Empty answer'}</div>
         {content.supporting.length > 0 && (

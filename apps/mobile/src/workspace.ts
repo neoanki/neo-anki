@@ -4,13 +4,13 @@ import { fsrs, Rating, State, type Card as FsrsCard, type Grade, type Steps } fr
 
 const id = (prefix: string) => `${prefix}:${crypto.randomUUID()}`
 export const createEmptyWorkspace = (): WorkspaceDocumentV4 => {
-  const now = new Date().toISOString(); const profileId = id('profile'); const noteTypeId = id('note-type'); const frontId = id('field'); const backId = id('field'); const templateId = id('template'); const presetId = id('preset'); const deckId = id('deck')
+  const now = new Date().toISOString(); const profileId = id('profile'); const noteTypeId = id('note-type'); const promptId = id('field'); const answerId = id('field'); const templateId = id('template'); const presetId = id('preset'); const deckId = id('deck')
   const workspace: WorkspaceV4 = {
     version: 4, workspaceId: id('workspace'), revision: 1, deviceId: id('mobile'), createdAt: now, updatedAt: now,
     profiles: [{ id: profileId, revision: 1, createdAt: now, updatedAt: now, name: 'My collection', active: true }],
-    noteTypes: [{ id: noteTypeId, revision: 1, createdAt: now, updatedAt: now, profileId, name: 'Basic', fieldIds: [frontId, backId], templateIds: [templateId], kind: 'standard' }],
-    fields: [{ id: frontId, revision: 1, createdAt: now, updatedAt: now, noteTypeId, name: 'Front', ordinal: 0, rtl: false, sticky: false }, { id: backId, revision: 1, createdAt: now, updatedAt: now, noteTypeId, name: 'Back', ordinal: 1, rtl: false, sticky: false }],
-    templates: [{ id: templateId, revision: 1, createdAt: now, updatedAt: now, noteTypeId, name: 'Recall', ordinal: 0, promptFieldId: frontId, answerFieldId: backId, supportingFieldIds: [], responseMode: 'reveal' }],
+    noteTypes: [{ id: noteTypeId, revision: 1, createdAt: now, updatedAt: now, profileId, name: 'Basic', fieldIds: [promptId, answerId], templateIds: [templateId], kind: 'standard' }],
+    fields: [{ id: promptId, revision: 1, createdAt: now, updatedAt: now, noteTypeId, name: 'Prompt', ordinal: 0, rtl: false, sticky: false }, { id: answerId, revision: 1, createdAt: now, updatedAt: now, noteTypeId, name: 'Answer', ordinal: 1, rtl: false, sticky: false }],
+    templates: [{ id: templateId, revision: 1, createdAt: now, updatedAt: now, noteTypeId, name: 'Recall', ordinal: 0, promptFieldId: promptId, answerFieldId: answerId, supportingFieldIds: [], responseMode: 'reveal' }],
     presets: [{ id: presetId, revision: 1, createdAt: now, updatedAt: now, profileId, name: 'Neo defaults', desiredRetention: .9, maximumIntervalDays: 36_500, learningStepsMinutes: [1, 10], relearningStepsMinutes: [10], newCardsPerDay: 20, reviewsPerDay: 200, buryNewSiblings: true, buryReviewSiblings: true, leechThreshold: 8, leechAction: 'flag' }],
     decks: [{ id: deckId, revision: 1, createdAt: now, updatedAt: now, profileId, name: 'Default', presetId }],
     notes: [], cards: [], reviews: [], media: [], extensionRecords: [], sourceEnvelopes: [],
