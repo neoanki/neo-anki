@@ -17,6 +17,15 @@ declare global {
     recoverySourcePath?: string
   }
 
+  interface NeoAnkiDesktopLoadResultAsync {
+    dataJson: string | null
+    storagePath: string
+    recoveredFromBackup: boolean
+    migratedLegacyData?: boolean
+    error?: string
+    recoverySourcePath?: string
+  }
+
   interface NeoAnkiInstalledExtension {
     manifest: ExtensionPackageManifest
     enabled: boolean
@@ -44,7 +53,7 @@ declare global {
     rendererReady(): void
     workspaceUsable?(): void
     loadData(): NeoAnkiDesktopLoadResult
-    loadDataAsync?(): Promise<NeoAnkiDesktopLoadResult>
+    loadDataAsync?(): Promise<NeoAnkiDesktopLoadResultAsync>
     saveData(changes: WorkspaceChangeSet): Promise<void>
     exportBackup(): Promise<{ canceled: boolean; path?: string }>
     exportRecoverySource?(): Promise<{ canceled: boolean; path?: string }>

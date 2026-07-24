@@ -118,7 +118,21 @@ export const loadWorkspaceData = (): WorkspaceLoadResult => {
 
 export const reloadWorkspaceData = async (): Promise<WorkspaceLoadResult> => {
   const bridge = window.neoAnkiDesktop
-  return bridge?.loadDataAsync ? adoptDesktopLoad(await bridge.loadDataAsync()) : loadWorkspaceData()
+  if (!bridge?.loadDataAsync) return loadWorkspaceData()
+  const result = await bridge.loadDataAsync()
+  // The main process ships the projection as one JSON string (a single parse is
+  // markedly cheaper than structured-cloning the whole graph). Parse it once
+  // here, then reuse the shared adoption path unchanged.
+  const { dataJson, ...rest } = result
+  let data: unknown | null = null
+  if (dataJson !== null) {
+    try {
+      data = JSON.parse(dataJson)
+    } catch (error) {
+      return adoptDesktopLoad({ ...rest, data: null, error: result.error || (error instanceof Error ? error.message : 'The desktop workspace projection could not be parsed.') })
+    }
+  }
+  return adoptDesktopLoad({ ...rest, data })
 }
 
 export const loadData = (): AppData => {

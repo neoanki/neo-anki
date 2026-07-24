@@ -106,6 +106,30 @@ describe('WorkspaceStore', () => {
     store.close()
   })
 
+  it('serializes the same projection whether or not the legacy fast path is used', async () => {
+    const root = await temporaryRoot()
+    const initial = createSeedData()
+    await writeFile(join(root, 'neo-anki-data.json'), JSON.stringify(initial), 'utf8')
+
+    // Fast path: loadSerialized reuses the original file text, and it must parse
+    // back to exactly what load() returns.
+    let store = new WorkspaceStore(root, { allowUnvalidatedLegacyProjection: true })
+    const fastData = store.load()!
+    const fastJson = store.loadSerialized()!
+    expect(JSON.parse(fastJson)).toEqual(fastData)
+    store.finishDeferredLegacyMigration()
+    store.close()
+
+    // Database path: loadSerialized stringifies the committed projection, which
+    // must still round-trip to the same items/cards.
+    store = new WorkspaceStore(root)
+    const dbData = store.load()!
+    const dbJson = store.loadSerialized()!
+    expect(JSON.parse(dbJson)).toEqual(dbData)
+    expect(dbData.items).toHaveLength(initial.items.length)
+    store.close()
+  })
+
   it('keeps the original legacy workspace usable when background migration is interrupted', async () => {
     const root = await temporaryRoot()
     const initial = createSeedData()
@@ -299,11 +323,14 @@ describe('WorkspaceStore', () => {
     await writeFile(legacyPath, '{"version":1,"items":BROKEN', 'utf8')
 
     const store = new WorkspaceStore(root)
+    // The legacy source is read lazily on first load (production always calls
+    // load() before status()), so the preserved-source recovery state surfaces
+    // there rather than in the constructor.
+    expect(store.load()).toBeNull()
     const status = store.status()
     expect(status.recoveryError).toContain('legacy workspace could not be migrated')
     expect(status.recoverySourcePath).toBe(legacyPath)
     expect(status.recoveredFromBackup).toBe(false)
-    expect(store.load()).toBeNull()
     expect(await readFile(legacyPath, 'utf8')).toBe('{"version":1,"items":BROKEN')
     store.close()
   })
