@@ -10,16 +10,54 @@ const record = (value: unknown): UnknownRecord => value && typeof value === 'obj
 const list = (value: unknown): UnknownRecord[] => Array.isArray(value) ? value.map(record) : []
 const text = (value: unknown) => typeof value === 'string' ? value : ''
 
-const decodeEntities = (value: string) => value
-  .replace(/&nbsp;/gi, ' ')
-  .replace(/&lt;/gi, '<')
-  .replace(/&gt;/gi, '>')
-  .replace(/&amp;/gi, '&')
-  .replace(/&quot;/gi, '"')
-  .replace(/&#39;/gi, "'")
+const legacyEntities: Record<string, string> = {
+  nbsp: ' ',
+  lt: '<',
+  gt: '>',
+  amp: '&',
+  quot: '"',
+  '#39': "'",
+}
 
-const plainText = (value: string) => decodeEntities(value
-  .replace(/\[sound:([^\]]+)]/gi, ' Audio: $1 ')
+const decodeEntities = (value: string) => {
+  let cursor = 0
+  let output = ''
+  while (cursor < value.length) {
+    if (value[cursor] !== '&') {
+      output += value[cursor]
+      cursor += 1
+      continue
+    }
+    const end = value.indexOf(';', cursor + 1)
+    const token = end > cursor && end - cursor <= 6 ? value.slice(cursor + 1, end).toLowerCase() : ''
+    const replacement = legacyEntities[token]
+    if (replacement === undefined) {
+      output += '&'
+      cursor += 1
+      continue
+    }
+    output += replacement
+    cursor = end + 1
+  }
+  return output
+}
+
+const replaceSoundReferences = (value: string) => {
+  const lowerValue = value.toLowerCase()
+  let cursor = 0
+  let output = ''
+  while (cursor < value.length) {
+    const start = lowerValue.indexOf('[sound:', cursor)
+    if (start < 0) return output + value.slice(cursor)
+    const end = value.indexOf(']', start + 7)
+    if (end < 0) return output + value.slice(cursor)
+    output += `${value.slice(cursor, start)} Audio: ${value.slice(start + 7, end)} `
+    cursor = end + 1
+  }
+  return output
+}
+
+const plainText = (value: string) => decodeEntities(replaceSoundReferences(value)
   .replace(/<br\s*\/?\s*>/gi, '\n')
   .replace(/<hr\s*\/?\s*>/gi, '\n')
   .replace(/<\/(?:div|p|li|tr|h[1-6])>/gi, '\n')

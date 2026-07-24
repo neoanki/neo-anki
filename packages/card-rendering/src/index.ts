@@ -17,8 +17,23 @@ export interface CardRenderingProjection {
 
 const entities: Record<string, string> = { nbsp: ' ', lt: '<', gt: '>', amp: '&', quot: '"', apos: "'" }
 
-export const plainTextAnswer = (value: string) => value
-  .replace(/\[sound:([^\]]+)]/gi, 'Audio: $1')
+const replaceSoundReferences = (value: string) => {
+  const lowerValue = value.toLowerCase()
+  let cursor = 0
+  let output = ''
+  while (cursor < value.length) {
+    const start = lowerValue.indexOf('[sound:', cursor)
+    if (start < 0) return output + value.slice(cursor)
+    const end = value.indexOf(']', start + 7)
+    if (end < 0) return output + value.slice(cursor)
+    output += value.slice(cursor, start)
+    output += `Audio: ${value.slice(start + 7, end)}`
+    cursor = end + 1
+  }
+  return output
+}
+
+export const plainTextAnswer = (value: string) => replaceSoundReferences(value)
   .replace(/<br\s*\/?\s*>/gi, '\n')
   .replace(/<\/(?:div|p|li|tr|h[1-6])>/gi, '\n')
   .replace(/<[^>]+>/g, ' ')

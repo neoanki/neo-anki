@@ -113,11 +113,14 @@ describe('Workspace v4 compatibility domain', () => {
       templates: Array<Record<string, unknown>>
       presets: Array<Record<string, unknown>>
       cards: Array<Record<string, unknown>>
+      fields: Array<{ id: string }>
+      notes: Array<{ fields: Record<string, string> }>
       [key: string]: unknown
     }
     legacy.noteTypes[0].kind = 'cloze'
     legacy.noteTypes[0].css = '.card { color: red; }'
     legacy.templates[0] = { ...legacy.templates[0], questionFormat: '{{Front}}', answerFormat: '{{FrontSide}}<hr>{{Back}}' }
+    legacy.notes[0].fields[legacy.fields[0].id] = '&amp;lt;b&amp;gt;Prompt&amp;lt;/b&amp;gt;'
     delete legacy.templates[0].promptFieldId
     delete legacy.templates[0].answerFieldId
     delete legacy.templates[0].supportingFieldIds
@@ -137,6 +140,7 @@ describe('Workspace v4 compatibility domain', () => {
     expect(imported.workspace.noteTypes[0]).not.toHaveProperty('css')
     expect(imported.workspace.templates[0]).toMatchObject({ promptFieldId: expect.any(String), answerFieldId: expect.any(String), responseMode: 'reveal' })
     expect(imported.workspace.templates[0]).not.toHaveProperty('questionFormat')
+    expect(imported.workspace.notes[0].fields[imported.workspace.templates[0].promptFieldId]).toBe('&lt;b&gt;Prompt&lt;/b&gt;')
     expect(imported.workspace.cards[0]).toMatchObject({ deletionOrdinal: 1, scheduling: { strategy: 'neo-fsrs', dueAt: now, scheduledDays: 4, reps: 3 } })
     expect(imported.workspace.presets[0]).not.toHaveProperty('scheduler')
   })
