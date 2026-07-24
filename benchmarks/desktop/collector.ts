@@ -166,7 +166,7 @@ export const writeBenchmarkReport = async (options: {
     const metric = summary ? metricFor(summary, budget.stage) : undefined
     return Boolean(metric && metric.p95 > budget.absoluteLimitMs)
   })
-  if (process.env.NEO_ANKI_BENCHMARK_REPORT_ONLY !== '1' && gatedFailures.length) {
+  if (gatedFailures.length) {
     throw new Error(`Gated benchmark budgets failed: ${gatedFailures.map((budget) =>
       `${budget.operationId}:${budget.stage}`).join(', ')}`)
   }

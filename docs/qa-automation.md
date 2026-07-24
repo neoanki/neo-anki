@@ -24,7 +24,7 @@ Native Android runs create a dedicated emulator with `-no-window`; they refuse t
 
 Pull requests run contracts, deterministic tests, browser journeys, and hidden-window Electron tests. The nightly workflow increases property-test cases, runs the cross-browser matrix, and keeps known-bug reproducers non-gating. Release workflows must test the exact packaged executable and upload failure evidence. A mobile release candidate additionally needs both native suites against built binaries.
 
-The packaged performance program is documented in [macOS arm64 desktop benchmarks](desktop-benchmarks.md). Pull requests use the critical smoke journey, nightly QA runs the full catalog, and calibration uses 20 repetitions before budgets become gating. Performance artifacts identify the exact executable hash and host hardware.
+The packaged performance program is documented in [macOS arm64 desktop benchmarks](desktop-benchmarks.md). It runs manually on the calibrated Apple Silicon host rather than in CI; calibration uses 20 repetitions before budgets become gating. Performance artifacts identify the exact executable hash and host hardware.
 
 ## Evidence and isolation
 
