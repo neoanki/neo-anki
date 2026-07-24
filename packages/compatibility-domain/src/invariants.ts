@@ -1,4 +1,4 @@
-import type { Card, ExtensionRecord, ReviewEvent, SchedulingState, SourceEnvelope, VersionedEntity, WorkspaceV4 } from './types.js'
+import type { Card, ExtensionRecord, ReviewEvent, SchedulingState, VersionedEntity, WorkspaceV4 } from './types.js'
 
 export interface WorkspaceV4InvariantIssue { path: string; message: string }
 
@@ -65,13 +65,6 @@ const validateReview = (review: ReviewEvent, index: number, reviewsById: Map<str
   if (review.nextScheduling) validateSchedulingState(review.nextScheduling, `reviews[${index}].nextScheduling`, issues)
 }
 
-const validateEnvelope = (envelope: SourceEnvelope, index: number, issues: WorkspaceV4InvariantIssue[]) => {
-  let bytes = Number.POSITIVE_INFINITY
-  try { bytes = new TextEncoder().encode(JSON.stringify(envelope.opaque)).byteLength } catch { /* reported below */ }
-  if (bytes > MAX_SOURCE_ENVELOPE_BYTES) issues.push({ path: `sourceEnvelopes[${index}].opaque`, message: 'Opaque source metadata exceeds 1 MiB or is not serializable.' })
-  if (['__proto__', 'prototype', 'constructor'].some((key) => Object.prototype.hasOwnProperty.call(envelope.opaque, key))) issues.push({ path: `sourceEnvelopes[${index}].opaque`, message: 'Unsafe opaque metadata key.' })
-}
-
 const validateExtensionRecord = (record: ExtensionRecord, index: number, noteIds: Set<string>, cardIds: Set<string>, mediaIds: Set<string>, issues: WorkspaceV4InvariantIssue[]) => {
   if (!/^[a-z0-9]+(?:[.-][a-z0-9]+)+$/.test(record.extensionId)) issues.push({ path: `extensionRecords[${index}].extensionId`, message: 'Extension id must use reverse-domain notation.' })
   const targets = record.targetKind === 'note' ? noteIds : record.targetKind === 'card' ? cardIds : mediaIds
@@ -95,8 +88,12 @@ export const collectWorkspaceV4InvariantIssues = (workspace: WorkspaceV4): Works
   if (!Number.isInteger(workspace.revision) || workspace.revision < 1) issues.push({ path: 'revision', message: 'Workspace revision must be a positive integer.' })
   if (workspace.sourceEnvelopes.length > MAX_SOURCE_ENVELOPES) issues.push({ path: 'sourceEnvelopes', message: `No more than ${MAX_SOURCE_ENVELOPES} source envelopes are allowed.` })
   let totalEnvelopeBytes = 0
-  for (const envelope of workspace.sourceEnvelopes) {
-    try { totalEnvelopeBytes += new TextEncoder().encode(JSON.stringify(envelope.opaque)).byteLength } catch { totalEnvelopeBytes = Number.POSITIVE_INFINITY; break }
+  for (const [index, envelope] of workspace.sourceEnvelopes.entries()) {
+    let bytes = Number.POSITIVE_INFINITY
+    try { bytes = new TextEncoder().encode(JSON.stringify(envelope.opaque)).byteLength } catch { /* reported below */ }
+    totalEnvelopeBytes += bytes
+    if (bytes > MAX_SOURCE_ENVELOPE_BYTES) issues.push({ path: `sourceEnvelopes[${index}].opaque`, message: 'Opaque source metadata exceeds 1 MiB or is not serializable.' })
+    if (['__proto__', 'prototype', 'constructor'].some((key) => Object.prototype.hasOwnProperty.call(envelope.opaque, key))) issues.push({ path: `sourceEnvelopes[${index}].opaque`, message: 'Unsafe opaque metadata key.' })
   }
   if (totalEnvelopeBytes > MAX_TOTAL_SOURCE_ENVELOPE_BYTES) issues.push({ path: 'sourceEnvelopes', message: 'Combined opaque source metadata exceeds 128 MiB or is not serializable.' })
   if (workspace.extensionRecords.length > MAX_EXTENSION_RECORDS) issues.push({ path: 'extensionRecords', message: `No more than ${MAX_EXTENSION_RECORDS} extension records are allowed.` })
@@ -203,7 +200,7 @@ export const collectWorkspaceV4InvariantIssues = (workspace: WorkspaceV4): Works
     requireRef(profileIds, value.profileId, `extensionRecords[${index}].profileId`, 'profile', issues)
     validateExtensionRecord(value, index, noteIds, cardIds, mediaIds, issues)
   })
-  workspace.sourceEnvelopes.forEach((value, index) => { requireRef(profileIds, value.profileId, `sourceEnvelopes[${index}].profileId`, 'profile', issues); validateEnvelope(value, index, issues) })
+  workspace.sourceEnvelopes.forEach((value, index) => { requireRef(profileIds, value.profileId, `sourceEnvelopes[${index}].profileId`, 'profile', issues) })
   if (workspace.profiles.filter((value) => value.active).length !== 1) issues.push({ path: 'profiles', message: 'Exactly one workspace profile must be active.' })
   for (const deck of workspace.decks) {
     const visited = new Set<string>(); let cursor: typeof deck | undefined = deck

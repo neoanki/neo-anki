@@ -21,7 +21,11 @@ export const applyWorkspacePatchV2 = (workspace: WorkspaceV4, patch: WorkspacePa
     if (!extensionOwner.extensionId.trim()) throw new Error('Extension patch owner is invalid.')
     if (!extensionOwner.scopes.includes('content:patch-own')) throw new Error('Extension patch is missing the content:patch-own scope.')
   }
-  const next = structuredClone(workspace)
+  // Workspace entities are immutable at the API boundary. Clone only a
+  // collection when the patch first touches it; cloning a 100k-review graph for
+  // a one-field template edit dominated desktop persistence.
+  const next = { ...workspace }
+  const clonedCollections = new Set<keyof WorkspaceV4>()
   for (const operation of patch.operations) {
     if (extensionNamespace) {
       if (!EXTENSION_MUTABLE_KINDS.has(operation.kind)) throw new Error(`Extensions cannot mutate ${operation.kind} entities through content:patch-own.`)
@@ -30,6 +34,10 @@ export const applyWorkspacePatchV2 = (workspace: WorkspaceV4, patch: WorkspacePa
       if (operation.kind === 'extensionRecord' && operation.value && (operation.value as { extensionId?: unknown }).extensionId !== extensionOwner!.extensionId) throw new Error('Extension record ownership does not match the patch owner.')
     }
     const key = collections[operation.kind]
+    if (!clonedCollections.has(key)) {
+      ;(next[key] as unknown) = [...(workspace[key] as unknown as WorkspaceEntity[])]
+      clonedCollections.add(key)
+    }
     const values = next[key] as unknown as WorkspaceEntity[]
     const index = values.findIndex((value) => value.id === operation.id)
     if (operation.op === 'create') {

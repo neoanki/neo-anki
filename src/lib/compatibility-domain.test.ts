@@ -109,7 +109,10 @@ describe('Workspace v4 compatibility domain', () => {
       ['field:answer', 'Answer'],
       ['field:context', 'Context'],
     ])
-    expect(migrated.sourceEnvelopes[0].opaque).toMatchObject({ extensionData: { plugin: { safe: true } }, legacy: { id: 'item', prompt: 'P' } })
+    expect(migrated.sourceEnvelopes[0].opaque).toMatchObject({
+      extensionData: { plugin: { safe: true } },
+      legacy: { citations: [], mediaIds: [], occlusions: [] },
+    })
   })
 
   it('materializes legacy template markup and scheduling only at the import boundary', () => {

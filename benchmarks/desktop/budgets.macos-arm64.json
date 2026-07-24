@@ -4,48 +4,48 @@
     "stage": "lifecycle",
     "absoluteLimitMs": 3000,
     "enforcement": "gated",
-    "calibratedMedianMs": 422.74633299999186,
-    "calibratedMadMs": 17.334520499985956
+    "calibratedMedianMs": 436.8065830000014,
+    "calibratedMadMs": 11.054833999998664
   },
   {
     "operationId": "lifecycle.launch.established",
     "stage": "lifecycle",
     "absoluteLimitMs": 3000,
     "enforcement": "gated",
-    "calibratedMedianMs": 2604.4467704999697,
-    "calibratedMadMs": 9.976895999992848
+    "calibratedMedianMs": 551.5045840000093,
+    "calibratedMadMs": 3.547126000012213
   },
   {
     "operationId": "lifecycle.launch.large",
     "stage": "lifecycle",
     "absoluteLimitMs": 5000,
-    "enforcement": "debt",
-    "calibratedMedianMs": 17140.54887499998,
-    "calibratedMadMs": 107.43279099988285
+    "enforcement": "gated",
+    "calibratedMedianMs": 1390.9422919999924,
+    "calibratedMadMs": 2.7562920000054874
   },
   {
     "operationId": "lifecycle.relaunch.warm",
     "stage": "lifecycle",
     "absoluteLimitMs": 3000,
     "enforcement": "gated",
-    "calibratedMedianMs": 433.1836875000008,
-    "calibratedMadMs": 4.718542000002344
+    "calibratedMedianMs": 440.1333339999983,
+    "calibratedMadMs": 3.308166999997411
   },
   {
     "operationId": "lifecycle.quit.idle",
     "stage": "lifecycle",
     "absoluteLimitMs": 2000,
     "enforcement": "gated",
-    "calibratedMedianMs": 94.99849999999788,
-    "calibratedMadMs": 2.036270999997214
+    "calibratedMedianMs": 101.59633300000132,
+    "calibratedMadMs": 2.8006660000010015
   },
   {
     "operationId": "lifecycle.quit.pending-save",
     "stage": "lifecycle",
     "absoluteLimitMs": 5000,
     "enforcement": "gated",
-    "calibratedMedianMs": 329.93679150001844,
-    "calibratedMadMs": 14.624228500004392
+    "calibratedMedianMs": 180.74337500000547,
+    "calibratedMadMs": 3.6797089999963646
   },
   {
     "operationId": "lifecycle.quit.pending-save",
@@ -70,24 +70,24 @@
     "stage": "lifecycle",
     "absoluteLimitMs": 3000,
     "enforcement": "gated",
-    "calibratedMedianMs": 103.28749999999127,
-    "calibratedMadMs": 0.4263120000032359
+    "calibratedMedianMs": 102.42229099999895,
+    "calibratedMadMs": 0.41245900000285474
   },
   {
     "operationId": "lifecycle.window.reopen",
     "stage": "lifecycle",
     "absoluteLimitMs": 3000,
     "enforcement": "gated",
-    "calibratedMedianMs": 141.67562499999622,
-    "calibratedMadMs": 1.1472915000049397
+    "calibratedMedianMs": 143.08437500000036,
+    "calibratedMadMs": 0.4748750000017026
   },
   {
     "operationId": "recovery.corrupt-launch",
     "stage": "lifecycle",
     "absoluteLimitMs": 3000,
     "enforcement": "gated",
-    "calibratedMedianMs": 427.73464600002626,
-    "calibratedMadMs": 5.842583499965258
+    "calibratedMedianMs": 443.8240625000035,
+    "calibratedMadMs": 5.030978999995568
   },
   {
     "operationId": "recovery.corrupt-launch",
@@ -100,112 +100,112 @@
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 13,
-    "calibratedMadMs": 1
-  },
-  {
-    "operationId": "recovery.actions",
-    "stage": "settled",
-    "absoluteLimitMs": 250,
-    "enforcement": "debt",
-    "calibratedMedianMs": 67.99443750001956,
-    "calibratedMadMs": 42.56089600006817
-  },
-  {
-    "operationId": "recovery.actions",
-    "stage": "durable",
-    "absoluteLimitMs": 1000,
-    "enforcement": "gated",
-    "calibratedMedianMs": 387.3057090000366,
-    "calibratedMadMs": 259.40212499996414
-  },
-  {
-    "operationId": "navigation.onboarding.start-fresh",
-    "stage": "feedback",
-    "absoluteLimitMs": 100,
-    "enforcement": "gated",
-    "calibratedMedianMs": 9.200000047683716,
-    "calibratedMadMs": 1.7499999403953552
-  },
-  {
-    "operationId": "navigation.onboarding.start-fresh",
-    "stage": "settled",
-    "absoluteLimitMs": 250,
-    "enforcement": "debt",
-    "calibratedMedianMs": 320.67289549999987,
-    "calibratedMadMs": 2.750229500004025
-  },
-  {
-    "operationId": "navigation.onboarding.complete",
-    "stage": "feedback",
-    "absoluteLimitMs": 100,
-    "enforcement": "gated",
-    "calibratedMedianMs": 14,
-    "calibratedMadMs": 0.5
-  },
-  {
-    "operationId": "navigation.onboarding.complete",
-    "stage": "settled",
-    "absoluteLimitMs": 250,
-    "enforcement": "gated",
-    "calibratedMedianMs": 39.236916500005464,
-    "calibratedMadMs": 2.295791500003361
-  },
-  {
-    "operationId": "navigation.onboarding.complete",
-    "stage": "durable",
-    "absoluteLimitMs": 1000,
-    "enforcement": "gated",
-    "calibratedMedianMs": 43.67891650000092,
-    "calibratedMadMs": 2.9123960000006264
-  },
-  {
-    "operationId": "navigation.routes.cold",
-    "stage": "feedback",
-    "absoluteLimitMs": 100,
-    "enforcement": "gated",
-    "calibratedMedianMs": 13.599999964237213,
-    "calibratedMadMs": 1.0499999523162842
-  },
-  {
-    "operationId": "navigation.routes.cold",
-    "stage": "settled",
-    "absoluteLimitMs": 250,
-    "enforcement": "debt",
-    "calibratedMedianMs": 338.90291699999216,
-    "calibratedMadMs": 310.08554149998963
-  },
-  {
-    "operationId": "navigation.routes.warm",
-    "stage": "feedback",
-    "absoluteLimitMs": 100,
-    "enforcement": "gated",
     "calibratedMedianMs": 13.200000047683716,
-    "calibratedMadMs": 0.30000007152557373
+    "calibratedMadMs": 0.75
+  },
+  {
+    "operationId": "recovery.actions",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 48.846229000002495,
+    "calibratedMadMs": 25.52077050000662
+  },
+  {
+    "operationId": "recovery.actions",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "gated",
+    "calibratedMedianMs": 352.1963539999997,
+    "calibratedMadMs": 270.8733119999961
+  },
+  {
+    "operationId": "navigation.onboarding.start-fresh",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 7.799999952316284,
+    "calibratedMadMs": 0.49999988079071045
+  },
+  {
+    "operationId": "navigation.onboarding.start-fresh",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 316.3118340000001,
+    "calibratedMadMs": 1.5891680000022461
+  },
+  {
+    "operationId": "navigation.onboarding.complete",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 13.600000023841858,
+    "calibratedMadMs": 0.20000004768371582
+  },
+  {
+    "operationId": "navigation.onboarding.complete",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 37.167207999998936,
+    "calibratedMadMs": 1.4995829999988928
+  },
+  {
+    "operationId": "navigation.onboarding.complete",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "gated",
+    "calibratedMedianMs": 40.0794590000005,
+    "calibratedMadMs": 2.349459000000934
+  },
+  {
+    "operationId": "navigation.routes.cold",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 13.800000071525574,
+    "calibratedMadMs": 0.2999999523162842
+  },
+  {
+    "operationId": "navigation.routes.cold",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 32.5473750000001,
+    "calibratedMadMs": 7.585791999999856
+  },
+  {
+    "operationId": "navigation.routes.warm",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 14.199999928474426,
+    "calibratedMadMs": 0.10000002384185791
   },
   {
     "operationId": "navigation.routes.warm",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 29.148271499994735,
-    "calibratedMadMs": 1.2225619999953778
+    "calibratedMedianMs": 19.069084000000657,
+    "calibratedMadMs": 0.18283400000109395
   },
   {
     "operationId": "navigation.shortcuts",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 11.5,
-    "calibratedMadMs": 1.949999988079071
+    "calibratedMedianMs": 11.100000023841858,
+    "calibratedMadMs": 0.10000002384185791
   },
   {
     "operationId": "navigation.shortcuts",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 8.474063000001479,
-    "calibratedMadMs": 1.316812500001106
+    "calibratedMedianMs": 6.242292000002635,
+    "calibratedMadMs": 0.19770900000185065
   },
   {
     "operationId": "navigation.history",
@@ -218,208 +218,208 @@
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 6.381187500001033,
-    "calibratedMadMs": 0.6107080000001588
+    "calibratedMedianMs": 4.237750000000233,
+    "calibratedMadMs": 0.15004200000112178
   },
   {
     "operationId": "navigation.settings.open-close",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 15.000000059604645,
-    "calibratedMadMs": 2.199999988079071
+    "calibratedMedianMs": 12.450000047683716,
+    "calibratedMadMs": 2.1000000834465027
   },
   {
     "operationId": "navigation.settings.open-close",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 20.36166649999359,
-    "calibratedMadMs": 15.168207999995502
+    "calibratedMedianMs": 20.289354000002277,
+    "calibratedMadMs": 15.202916499999446
   },
   {
     "operationId": "navigation.window.resize",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 5.494896000001972,
-    "calibratedMadMs": 0.45433399999274116
+    "calibratedMedianMs": 4.146499999998923,
+    "calibratedMadMs": 0.15654199999698903
   },
   {
     "operationId": "today.render.available",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 35.59058350000123,
-    "calibratedMadMs": 1.344770999990942
+    "calibratedMedianMs": 33.18066700000054,
+    "calibratedMadMs": 1.079541999999492
   },
   {
     "operationId": "today.daily-target",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 14.300000011920929,
-    "calibratedMadMs": 0.8499999642372131
+    "calibratedMedianMs": 9.100000023841858,
+    "calibratedMadMs": 0.6999999284744263
   },
   {
     "operationId": "today.daily-target",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 111.50104149999606,
-    "calibratedMadMs": 3.865542000006826
+    "calibratedMedianMs": 7.95325000000048,
+    "calibratedMadMs": 0.356459000000541
   },
   {
     "operationId": "today.daily-target",
     "stage": "durable",
     "absoluteLimitMs": 1000,
     "enforcement": "gated",
-    "calibratedMedianMs": 113.6663959999969,
-    "calibratedMadMs": 4.053375000006781
+    "calibratedMedianMs": 9.333125000001019,
+    "calibratedMadMs": 0.34716699999626144
   },
   {
     "operationId": "today.session-options",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 11.449999988079071,
-    "calibratedMadMs": 1.449999988079071
+    "calibratedMedianMs": 12.299999952316284,
+    "calibratedMadMs": 0.9000000953674316
   },
   {
     "operationId": "today.session-options",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 14.048083000001498,
-    "calibratedMadMs": 1.462583500000619
+    "calibratedMedianMs": 9.860250000001543,
+    "calibratedMadMs": 0.6765419999974256
   },
   {
     "operationId": "today.planning-details",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 10.599999964237213,
-    "calibratedMadMs": 1.0999999642372131
+    "calibratedMedianMs": 8.5,
+    "calibratedMadMs": 0.30000007152557373
   },
   {
     "operationId": "today.planning-details",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 198.87104149999504,
-    "calibratedMadMs": 1.61739600000692
+    "calibratedMedianMs": 199.9263749999991,
+    "calibratedMadMs": 3.5597910000033153
   },
   {
     "operationId": "today.session.start",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 13.149999976158142,
-    "calibratedMadMs": 0.2000001072883606
+    "calibratedMedianMs": 12.700000047683716,
+    "calibratedMadMs": 0.5
   },
   {
     "operationId": "today.session.start",
     "stage": "settled",
     "absoluteLimitMs": 250,
-    "enforcement": "debt",
-    "calibratedMedianMs": 820.6417085000066,
-    "calibratedMadMs": 1.9013119999981427
+    "enforcement": "gated",
+    "calibratedMedianMs": 31.947916000000987,
+    "calibratedMadMs": 0.4394990000018879
   },
   {
     "operationId": "today.planner.large",
     "stage": "settled",
     "absoluteLimitMs": 500,
-    "enforcement": "debt",
-    "calibratedMedianMs": 1942.141791000031,
-    "calibratedMadMs": 15.218875000020489
+    "enforcement": "gated",
+    "calibratedMedianMs": 180.26729099999648,
+    "calibratedMadMs": 0.49724899999273475
   },
   {
     "operationId": "authoring.route-ready",
     "stage": "settled",
     "absoluteLimitMs": 250,
-    "enforcement": "debt",
-    "calibratedMedianMs": 835.663666000004,
-    "calibratedMadMs": 6.89910349999991
+    "enforcement": "gated",
+    "calibratedMedianMs": 202.11208400000032,
+    "calibratedMadMs": 0.15399999999863212
   },
   {
     "operationId": "authoring.input-preview",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 11.649999976158142,
-    "calibratedMadMs": 0.8999999165534973
+    "calibratedMedianMs": 13.099999904632568,
+    "calibratedMadMs": 1.1000001430511475
   },
   {
     "operationId": "authoring.input-preview",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 37.598229499999434,
-    "calibratedMadMs": 2.410187999993468
+    "calibratedMedianMs": 24.91479199999958,
+    "calibratedMadMs": 1.3318750000034925
   },
   {
     "operationId": "authoring.content-type",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 10.699999988079071,
-    "calibratedMadMs": 2.600000023841858
+    "calibratedMedianMs": 15,
+    "calibratedMadMs": 0.19999992847442627
   },
   {
     "operationId": "authoring.content-type",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 11.355791499998304,
-    "calibratedMadMs": 0.9146665000007488
+    "calibratedMedianMs": 7.518708999999944,
+    "calibratedMadMs": 0.37966600000072503
   },
   {
     "operationId": "authoring.citations",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 12.499999940395355,
-    "calibratedMadMs": 0.800000011920929
+    "calibratedMedianMs": 14.5,
+    "calibratedMadMs": 1
   },
   {
     "operationId": "authoring.citations",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 42.815354000005755,
-    "calibratedMadMs": 1.0704789999999775
+    "calibratedMedianMs": 199.8540839999987,
+    "calibratedMadMs": 0.9063759999989998
   },
   {
     "operationId": "authoring.create",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 11.400000035762787,
-    "calibratedMadMs": 0.550000011920929
+    "calibratedMedianMs": 9.5,
+    "calibratedMadMs": 1.2999999523162842
   },
   {
     "operationId": "authoring.create",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 39.44599949999974,
-    "calibratedMadMs": 2.8836244999984046
+    "calibratedMedianMs": 202.0566669999971,
+    "calibratedMadMs": 1.9394160000010743
   },
   {
     "operationId": "authoring.create",
     "stage": "durable",
     "absoluteLimitMs": 1000,
     "enforcement": "gated",
-    "calibratedMedianMs": 43.236250000001746,
-    "calibratedMadMs": 3.152041500004998
+    "calibratedMedianMs": 204.91458399999829,
+    "calibratedMadMs": 1.025249000002077
   },
   {
     "operationId": "authoring.draft-reload",
     "stage": "settled",
     "absoluteLimitMs": 250,
-    "enforcement": "debt",
-    "calibratedMedianMs": 841.0633960000005,
-    "calibratedMadMs": 2.3361039999872446
+    "enforcement": "gated",
+    "calibratedMedianMs": 31.50208399999974,
+    "calibratedMadMs": 0.1267089999983
   },
   {
     "operationId": "authoring.draft-reload",
@@ -431,80 +431,80 @@
     "operationId": "library.render.small",
     "stage": "settled",
     "absoluteLimitMs": 250,
-    "enforcement": "debt",
-    "calibratedMedianMs": 825.0095215000038,
-    "calibratedMadMs": 3.056750000003376
+    "enforcement": "gated",
+    "calibratedMedianMs": 21.362334000001283,
+    "calibratedMadMs": 0.5609999999978754
   },
   {
     "operationId": "library.render.typical",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 236.82022949997918,
-    "calibratedMadMs": 1.2298544999794103
+    "calibratedMedianMs": 73.38245799999277,
+    "calibratedMadMs": 2.056040999988909
   },
   {
     "operationId": "library.render.large",
     "stage": "settled",
     "absoluteLimitMs": 500,
     "enforcement": "gated",
-    "calibratedMedianMs": 362.7589170000283,
-    "calibratedMadMs": 11.649207999929786
+    "calibratedMedianMs": 110.21879099999205,
+    "calibratedMadMs": 0.4159569999901578
   },
   {
     "operationId": "library.mode",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 24.150000035762787,
-    "calibratedMadMs": 0.6499999761581421
+    "calibratedMedianMs": 18.100000023841858,
+    "calibratedMadMs": 0.3999999761581421
   },
   {
     "operationId": "library.mode",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 223.57345850003185,
-    "calibratedMadMs": 1.4141879999951925
+    "calibratedMedianMs": 215.59095899999375,
+    "calibratedMadMs": 2.465708999989147
   },
   {
     "operationId": "library.search",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 11.950000047683716,
-    "calibratedMadMs": 1.300000011920929
+    "calibratedMedianMs": 8.700000047683716,
+    "calibratedMadMs": 0.6000000238418579
   },
   {
     "operationId": "library.search",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 12.397312500004773,
-    "calibratedMadMs": 0.4258129999980156
+    "calibratedMedianMs": 6.573250000001281,
+    "calibratedMadMs": 0.05883399999947869
   },
   {
     "operationId": "library.filters-sorts",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 24.25,
-    "calibratedMadMs": 6.249999940395355
+    "calibratedMedianMs": 17.849999964237213,
+    "calibratedMadMs": 3.350000023841858
   },
   {
     "operationId": "library.filters-sorts",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 31.188188000000082,
-    "calibratedMadMs": 5.835916500014719
+    "calibratedMedianMs": 21.030478999997285,
+    "calibratedMadMs": 6.66431250000096
   },
   {
     "operationId": "library.pagination",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 22.600000023841858,
+    "calibratedMedianMs": 19.300000071525574,
     "calibratedMadMs": 0.19999992847442627
   },
   {
@@ -512,264 +512,264 @@
     "stage": "settled",
     "absoluteLimitMs": 500,
     "enforcement": "gated",
-    "calibratedMedianMs": 50.55406250001397,
-    "calibratedMadMs": 0.8554789999907371
+    "calibratedMedianMs": 48.2890830000033,
+    "calibratedMadMs": 0.1989999999932479
   },
   {
     "operationId": "library.selection",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 11.300000011920929,
-    "calibratedMadMs": 0.15000003576278687
+    "calibratedMedianMs": 11.200000047683716,
+    "calibratedMadMs": 0.10000002384185791
   },
   {
     "operationId": "library.selection",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 63.71337500002119,
-    "calibratedMadMs": 0.7760630000266246
+    "calibratedMedianMs": 62.991791000000376,
+    "calibratedMadMs": 0.453417000004265
   },
   {
     "operationId": "library.single-suspend",
     "stage": "feedback",
     "absoluteLimitMs": 100,
-    "enforcement": "debt",
-    "calibratedMedianMs": 242.64999997615814,
-    "calibratedMadMs": 4.350000023841858
+    "enforcement": "gated",
+    "calibratedMedianMs": 39.299999952316284,
+    "calibratedMadMs": 0.2999999523162842
   },
   {
     "operationId": "library.single-suspend",
     "stage": "settled",
     "absoluteLimitMs": 250,
-    "enforcement": "debt",
-    "calibratedMedianMs": 1203.7080000000133,
-    "calibratedMadMs": 9.880708500015317
+    "enforcement": "gated",
+    "calibratedMedianMs": 87.02500000000873,
+    "calibratedMadMs": 0.8672919999880833
   },
   {
     "operationId": "library.single-suspend",
     "stage": "durable",
     "absoluteLimitMs": 1000,
-    "enforcement": "debt",
-    "calibratedMedianMs": 1566.2777090000163,
-    "calibratedMadMs": 10.265688000043156
+    "enforcement": "gated",
+    "calibratedMedianMs": 89.24575000000186,
+    "calibratedMadMs": 1.8993330000084825
   },
   {
     "operationId": "library.edit",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 12.650000035762787,
-    "calibratedMadMs": 0.5999999046325684
+    "calibratedMedianMs": 11.850000023841858,
+    "calibratedMadMs": 0.8500000238418579
   },
   {
     "operationId": "library.edit",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 116.65587550000419,
-    "calibratedMadMs": 84.85497900001064
+    "calibratedMedianMs": 112.55593699999827,
+    "calibratedMadMs": 82.32848000000104
   },
   {
     "operationId": "library.edit",
     "stage": "durable",
     "absoluteLimitMs": 1000,
     "enforcement": "gated",
-    "calibratedMedianMs": 206.15416699999332,
-    "calibratedMadMs": 1.7418125000112923
+    "calibratedMedianMs": 198.6643750000003,
+    "calibratedMadMs": 0.3251669999990554
   },
   {
     "operationId": "library.bulk-state",
     "stage": "feedback",
     "absoluteLimitMs": 100,
-    "enforcement": "debt",
-    "calibratedMedianMs": 228.44999998807907,
-    "calibratedMadMs": 1.649999976158142
+    "enforcement": "gated",
+    "calibratedMedianMs": 45.799999952316284,
+    "calibratedMadMs": 0.3999999761581421
   },
   {
     "operationId": "library.bulk-state",
     "stage": "settled",
     "absoluteLimitMs": 250,
-    "enforcement": "debt",
-    "calibratedMedianMs": 1191.5528119999508,
-    "calibratedMadMs": 8.159895999997389
+    "enforcement": "gated",
+    "calibratedMedianMs": 105.83645799999795,
+    "calibratedMadMs": 2.116834000007657
   },
   {
     "operationId": "library.bulk-state",
     "stage": "durable",
     "absoluteLimitMs": 1000,
-    "enforcement": "debt",
-    "calibratedMedianMs": 1555.9481245000206,
-    "calibratedMadMs": 5.122208499989938
+    "enforcement": "gated",
+    "calibratedMedianMs": 108.36537500000122,
+    "calibratedMadMs": 1.8530840000021271
   },
   {
     "operationId": "library.bulk-metadata",
     "stage": "feedback",
     "absoluteLimitMs": 100,
-    "enforcement": "debt",
-    "calibratedMedianMs": 231.75,
-    "calibratedMadMs": 2.25
+    "enforcement": "gated",
+    "calibratedMedianMs": 43,
+    "calibratedMadMs": 0.20000004768371582
   },
   {
     "operationId": "library.bulk-metadata",
     "stage": "settled",
     "absoluteLimitMs": 250,
-    "enforcement": "debt",
-    "calibratedMedianMs": 1180.4549169999373,
-    "calibratedMadMs": 15.445145999954548
+    "enforcement": "gated",
+    "calibratedMedianMs": 99.23816699999588,
+    "calibratedMadMs": 0.773124999999709
   },
   {
     "operationId": "library.bulk-metadata",
     "stage": "durable",
     "absoluteLimitMs": 1000,
-    "enforcement": "debt",
-    "calibratedMedianMs": 1544.3737504999735,
-    "calibratedMadMs": 17.350728999997955
+    "enforcement": "gated",
+    "calibratedMedianMs": 102.1817499999961,
+    "calibratedMadMs": 0.9329169999909936
   },
   {
     "operationId": "library.trash",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 13.799999952316284,
-    "calibratedMadMs": 0.25
+    "calibratedMedianMs": 13.600000023841858,
+    "calibratedMadMs": 0.3500000238418579
   },
   {
     "operationId": "library.trash",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 30.985999999997148,
-    "calibratedMadMs": 3.563041500005056
+    "calibratedMedianMs": 29.623583000000508,
+    "calibratedMadMs": 5.245708499998727
   },
   {
     "operationId": "library.trash",
     "stage": "durable",
     "absoluteLimitMs": 1000,
     "enforcement": "gated",
-    "calibratedMedianMs": 34.315624999995634,
-    "calibratedMadMs": 4.554250500012131
+    "calibratedMedianMs": 33.30208300000049,
+    "calibratedMadMs": 5.6636254999984885
   },
   {
     "operationId": "library.custom-study",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 15.449999988079071,
-    "calibratedMadMs": 2.649999976158142
+    "calibratedMedianMs": 12.5,
+    "calibratedMadMs": 0.2999999523162842
   },
   {
     "operationId": "library.custom-study",
     "stage": "settled",
     "absoluteLimitMs": 250,
-    "enforcement": "debt",
-    "calibratedMedianMs": 353.9916250000242,
-    "calibratedMadMs": 1.089937499986263
+    "enforcement": "gated",
+    "calibratedMedianMs": 45.64137499999197,
+    "calibratedMadMs": 0.4834580000024289
   },
   {
     "operationId": "review.prompt",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 2.6669585000054212,
-    "calibratedMadMs": 0.22899999999208376
+    "calibratedMedianMs": 1.5114579999990383,
+    "calibratedMadMs": 0.2049590000005992
   },
   {
     "operationId": "review.typed-input",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 11.450000047683716,
-    "calibratedMadMs": 1.050000011920929
+    "calibratedMedianMs": 13.399999976158142,
+    "calibratedMadMs": 0.2999999523162842
   },
   {
     "operationId": "review.typed-input",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 10.297167000011541,
-    "calibratedMadMs": 0.3912494999822229
+    "calibratedMedianMs": 5.888667000006535,
+    "calibratedMadMs": 0.12245800001255702
   },
   {
     "operationId": "review.reveal",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 12.199999928474426,
-    "calibratedMadMs": 0.34999996423721313
+    "calibratedMedianMs": 13.5,
+    "calibratedMadMs": 0.19999992847442627
   },
   {
     "operationId": "review.reveal",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 32.33912450000935,
-    "calibratedMadMs": 0.9120624999995925
+    "calibratedMedianMs": 22.31037500000093,
+    "calibratedMadMs": 0.5702080000010028
   },
   {
     "operationId": "review.grade",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 13,
-    "calibratedMadMs": 0.3999999761581421
+    "calibratedMedianMs": 13.5,
+    "calibratedMadMs": 0.19999992847442627
   },
   {
     "operationId": "review.grade",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 37.93022949999431,
-    "calibratedMadMs": 1.2411455000037677
+    "calibratedMedianMs": 24.548290999999153,
+    "calibratedMadMs": 0.23145799999838346
   },
   {
     "operationId": "review.grade",
     "stage": "durable",
     "absoluteLimitMs": 1000,
     "enforcement": "gated",
-    "calibratedMedianMs": 40.81306249999761,
-    "calibratedMadMs": 1.2597500000047148
+    "calibratedMedianMs": 26.584124999999403,
+    "calibratedMadMs": 0.3499160000010306
   },
   {
     "operationId": "review.undo",
     "stage": "feedback",
     "absoluteLimitMs": 100,
-    "enforcement": "debt",
-    "calibratedMedianMs": 246.30000001192093,
-    "calibratedMadMs": 2.8000000715255737
+    "enforcement": "gated",
+    "calibratedMedianMs": 35.800000071525574,
+    "calibratedMadMs": 0.5000001192092896
   },
   {
     "operationId": "review.undo",
     "stage": "settled",
     "absoluteLimitMs": 250,
-    "enforcement": "debt",
-    "calibratedMedianMs": 1163.766187500005,
-    "calibratedMadMs": 8.747125000023516
+    "enforcement": "gated",
+    "calibratedMedianMs": 40.21283399999811,
+    "calibratedMadMs": 0.6486260000019684
   },
   {
     "operationId": "review.undo",
     "stage": "durable",
     "absoluteLimitMs": 1000,
-    "enforcement": "debt",
-    "calibratedMedianMs": 1525.6317920000001,
-    "calibratedMadMs": 8.196125500020571
+    "enforcement": "gated",
+    "calibratedMedianMs": 41.80145900000207,
+    "calibratedMadMs": 0.7591670000037993
   },
   {
     "operationId": "review.edit",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 12.5,
-    "calibratedMadMs": 0.5
+    "calibratedMedianMs": 14.200000047683716,
+    "calibratedMadMs": 0.09999990463256836
   },
   {
     "operationId": "review.edit",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 32.59258349999436,
-    "calibratedMadMs": 0.7259584999992512
+    "calibratedMedianMs": 20.00137499999255,
+    "calibratedMadMs": 0.35837499998888234
   },
   {
     "operationId": "review.edit",
@@ -781,121 +781,121 @@
     "operationId": "review.block-transition",
     "stage": "feedback",
     "absoluteLimitMs": 100,
-    "enforcement": "debt",
-    "calibratedMedianMs": 222.3499999642372,
-    "calibratedMadMs": 1.050000011920929
+    "enforcement": "gated",
+    "calibratedMedianMs": 32.700000047683716,
+    "calibratedMadMs": 0.40000009536743164
   },
   {
     "operationId": "review.block-transition",
     "stage": "settled",
     "absoluteLimitMs": 250,
-    "enforcement": "debt",
-    "calibratedMedianMs": 1174.5096044999955,
-    "calibratedMadMs": 5.683980000001611
+    "enforcement": "gated",
+    "calibratedMedianMs": 54.0646659999984,
+    "calibratedMadMs": 0.8287080000009155
   },
   {
     "operationId": "review.end-complete",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 13.050000011920929,
-    "calibratedMadMs": 0.3999999761581421
+    "calibratedMedianMs": 14,
+    "calibratedMadMs": 0.20000004768371582
   },
   {
     "operationId": "review.end-complete",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 30.479583500000444,
-    "calibratedMadMs": 1.566208500011271
+    "calibratedMedianMs": 20.206999999998516,
+    "calibratedMadMs": 0.1610000000000582
   },
   {
     "operationId": "settings.theme",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 12.549999952316284,
-    "calibratedMadMs": 0.40000003576278687
+    "calibratedMedianMs": 12.599999904632568,
+    "calibratedMadMs": 0.5
   },
   {
     "operationId": "settings.theme",
     "stage": "settled",
     "absoluteLimitMs": 250,
-    "enforcement": "gated",
-    "calibratedMedianMs": 201.2125415000064,
-    "calibratedMadMs": 1.2574375000094733
+    "enforcement": "debt",
+    "calibratedMedianMs": 201.51616699999977,
+    "calibratedMadMs": 0.6010829999995622
   },
   {
     "operationId": "settings.theme",
     "stage": "durable",
     "absoluteLimitMs": 1000,
     "enforcement": "gated",
-    "calibratedMedianMs": 204.84160400000837,
-    "calibratedMadMs": 1.5803959999830113
+    "calibratedMedianMs": 203.1218340000014,
+    "calibratedMadMs": 0.7229999999963184
   },
   {
     "operationId": "settings.learning",
     "stage": "feedback",
     "absoluteLimitMs": 100,
-    "enforcement": "debt",
-    "calibratedMedianMs": 221.55000001192093,
-    "calibratedMadMs": 9.25
+    "enforcement": "gated",
+    "calibratedMedianMs": 18.5,
+    "calibratedMadMs": 0.10000002384185791
   },
   {
     "operationId": "settings.learning",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "debt",
-    "calibratedMedianMs": 3139.567666499992,
-    "calibratedMadMs": 58.60275000004913
+    "calibratedMedianMs": 251.07129200000054,
+    "calibratedMadMs": 0.8009579999998095
   },
   {
     "operationId": "settings.learning",
     "stage": "durable",
     "absoluteLimitMs": 1000,
-    "enforcement": "debt",
-    "calibratedMedianMs": 3143.223833499971,
-    "calibratedMadMs": 59.27741649997188
+    "enforcement": "gated",
+    "calibratedMedianMs": 253.87891699999454,
+    "calibratedMadMs": 0.23908300000766758
   },
   {
     "operationId": "settings.templates.load",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 13,
-    "calibratedMadMs": 0.8500000238418579
+    "calibratedMedianMs": 12.550000011920929,
+    "calibratedMadMs": 0.6499999761581421
   },
   {
     "operationId": "settings.templates.load",
     "stage": "settled",
     "absoluteLimitMs": 250,
-    "enforcement": "gated",
-    "calibratedMedianMs": 32.06245800000033,
-    "calibratedMadMs": 1.9456460000074003
+    "enforcement": "debt",
+    "calibratedMedianMs": 176.64133349999975,
+    "calibratedMadMs": 142.23483349999879
   },
   {
     "operationId": "settings.templates.save",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 13.399999976158142,
-    "calibratedMadMs": 0.24999994039535522
+    "calibratedMedianMs": 12.799999952316284,
+    "calibratedMadMs": 0.5000001192092896
   },
   {
     "operationId": "settings.templates.save",
     "stage": "settled",
     "absoluteLimitMs": 250,
-    "enforcement": "debt",
-    "calibratedMedianMs": 2694.8632705000346,
-    "calibratedMadMs": 24.05549999998766
+    "enforcement": "gated",
+    "calibratedMedianMs": 141.64829100000497,
+    "calibratedMadMs": 1.5492089999897871
   },
   {
     "operationId": "settings.templates.save",
     "stage": "durable",
     "absoluteLimitMs": 1000,
-    "enforcement": "debt",
-    "calibratedMedianMs": 2697.9307915000245,
-    "calibratedMadMs": 24.379770999978064
+    "enforcement": "gated",
+    "calibratedMedianMs": 166.58554100000038,
+    "calibratedMadMs": 1.5365830000009737
   },
   {
     "operationId": "settings.presets.save",
@@ -903,39 +903,39 @@
     "absoluteLimitMs": 100,
     "enforcement": "gated",
     "calibratedMedianMs": 13.299999952316284,
-    "calibratedMadMs": 0.10000002384185791
+    "calibratedMadMs": 0.20000004768371582
   },
   {
     "operationId": "settings.presets.save",
     "stage": "settled",
     "absoluteLimitMs": 250,
-    "enforcement": "debt",
-    "calibratedMedianMs": 2715.602437000023,
-    "calibratedMadMs": 22.02037599994219
+    "enforcement": "gated",
+    "calibratedMedianMs": 106.43341700000019,
+    "calibratedMadMs": 0.40066599999408936
   },
   {
     "operationId": "settings.presets.save",
     "stage": "durable",
     "absoluteLimitMs": 1000,
-    "enforcement": "debt",
-    "calibratedMedianMs": 2718.8433119999827,
-    "calibratedMadMs": 23.852646500017727
+    "enforcement": "gated",
+    "calibratedMedianMs": 127.91041699999914,
+    "calibratedMadMs": 1.8821249999964493
   },
   {
     "operationId": "settings.backup.export",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 32.5,
-    "calibratedMadMs": 0.40000003576278687
+    "calibratedMedianMs": 34.199999928474426,
+    "calibratedMadMs": 0.5000001192092896
   },
   {
     "operationId": "settings.backup.export",
     "stage": "settled",
     "absoluteLimitMs": 250,
-    "enforcement": "debt",
-    "calibratedMedianMs": 308.3976875000517,
-    "calibratedMadMs": 1.5308330000552814
+    "enforcement": "gated",
+    "calibratedMedianMs": 111.94837499999267,
+    "calibratedMadMs": 0.7533750000075088
   },
   {
     "operationId": "settings.backup.export",
@@ -954,16 +954,16 @@
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "debt",
-    "calibratedMedianMs": 717.5161455000343,
-    "calibratedMadMs": 9.472415999975055
+    "calibratedMedianMs": 338.8896670000031,
+    "calibratedMadMs": 8.168416000000434
   },
   {
     "operationId": "settings.backup.restore",
     "stage": "durable",
     "absoluteLimitMs": 1000,
     "enforcement": "debt",
-    "calibratedMedianMs": 2133.0135625000257,
-    "calibratedMadMs": 32.75706249993527
+    "calibratedMedianMs": 1126.3040000000037,
+    "calibratedMadMs": 71.15591600000334
   },
   {
     "operationId": "settings.workspace.erase",
@@ -976,39 +976,39 @@
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "debt",
-    "calibratedMedianMs": 647.2782084999853,
-    "calibratedMadMs": 6.665312499993888
+    "calibratedMedianMs": 642.1971669999984,
+    "calibratedMadMs": 7.864832999999635
   },
   {
     "operationId": "settings.workspace.erase",
     "stage": "durable",
     "absoluteLimitMs": 1000,
-    "enforcement": "debt",
-    "calibratedMedianMs": 927.9514795000032,
-    "calibratedMadMs": 8.93945800000256
+    "enforcement": "gated",
+    "calibratedMedianMs": 918.3797500000001,
+    "calibratedMadMs": 5.399624999998196
   },
   {
     "operationId": "settings.diagnostics.export",
     "stage": "feedback",
     "absoluteLimitMs": 100,
     "enforcement": "gated",
-    "calibratedMedianMs": 30.849999964237213,
-    "calibratedMadMs": 0.34999996423721313
+    "calibratedMedianMs": 31,
+    "calibratedMadMs": 1.100000023841858
   },
   {
     "operationId": "settings.diagnostics.export",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 66.54922950000037,
-    "calibratedMadMs": 2.0183124999748543
+    "calibratedMedianMs": 232.25445800000307,
+    "calibratedMadMs": 16.63566699999501
   },
   {
     "operationId": "sync.status",
     "stage": "settled",
     "absoluteLimitMs": 250,
     "enforcement": "gated",
-    "calibratedMedianMs": 2.6202495000325143,
-    "calibratedMadMs": 0.5754575000319164
+    "calibratedMedianMs": 1.914374999993015,
+    "calibratedMadMs": 0.05695799999375595
   }
 ]

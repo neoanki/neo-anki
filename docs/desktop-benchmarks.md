@@ -66,6 +66,43 @@ The accepted current-machine calibration is checked in at `benchmarks/desktop/bu
 
 Automated benchmarks remain headless. `NEO_ANKI_BENCHMARK=1` only enables structured timing marks and disables background throttling for the hidden benchmark renderer; it does not bypass application behavior or persistence.
 
+## July 24, 2026 performance redesign
+
+The current calibration was recorded from the packaged arm64 application on an Apple M3 Pro running macOS 26.5.2. It used five measured repetitions after an unrecorded warm-up; the large scenario used its standard three measured repetitions. Values below are p95.
+
+| Target | Previous | Current | Feedback | Result |
+| --- | ---: | ---: | ---: | --- |
+| 50,000-card launch | 17,140.55 ms | 1,459.91 ms | — | Meets the 2 s target |
+| Learning settings durable | 3,139.57 ms | 255.65 ms | 18.68 ms | Visible immediately; 5.65 ms over the 250 ms stretch target |
+| Template save durable | 2,697.93 ms | 168.75 ms | 13.38 ms | Meets 250 ms |
+| Preset save durable | 2,718.84 ms | 132.16 ms | 13.82 ms | Meets 250 ms |
+| Bulk state durable | 1,556 ms | 110.21 ms | 46.28 ms | Meets 500 ms |
+| Bulk metadata durable | 1,544 ms | 108.02 ms | 43.44 ms | Meets 500 ms |
+| Review undo durable | 1,526 ms | 52.77 ms | 43.74 ms | Meets 500 ms |
+| 50,000-card planning | 1,942 ms | 181.07 ms | — | Meets 250 ms |
+| Cold route ready | ~836 ms | 41.55 ms | 14.77 ms | Meets 250 ms |
+| Study session ready | ~820 ms | 32.48 ms | 13.38 ms | Meets 250 ms |
+
+Large Library first paint is 24.10 ms and semantic settlement is 128.70 ms. Its worst observed renderer task was 67 ms and worst frame gap was 75 ms; no measured renderer task crossed 100 ms. Across the calibrated operation samples, peak aggregate Electron CPU was 25.23%. The largest transient per-operation RSS increase was 266.24 MiB during large-data materialization and was reclaimed rather than retained. The separate 100-transition endurance run retained 52,592,640 bytes (9.98%), satisfying the gate because growth did not exceed both 50 MiB and 10%; warm-route p95 was 18.81 ms feedback and 47.26 ms settled with no long tasks.
+
+### Critical-path findings
+
+The old outer timings combined several independent costs:
+
+- Launch synchronously parsed and validated the complete legacy graph, constructed normalized SQLite rows, regenerated a canonical v4 document, and hydrated/planned the renderer before exposing Today.
+- Every renderer update cloned and validated the full application graph, diffed all collections, then the main process rewrote normalized rows, projected and validated the full v4 workspace, serialized it, and made a complete online backup.
+- Template and preset edits fetched and returned a complete workspace document around a narrow patch.
+- Planning repeatedly sorted complete due/new queues and yielded hundreds of times in the renderer.
+- Lazy route chunks and first-route derivations delayed otherwise small navigations.
+
+The representative 50,000-card launch trace now reaches Electron ready at 53 ms, completes window/document loading at 419 ms, completes the asynchronous workspace handoff at 426 ms, and reports the first useful workspace at 1,286 ms from main-module start. The preserved legacy source is validated and checkpointed in a worker after the useful screen; a representative full background migration took 6.55 s but contributed zero time to semantic launch readiness. A write or v4 editor request forces that migration first, so deferred work cannot be mistaken for durable completion.
+
+The remaining measured critical paths are:
+
+- Learning-settings durability lands just beyond the harness's 250 ms polling boundary even though feedback is 18.68 ms and the narrow journal transaction is already complete around that boundary.
+- The first template-manager expansion is still initialization-bound (324.79 ms p95 pooled with its fast second expansion). Saving the template itself is 168.75 ms durable.
+- Large Library first render materializes its first 100 rows before progressively deriving health/search indexes; this produces the 67 ms worst task while remaining below the 100 ms ceiling.
+
 ## Sync safety
 
 The operation catalog includes core sync. Account and credential benchmarks require an ephemeral macOS keychain plus the local sync service; they must never use the developer’s login Keychain. All normal local commands skip the credential journey before launching its app profile, so they do not probe Keychain or show an authorization dialog. CI or release QA may set `NEO_ANKI_BENCHMARK_SYNC_CREDENTIALS=1` only after provisioning an isolated keychain and must restore the original keychain search list afterward.

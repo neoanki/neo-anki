@@ -15,7 +15,7 @@ const recommendedSessionMinutes = (dailyMinutes: number, availableWorkSeconds: n
 }
 
 export const TodayPage = () => {
-  const { data, plan, planning, planningError, retryPlanning, startSession, setDailyMinutes, setRecoveryStrategy, navigate, loadDemoWorkspace } = useApp()
+  const { data, route, plan, planning, planningError, retryPlanning, startSession, setDailyMinutes, setRecoveryStrategy, navigate, loadDemoWorkspace } = useApp()
   const availableWorkSeconds = plan.reviewSeconds + plan.newSeconds
   const [sessionMinutes, setSessionMinutes] = useState<number | null>(null)
   const [intent, setIntent] = useState<SessionIntent>('balanced')
@@ -35,8 +35,17 @@ export const TodayPage = () => {
   const session = useMemo(() => buildStudySession(plan, data.items, request), [data.items, plan, request])
   const remainingAfterSession = Math.max(0, availableWorkSeconds - session.plannedSeconds)
   const recoveryPolicies = [{ id: 'risk', label: 'Most at-risk first' }, ...extensionQueuePoliciesV2().map(({ id, label }) => ({ id, label }))]
-  const nextDue = useMemo(() => data.cards.filter((card) => !card.suspended && (!card.buriedUntil || Date.parse(card.buriedUntil) <= renderedAt)).map((card) => new Date(card.fsrs.due)).filter((date) => Number.isFinite(date.getTime()) && date.getTime() > renderedAt).sort((left, right) => left.getTime() - right.getTime())[0], [data.cards, renderedAt])
+  const nextDue = useMemo(() => {
+    let earliest = Number.POSITIVE_INFINITY
+    for (const card of data.cards) {
+      if (card.suspended || (card.buriedUntil && Date.parse(card.buriedUntil) > renderedAt)) continue
+      const due = Date.parse(card.fsrs.due)
+      if (Number.isFinite(due) && due > renderedAt && due < earliest) earliest = due
+    }
+    return Number.isFinite(earliest) ? new Date(earliest) : undefined
+  }, [data.cards, renderedAt])
 
+  if (route !== 'today') return null
   if (data.items.length === 0) return (
     <div className="page today-page quiet-today">
       <header className="page-header today-header">

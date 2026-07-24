@@ -28,6 +28,7 @@ export interface WorkspaceChangeSet {
 }
 
 const changed = <T extends { id: string }>(previous: T[], current: T[]) => {
+  if (previous === current) return { upsert: [] as T[], remove: [] as string[] }
   const before = new Map(previous.map((value) => [value.id, value]))
   const afterIds = new Set(current.map((value) => value.id))
   return {

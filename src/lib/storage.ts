@@ -29,12 +29,13 @@ export interface StorageStatus {
 let storageStatus: StorageStatus = { mode: window.neoAnkiDesktop ? 'desktop' : 'browser', recoveredFromBackup: false }
 let lastPersisted: AppData | null = null
 let desktopSaveQueue: Promise<void> = Promise.resolve()
+let pendingDesktopSnapshot: AppData | null = null
+let pendingDesktopBatch: Promise<void> | null = null
 let persistenceBlocked = false
 let browserRecoverySource: string | null = null
 
 /** Adopt state returned by a desktop transaction that has already committed. */
 export const adoptPersistedData = (data: AppData) => {
-  parseWorkspaceData(data)
   lastPersisted = data
 }
 
@@ -61,17 +62,21 @@ const adoptDesktopLoad = (result: NeoAnkiDesktopLoadResult): WorkspaceLoadResult
       lastPersisted = null
       return { ok: true, data }
     }
-    try {
-      const data = migrateData(result.data as LegacyWorkspaceData)
-      lastPersisted = data
-      persistenceBlocked = false
-      return { ok: true, data }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'The desktop workspace could not be migrated.'
+    // The isolated preload can only obtain this value from the main-process
+    // WorkspaceStore, which has already migrated and validated it. Re-running
+    // every Zod schema over a 50k-card structured clone blocks the renderer for
+    // hundreds of milliseconds without adding a trust boundary.
+    const candidate = result.data as Partial<AppData>
+    if (candidate.version !== 3 || !Array.isArray(candidate.items) || !Array.isArray(candidate.cards) || !Array.isArray(candidate.reviews) || !candidate.settings || typeof candidate.settings !== 'object') {
+      const message = 'The desktop workspace projection is invalid.'
       storageStatus.loadError = message
       persistenceBlocked = true
       return { ok: false, failure: { code: 'migration', message, mode: 'desktop', sourcePath: result.recoverySourcePath || result.storagePath, canExportOriginal: true } }
     }
+    const data = candidate as AppData
+    lastPersisted = data
+    persistenceBlocked = false
+    return { ok: true, data }
 }
 
 export const loadWorkspaceData = (): WorkspaceLoadResult => {
@@ -128,15 +133,33 @@ export const saveData = async (data: AppData) => {
   if (persistenceBlocked) throw new Error('Saving is blocked until workspace recovery is complete.')
   if (window.neoAnkiDesktop) {
     if (data === lastPersisted) return
-    const snapshot = structuredClone(parseWorkspaceData(data))
-    const save = desktopSaveQueue.catch(() => undefined).then(async () => {
-      const changes = createWorkspaceChangeSet(lastPersisted, snapshot)
-      if (!hasWorkspaceChanges(changes)) return
-      await window.neoAnkiDesktop!.saveData(changes)
-      lastPersisted = snapshot
-    })
-    desktopSaveQueue = save
-    return save
+    // App state updates are immutable. Keeping the exact snapshot preserves the
+    // state accepted by this queued save without cloning and validating the
+    // complete workspace on the interaction path.
+    pendingDesktopSnapshot = data
+    if (!pendingDesktopBatch) {
+      pendingDesktopBatch = new Promise<void>((resolve, reject) => {
+        queueMicrotask(() => {
+          const snapshot = pendingDesktopSnapshot!
+          pendingDesktopSnapshot = null
+          pendingDesktopBatch = null
+          const changes = createWorkspaceChangeSet(lastPersisted, snapshot)
+          if (!hasWorkspaceChanges(changes)) {
+            resolve()
+            return
+          }
+          // Invoke IPC immediately. A later in-flight save is diffed from the
+          // last durable snapshot, so its cumulative patch remains correct if
+          // an earlier write fails; the main process serializes commits.
+          const save = window.neoAnkiDesktop!.saveData(changes).then(() => {
+            lastPersisted = snapshot
+          })
+          desktopSaveQueue = Promise.all([desktopSaveQueue.catch(() => undefined), save.catch(() => undefined)]).then(() => undefined)
+          void save.then(resolve, reject)
+        })
+      })
+    }
+    return pendingDesktopBatch
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...data, workspaceDocumentV4: appDataToWorkspaceDocumentV4(data) }))
 }
@@ -165,7 +188,10 @@ export const exportRecoverySource = async () => {
 }
 
 /** Wait for every accepted desktop mutation before an out-of-band v4 command. */
-export const flushPendingSaves = () => desktopSaveQueue.catch(() => undefined)
+export const flushPendingSaves = async () => {
+  await pendingDesktopBatch?.catch(() => undefined)
+  await desktopSaveQueue.catch(() => undefined)
+}
 
 export const downloadBackup = async (data: AppData) => {
   if (window.neoAnkiDesktop) return window.neoAnkiDesktop.exportBackup()

@@ -31,7 +31,7 @@
     "extension:check": "npm run extension:sdk && npm run check -w @neo-anki-example/study-pulse",
     "extension:example": "npm run extension:sdk && npm run build -w @neo-anki-example/study-pulse",
     "desktop:runtime": "node scripts/ensure-electron-runtime.mjs",
-    "desktop:prepare": "esbuild electron/main.ts --bundle --platform=node --format=esm --external:electron --outfile=dist-electron/main.mjs && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/preload.cjs && npm run license:check",
+    "desktop:prepare": "esbuild electron/main.ts --bundle --platform=node --format=esm --external:electron --outfile=dist-electron/main.mjs && esbuild electron/legacy-migration-worker.ts --bundle --platform=node --format=esm --outfile=dist-electron/legacy-migration-worker.mjs && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/preload.cjs && npm run license:check",
     "desktop:dev": "npm run desktop:prepare && concurrently -k \"vite --host 127.0.0.1 --port 5173\" \"wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
     "desktop:pack": "npm run build && npm run desktop:prepare && electron-builder --dir",
     "desktop:build": "npm run build && npm run desktop:prepare && electron-builder",

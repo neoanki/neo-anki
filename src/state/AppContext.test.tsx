@@ -167,7 +167,7 @@ describe('workspace safety actions', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Import and edit' }))
 
     await waitFor(() => expect(screen.getByLabelText('imported prompt')).toHaveTextContent('Edited immediately after import'))
-    expect(saved.flatMap((changes) => changes.upsert.items)).toContainEqual(expect.objectContaining({ id: imported.items[0].id, prompt: 'Edited immediately after import' }))
+    await waitFor(() => expect(saved.flatMap((changes) => changes.upsert.items)).toContainEqual(expect.objectContaining({ id: imported.items[0].id, prompt: 'Edited immediately after import' })))
     await waitFor(() => expect(persisted.items.find((item) => item.id === imported.items[0].id)?.prompt).toBe('Edited immediately after import'))
   })
 

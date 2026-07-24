@@ -601,7 +601,7 @@ button.image-stage { padding: 0; border: 0; background: transparent; text-align:
   --surface-muted: #2b2b28;
   --text: #f2f1ec;
   --text-soft: #c1beb5;
-  --text-faint: #aaa69c;
+  --text-faint: #b1ada4;
   --border: #474641;
   --border-strong: #5b5952;
   --primary: #b7a2eb;
@@ -610,6 +610,8 @@ button.image-stage { padding: 0; border: 0; background: transparent; text-align:
 }
 
 :root[data-theme='dark'] .primary-button { color: #1b1724; }
+:root[data-theme='dark'] .bottom-nav-item.active,
+:root[data-theme='dark'] .bottom-nav-item.active > span { color: var(--primary-hover); }
 
 html, body, #root { height: 100%; overflow: hidden; }
 body { min-height: 0; }

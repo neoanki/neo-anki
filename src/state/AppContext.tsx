@@ -7,15 +7,56 @@ import { adoptPersistedData, adoptTrustedDesktopData, clearStoredData, downloadB
 import { createDemoWorkspaceData, createEmptyWorkspaceData } from '../data/seed'
 import { extensionRuntime } from '../extensions/runtime'
 import { mergeImportGraph } from '../lib/import-merge'
-import { planningSignalsForItemV2, refreshExtensionPlanningSignalsV2, scoreQueuePolicyV2 } from '../extensions/v2/registry'
+import { hasExtensionPlanningContributionsV2, planningSignalsForItemV2, refreshExtensionPlanningSignalsV2, scoreQueuePolicyV2 } from '../extensions/v2/registry'
 import type { WorkspaceDocumentV4, WorkspacePatchV2 } from '../../packages/compatibility-domain/src/index'
 import { applyWorkspacePatchV2, createWorkspaceDocumentV4 } from '../../packages/compatibility-domain/src/index'
 import { appDataToWorkspaceDocumentV4, workspaceDocumentV4ToAppData } from '../lib/workspace-v4'
-import { buildDailyPlanInWorker } from '../lib/planner-worker-client'
+import { buildDailyPlanInWorker, prewarmPlannerWorker } from '../lib/planner-worker-client'
 import { renderCardFields } from '../lib/card-rendering'
 
 const LARGE_PLANNER_CARD_THRESHOLD = 5_000
 const yieldPlannerPreparation = () => new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+const planningObjectIds = new WeakMap<object, number>()
+let nextPlanningObjectId = 1
+const planningObjectId = (value: object) => {
+  const existing = planningObjectIds.get(value)
+  if (existing) return existing
+  const created = nextPlanningObjectId++
+  planningObjectIds.set(value, created)
+  return created
+}
+const recentReviews = (reviews: AppData['reviews'], limit = 100) => {
+  if (reviews.length <= limit) return reviews
+  type Entry = { review: AppData['reviews'][number]; time: number }
+  const heap: Entry[] = []
+  const compare = (left: Entry, right: Entry) => left.time - right.time || left.review.id.localeCompare(right.review.id)
+  const bubbleUp = (index: number) => {
+    while (index > 0) {
+      const parent = Math.floor((index - 1) / 2)
+      if (compare(heap[parent], heap[index]) <= 0) break
+      ;[heap[parent], heap[index]] = [heap[index], heap[parent]]
+      index = parent
+    }
+  }
+  const bubbleDown = (index: number) => {
+    while (true) {
+      const left = index * 2 + 1
+      const right = left + 1
+      let smallest = index
+      if (left < heap.length && compare(heap[left], heap[smallest]) < 0) smallest = left
+      if (right < heap.length && compare(heap[right], heap[smallest]) < 0) smallest = right
+      if (smallest === index) break
+      ;[heap[index], heap[smallest]] = [heap[smallest], heap[index]]
+      index = smallest
+    }
+  }
+  for (const review of reviews) {
+    const entry = { review, time: Date.parse(review.reviewedAt) }
+    if (heap.length < limit) { heap.push(entry); bubbleUp(heap.length - 1) }
+    else if (compare(entry, heap[0]) > 0) { heap[0] = entry; bubbleDown(0) }
+  }
+  return heap.sort((left, right) => compare(right, left)).map((entry) => entry.review)
+}
 const safeRouteFromLocation = (): Route => {
   try {
     const candidate = decodeURIComponent(window.location.hash.replace(/^#\/?/, ''))
@@ -24,33 +65,41 @@ const safeRouteFromLocation = (): Route => {
 }
 const scrollToTop = () => window.scrollTo({ top: 0, behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
 
-const prepareLargePlannerInput = async (data: AppData, now: Date, signal: AbortSignal) => {
+const prepareLargePlannerInput = async (data: Pick<AppData, 'cards' | 'items' | 'reviews'> & {
+  settings: Pick<AppData['settings'], 'dailyMinutes' | 'recoveryStrategy'>
+}, now: Date, signal: AbortSignal) => {
   const signalsByItem: Array<[string, ReturnType<typeof planningSignalsForItemV2>]> = []
   const signalBoost = new Map<string, number>()
-  for (let offset = 0; offset < data.items.length; offset += 250) {
-    if (signal.aborted) throw new DOMException('Background planning was canceled.', 'AbortError')
-    for (const item of data.items.slice(offset, offset + 250)) {
-      const signals = planningSignalsForItemV2(item).filter((value) => Boolean(value.id?.trim()) && Boolean(value.label?.trim()) && Number.isFinite(value.score))
-      if (signals.length) signalsByItem.push([item.id, signals])
-      signalBoost.set(item.id, signals.reduce((highest, value) => Math.max(highest, value.score), 0))
+  const hasExtensionPlanning = hasExtensionPlanningContributionsV2()
+  if (hasExtensionPlanning) {
+    for (let offset = 0; offset < data.items.length; offset += 2_000) {
+      if (signal.aborted) throw new DOMException('Background planning was canceled.', 'AbortError')
+      for (const item of data.items.slice(offset, offset + 2_000)) {
+        const signals = planningSignalsForItemV2(item).filter((value) => Boolean(value.id?.trim()) && Boolean(value.label?.trim()) && Number.isFinite(value.score))
+        if (signals.length) signalsByItem.push([item.id, signals])
+        signalBoost.set(item.id, signals.reduce((highest, value) => Math.max(highest, value.score), 0))
+      }
+      await yieldPlannerPreparation()
     }
-    await yieldPlannerPreparation()
   }
   const queueScoresByCard: Array<[string, number]> = []
-  if (data.settings.recoveryStrategy !== 'risk') {
-    for (let offset = 0; offset < data.cards.length; offset += 500) {
+  if (hasExtensionPlanning && data.settings.recoveryStrategy !== 'risk') {
+    for (let offset = 0; offset < data.cards.length; offset += 2_000) {
       if (signal.aborted) throw new DOMException('Background planning was canceled.', 'AbortError')
-      for (const card of data.cards.slice(offset, offset + 500)) {
+      for (const card of data.cards.slice(offset, offset + 2_000)) {
         const score = scoreQueuePolicyV2(data.settings.recoveryStrategy, card.id)
         if (score != null && Number.isFinite(score)) queueScoresByCard.push([card.id, score])
       }
       await yieldPlannerPreparation()
     }
   }
-  const latest = new Set([...data.reviews].sort((left, right) => Date.parse(left.reviewedAt) - Date.parse(right.reviewedAt) || left.id.localeCompare(right.id)).slice(-100).map((review) => review.id))
   const start = new Date(now); start.setHours(0, 0, 0, 0)
   const end = new Date(now); end.setHours(23, 59, 59, 999)
-  const reviews = data.reviews.filter((review) => latest.has(review.id) || (Date.parse(review.reviewedAt) >= start.getTime() && Date.parse(review.reviewedAt) <= end.getTime()))
+  const latest = new Set(recentReviews(data.reviews).map((review) => review.id))
+  const reviews = data.reviews.filter((review) => {
+    const reviewedAt = Date.parse(review.reviewedAt)
+    return latest.has(review.id) || (reviewedAt >= start.getTime() && reviewedAt <= end.getTime())
+  })
   return { signalsByItem, queueScoresByCard, reviews }
 }
 
@@ -97,7 +146,8 @@ interface AppContextValue {
   reviewCard: (cardId: string, rating: ReviewRating, durationSeconds: number, rawDurationSeconds?: number) => void
   undoLastReview: () => void
   loadWorkspaceDocument: () => Promise<WorkspaceDocumentV4>
-  applyCoreWorkspacePatch: (patch: WorkspacePatchV2) => Promise<void>
+  loadTemplateWorkspaceDocument: () => Promise<WorkspaceDocumentV4>
+  applyCoreWorkspacePatch: (patch: WorkspacePatchV2) => Promise<{ workspaceRevision: number; updatedAt: string }>
   mergeImport: (imported: Pick<AppData, 'items' | 'cards' | 'assets'> & { workspaceDocumentV4?: unknown; workspaceV4Media?: AppData['assets']; workspaceV4SourceArchive?: Uint8Array; workspaceV4Operation?: 'additive' | 'replace-profile' }) => Promise<void>
   replaceData: (data: AppData) => void
   resetData: () => void
@@ -129,6 +179,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const persistenceAttempt = useRef(0)
   const explicitPersistenceInFlight = useRef(0)
   const skipPassiveSaveFor = useRef<AppData | null>(null)
+
+  useEffect(() => {
+    if (typeof Worker !== 'undefined') prewarmPlannerWorker()
+  }, [])
 
   useEffect(() => {
     if (workspaceLoading || workspaceLoadFailure) return
@@ -200,6 +254,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return () => { current = false }
   }, [applyWorkspaceLoad, usesAsyncDesktopLoad])
 
+  useEffect(() => {
+    if (workspaceLoading || workspaceLoadFailure || !window.neoAnkiDesktop?.workspaceUsable) return
+    let current = true
+    const first = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => { if (current) window.neoAnkiDesktop?.workspaceUsable?.() })
+    })
+    return () => { current = false; window.cancelAnimationFrame(first) }
+  }, [workspaceLoadFailure, workspaceLoading])
+
   const retryWorkspaceLoad = useCallback(() => applyWorkspaceLoad(loadWorkspaceData()), [applyWorkspaceLoad])
   const exportWorkspaceRecoverySource = useCallback(() => exportRecoverySource(), [])
   const startEmptyAfterRecovery = useCallback(async () => {
@@ -233,15 +296,28 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return () => { current = false }
   }, [data, workspaceLoadFailure, workspaceLoading])
 
+  const plannerSettings = useMemo(() => ({
+    dailyMinutes: data.settings.dailyMinutes,
+    recoveryStrategy: data.settings.recoveryStrategy,
+  }), [data.settings.dailyMinutes, data.settings.recoveryStrategy])
+  const plannerInput = useMemo(() => ({
+    cards: data.cards,
+    items: data.items,
+    reviews: data.reviews,
+    settings: plannerSettings,
+  }), [data.cards, data.items, data.reviews, plannerSettings])
   const directPlan = useMemo(
-    () => { void extensionSignalRevision; return data.cards.length < LARGE_PLANNER_CARD_THRESHOLD ? buildDailyPlan(data.cards, data.reviews, data.settings, new Date(), data.items, {
+    () => { void extensionSignalRevision; return plannerInput.cards.length < LARGE_PLANNER_CARD_THRESHOLD ? buildDailyPlan(plannerInput.cards, plannerInput.reviews, plannerInput.settings, new Date(), plannerInput.items, {
       signalsFor: (item) => planningSignalsForItemV2(item),
       scoreQueuePolicy: (strategy, candidate) => scoreQueuePolicyV2(strategy, candidate.card.id) ?? null,
     }) : null },
-    [data, extensionSignalRevision],
+    [extensionSignalRevision, plannerInput],
   )
-  const planKey = `${data.updatedAt}:${data.cards.length}:${data.reviews.length}:${extensionSignalRevision}`
-  const fallbackPlan = useMemo(() => buildDailyPlan([], [...data.reviews].sort((left, right) => Date.parse(left.reviewedAt) - Date.parse(right.reviewedAt) || left.id.localeCompare(right.id)).slice(-100), data.settings, new Date()), [data.reviews, data.settings])
+  const planKey = `${planningObjectId(plannerInput.cards)}:${planningObjectId(plannerInput.reviews)}:${planningObjectId(plannerInput.items)}:${plannerInput.settings.dailyMinutes}:${plannerInput.settings.recoveryStrategy}:${extensionSignalRevision}`
+  // Large workspaces render a useful planning shell immediately. Today's
+  // review accounting arrives with the worker result instead of making the
+  // first paint scan the complete review log.
+  const fallbackPlan = useMemo(() => buildDailyPlan([], [], data.settings, new Date()), [data.settings])
   const plan = directPlan || (backgroundPlan?.key === planKey ? backgroundPlan.plan : fallbackPlan)
   const planningError = plannerFailure?.key === planKey ? plannerFailure.message : ''
   const planning = !directPlan && backgroundPlan?.key !== planKey && !planningError
@@ -251,8 +327,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (workspaceLoading || directPlan) return
     const controller = new AbortController()
     const now = new Date()
-    void prepareLargePlannerInput(data, now, controller.signal)
-      .then((prepared) => buildDailyPlanInWorker({ requestId: crypto.randomUUID(), now: now.toISOString(), cards: data.cards, reviews: prepared.reviews, settings: data.settings, items: data.items, signalsByItem: prepared.signalsByItem, queueScoresByCard: prepared.queueScoresByCard }, controller.signal))
+    void prepareLargePlannerInput(plannerInput, now, controller.signal)
+      .then((prepared) => buildDailyPlanInWorker({ requestId: crypto.randomUUID(), now: now.toISOString(), cards: plannerInput.cards, reviews: prepared.reviews, settings: plannerInput.settings, items: plannerInput.items, signalsByItem: prepared.signalsByItem, queueScoresByCard: prepared.queueScoresByCard }, controller.signal))
       .then((next) => { if (!controller.signal.aborted) { setPlannerFailure(null); setBackgroundPlan({ key: planKey, plan: next }) } })
       .catch((error) => {
         if ((error as { name?: string }).name === 'AbortError') return
@@ -261,7 +337,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         extensionRuntime.reportDiagnostic('core.planner', 'background-plan', error)
       })
     return () => controller.abort()
-  }, [data, directPlan, planKey, plannerAttempt, workspaceLoading])
+  }, [directPlan, planKey, plannerAttempt, plannerInput, workspaceLoading])
 
   const navigate = (next: Route) => {
     if (!window.dispatchEvent(new CustomEvent('neo-anki:before-navigate', { cancelable: true, detail: { route: next } }))) return
@@ -644,14 +720,88 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return appDataToWorkspaceDocumentV4(dataRef.current)
   }, [])
 
+  const loadTemplateWorkspaceDocument = useCallback(async () => {
+    if (window.neoAnkiDesktop) {
+      return window.neoAnkiDesktop.loadWorkspaceV4EditorDocument?.() || window.neoAnkiDesktop.loadWorkspaceV4Document()
+    }
+    return appDataToWorkspaceDocumentV4(dataRef.current)
+  }, [])
+
   const applyCoreWorkspacePatch = useCallback((patch: WorkspacePatchV2) => {
     const task = corePatchQueue.current.catch(() => undefined).then(async () => {
       if (window.neoAnkiDesktop) {
         await flushPendingSaves()
         const result = await window.neoAnkiDesktop.applyCoreWorkspacePatchV2(patch)
-        adoptPersistedData(result.data)
-        setData(result.data)
-        return
+        const current = dataRef.current
+        const projection = result.projectionPatch
+        const noteTypes = new Map(projection.noteTypes.map((value) => [value.id, value]))
+        const fieldsByType = new Map<string, typeof projection.fields>()
+        for (const field of projection.fields) {
+          const values = fieldsByType.get(field.noteTypeId)
+          if (values) values.push(field)
+          else fieldsByType.set(field.noteTypeId, [field])
+        }
+        const items = noteTypes.size ? current.items.map((item) => {
+          const contentTypeId = item.contentModel?.contentTypeId
+          const noteType = contentTypeId ? noteTypes.get(contentTypeId) : undefined
+          if (!noteType) return item
+          const previousValues = new Map(item.contentModel?.fields.map((field) => [field.id, field.value]) || [])
+          const definitions = new Map((fieldsByType.get(noteType.id) || []).map((field) => [field.id, field]))
+          return {
+            ...item,
+            contentModel: {
+              contentTypeId: noteType.id,
+              contentTypeName: noteType.name,
+              fields: noteType.fieldIds.map((id) => {
+                const field = definitions.get(id)
+                return { id, name: field?.name || id, ordinal: field?.ordinal || 0, value: previousValues.get(id) || '' }
+              }),
+            },
+          }
+        }) : current.items
+        const presetOperations = new Map(patch.operations.filter((operation) => operation.kind === 'preset' && operation.op !== 'delete').map((operation) => [operation.id, operation.value as WorkspaceDocumentV4['workspace']['presets'][number]]))
+        const deckOperations = new Map(patch.operations.filter((operation) => operation.kind === 'deck' && operation.op !== 'delete').map((operation) => [operation.id, operation.value as WorkspaceDocumentV4['workspace']['decks'][number]]))
+        const deckByCard = new Map(projection.deckCards.flatMap(({ deckId, cardIds }) => cardIds.map((id) => [id, deckId] as const)))
+        const renderingByCard = new Map(projection.renderingCards.map((value) => [value.id, value.templateId]))
+        const templates = new Map(projection.templates.map((value) => [value.id, value]))
+        const itemById = new Map(items.map((item) => [item.id, item]))
+        const cards = presetOperations.size || deckByCard.size || renderingByCard.size ? current.cards.map((card) => {
+          let next = card
+          const preset = card.presetId ? presetOperations.get(card.presetId) : undefined
+          if (preset) next = { ...next, schedulerOptions: { desiredRetention: preset.desiredRetention, maximumIntervalDays: preset.maximumIntervalDays, learningStepsMinutes: [...preset.learningStepsMinutes], relearningStepsMinutes: [...preset.relearningStepsMinutes], newCardsPerDay: preset.newCardsPerDay, reviewsPerDay: preset.reviewsPerDay, buryNewSiblings: preset.buryNewSiblings, buryReviewSiblings: preset.buryReviewSiblings, leechThreshold: preset.leechThreshold, leechAction: preset.leechAction } }
+          const deckId = deckByCard.get(card.id)
+          const deck = deckId ? deckOperations.get(deckId) : undefined
+          if (deck) next = { ...next, deckName: deck.name, presetId: deck.presetId }
+          const templateId = renderingByCard.get(card.id)
+          const template = templateId ? templates.get(templateId) : undefined
+          const item = template ? itemById.get(card.itemId) : undefined
+          if (template) {
+            const renderedFields = card.rendering
+              ? [card.rendering.prompt, card.rendering.answer, ...card.rendering.supporting]
+              : []
+            const values = item?.contentModel
+              ? Object.fromEntries(item.contentModel.fields.map((field) => [field.id, field.value]))
+              : renderedFields.length
+                ? Object.fromEntries(renderedFields.map((field) => [field.id, field.value]))
+                : item
+                  ? Object.fromEntries((fieldsByType.get(template.noteTypeId) || []).map((field) => [
+                    field.id,
+                    field.id === template.promptFieldId ? item.prompt : field.id === template.answerFieldId ? item.answer : item.context,
+                  ]))
+                  : {}
+            const definitions = item?.contentModel
+              ? item.contentModel.fields.map((field) => ({ id: field.id, name: field.name }))
+              : renderedFields.length
+                ? renderedFields.map((field) => ({ id: field.id, name: field.label }))
+                : (fieldsByType.get(template.noteTypeId) || []).map((field) => ({ id: field.id, name: field.name }))
+            if (definitions.length) next = { ...next, rendering: renderCardFields(template, values, definitions) }
+          }
+          return next
+        }) : current.cards
+        const next = { ...current, items, cards, updatedAt: projection.updatedAt }
+        adoptPersistedData(next)
+        setData(next)
+        return { workspaceRevision: result.workspaceRevision, updatedAt: result.updatedAt }
       }
       const previous = appDataToWorkspaceDocumentV4(dataRef.current)
       const document = createWorkspaceDocumentV4(applyWorkspacePatchV2(previous.workspace, patch), previous.clientState)
@@ -660,8 +810,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const urls = new Map(dataRef.current.assets.map((asset) => [asset.id, asset.dataUrl]))
       projected.assets = projected.assets.map((asset) => ({ ...asset, dataUrl: urls.get(asset.id) || asset.dataUrl }))
       setData(projected)
+      return { workspaceRevision: document.workspace.revision, updatedAt: document.workspace.updatedAt }
     })
-    corePatchQueue.current = task
+    corePatchQueue.current = task.then(() => undefined)
     return task
   }, [setData])
 
@@ -771,6 +922,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     reviewCard,
     undoLastReview,
     loadWorkspaceDocument,
+    loadTemplateWorkspaceDocument,
     applyCoreWorkspacePatch,
     mergeImport,
     replaceData,

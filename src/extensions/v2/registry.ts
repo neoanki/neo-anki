@@ -137,6 +137,11 @@ export const authoringActionStatusesV2 = async (draft: KnowledgeDraftV1) => {
 
 export const scoreQueuePolicyV2 = (policyId: string, cardId: string) => queueScores.get(`${policyId}:${cardId}`)
 
+export const hasExtensionPlanningContributionsV2 = () => [...workers.values()].some((runtime) =>
+  runtime.manifest.permissions.includes('study:signals')
+  || Boolean(runtime.manifest.contributions?.queuePolicies?.length)
+)
+
 const projections = async (data: AppData): Promise<KnowledgeItemProjection[]> => {
   const itemById = new Map(data.items.map((value) => [value.id, value]))
   const result: KnowledgeItemProjection[] = []
@@ -155,6 +160,10 @@ export const refreshExtensionPlanningSignalsV2 = async (data: AppData) => {
   const next = new Map<string, Array<{ id: string; label: string; score: number }>>()
   const nextQueueScores = new Map<string, number>()
   const nextLibraryPresets: typeof libraryPresets = []
+  if (!hasExtensionPlanningContributionsV2() && ![...workers.values()].some((runtime) => runtime.manifest.contributions?.libraryPresets?.length)) {
+    if (generation === planningGeneration) { planningSignals = next; queueScores = nextQueueScores; libraryPresets = nextLibraryPresets }
+    return
+  }
   const items = await projections(data)
   for (const [extensionId, runtime] of workers) {
     if (runtime.manifest.permissions.includes('study:signals')) {
