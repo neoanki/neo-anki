@@ -58,8 +58,8 @@ const replaceSoundReferences = (value: string) => {
 }
 
 const plainText = (value: string) => decodeEntities(replaceSoundReferences(value)
-  .replace(/<br\s*\/?\s*>/gi, '\n')
-  .replace(/<hr\s*\/?\s*>/gi, '\n')
+  .replace(/<br[\s/]*>/gi, '\n')
+  .replace(/<hr[\s/]*>/gi, '\n')
   .replace(/<\/(?:div|p|li|tr|h[1-6])>/gi, '\n')
   .replace(/<[^>]+>/g, ' '))
   .replace(/[ \t]+\n/g, '\n')

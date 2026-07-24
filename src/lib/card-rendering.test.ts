@@ -24,6 +24,7 @@ describe('native card rendering', () => {
     expect(plainTextAnswer('<p>Hello<br><strong>world</strong></p>[sound:voice.mp3]')).toBe('Hello\nworld\nAudio: voice.mp3')
     expect(plainTextAnswer('[SOUND:folder\\\\voice.mp3]')).toBe('Audio: folder\\\\voice.mp3')
     expect(plainTextAnswer(`[sound:${'\\'.repeat(10_000)}`)).toHaveLength(10_007)
+    expect(plainTextAnswer(`<br${' '.repeat(10_000)}`)).toBe('<br')
   })
 
   it('rejects inconsistent card references', () => {

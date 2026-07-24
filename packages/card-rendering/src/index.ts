@@ -34,7 +34,7 @@ const replaceSoundReferences = (value: string) => {
 }
 
 export const plainTextAnswer = (value: string) => replaceSoundReferences(value)
-  .replace(/<br\s*\/?\s*>/gi, '\n')
+  .replace(/<br[\s/]*>/gi, '\n')
   .replace(/<\/(?:div|p|li|tr|h[1-6])>/gi, '\n')
   .replace(/<[^>]+>/g, ' ')
   .replace(/&([a-z]+);/gi, (match, name: string) => entities[name.toLowerCase()] ?? match)
