@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 contextBridge.exposeInMainWorld('neoAnkiDesktop', {
   isDesktop: true,
   rendererReady: () => ipcRenderer.send('neo-anki:renderer-ready'),
+  workspaceUsable: () => ipcRenderer.send('neo-anki:workspace-usable'),
   loadData: () => ipcRenderer.sendSync('neo-anki:load-data'),
   loadDataAsync: () => ipcRenderer.invoke('neo-anki:load-data-async'),
   saveData: (changes: unknown) => ipcRenderer.invoke('neo-anki:save-data', changes),
@@ -16,6 +17,7 @@ contextBridge.exposeInMainWorld('neoAnkiDesktop', {
   commitWorkspaceV4Import: (input: unknown) => ipcRenderer.invoke('neo-anki:commit-workspace-v4-import', input),
   loadWorkspaceV4ExportPayload: () => ipcRenderer.invoke('neo-anki:load-workspace-v4-export-payload'),
   loadWorkspaceV4Document: () => ipcRenderer.invoke('neo-anki:load-workspace-v4-document'),
+  loadWorkspaceV4EditorDocument: () => ipcRenderer.invoke('neo-anki:load-workspace-v4-editor-document'),
   applyCoreWorkspacePatchV2: (patch: unknown) => ipcRenderer.invoke('neo-anki:apply-core-workspace-patch-v2', patch),
   reportDiagnostic: (diagnostic: unknown) => ipcRenderer.invoke('neo-anki:report-diagnostic', diagnostic),
   exportDiagnostics: () => ipcRenderer.invoke('neo-anki:export-diagnostics'),

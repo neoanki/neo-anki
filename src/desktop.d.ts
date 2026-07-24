@@ -42,6 +42,7 @@ declare global {
   interface NeoAnkiDesktopBridge {
     isDesktop: true
     rendererReady(): void
+    workspaceUsable?(): void
     loadData(): NeoAnkiDesktopLoadResult
     loadDataAsync?(): Promise<NeoAnkiDesktopLoadResult>
     saveData(changes: WorkspaceChangeSet): Promise<void>
@@ -55,7 +56,19 @@ declare global {
     commitWorkspaceV4Import(input: { document: unknown; media: MediaAsset[]; sourceArchive?: Uint8Array; operation: 'additive' | 'replace-profile' }): Promise<AppData>
     loadWorkspaceV4ExportPayload(): Promise<{ document: unknown; media: MediaAsset[] }>
     loadWorkspaceV4Document(): Promise<WorkspaceDocumentV4>
-    applyCoreWorkspacePatchV2(patch: WorkspacePatchV2): Promise<{ workspaceRevision: number; data: AppData }>
+    loadWorkspaceV4EditorDocument?(): Promise<WorkspaceDocumentV4>
+    applyCoreWorkspacePatchV2(patch: WorkspacePatchV2): Promise<{
+      workspaceRevision: number
+      updatedAt: string
+      projectionPatch: {
+        updatedAt: string
+        noteTypes: WorkspaceDocumentV4['workspace']['noteTypes']
+        fields: WorkspaceDocumentV4['workspace']['fields']
+        templates: WorkspaceDocumentV4['workspace']['templates']
+        renderingCards: Array<{ id: string; templateId: string }>
+        deckCards: Array<{ deckId: string; cardIds: string[] }>
+      }
+    }>
     reportDiagnostic(diagnostic: { source: 'renderer' | 'extension-host'; level: 'info' | 'warning' | 'error'; code: string; message: string; stack?: string }): Promise<void>
     exportDiagnostics(): Promise<{ canceled: boolean; path?: string }>
     getReleaseInfo(): Promise<NeoAnkiReleaseInfo>

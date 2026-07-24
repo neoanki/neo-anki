@@ -4,6 +4,7 @@ import { readFile, stat, writeFile } from 'node:fs/promises'
 import { deflateRawSync, inflateRawSync } from 'node:zlib'
 import { basename, extname, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { Worker } from 'node:worker_threads'
 import { decompress as decompressZstd } from 'fzstd'
 import { ExtensionManager } from './extension-manager.js'
 import { MarketplaceClient } from './marketplace-client.js'
@@ -128,7 +129,70 @@ let workspaceStore: WorkspaceStore
 let diagnosticsLog: DiagnosticsLog
 let syncManager: DesktopSyncManager
 let saveQueue: Promise<void> = Promise.resolve()
+let deferredLegacyMigrationQueued = false
+let deferredLegacyMigration: Promise<void> | null = null
+let deferredLegacyMigrationTimer: NodeJS.Timeout | null = null
 let quitAfterFlush = false
+
+const queueDeferredLegacyMigration = () => {
+  if (deferredLegacyMigrationTimer) {
+    clearTimeout(deferredLegacyMigrationTimer)
+    deferredLegacyMigrationTimer = null
+  }
+  if (deferredLegacyMigrationQueued || !workspaceStore.hasDeferredLegacyMigration()) return
+  deferredLegacyMigrationQueued = true
+  deferredLegacyMigration = new Promise<void>((resolveMigration, rejectMigration) => {
+    const worker = new Worker(new URL('./legacy-migration-worker.mjs', import.meta.url), {
+      workerData: { userDataRoot: app.getPath('userData'), reportTiming: process.env.NEO_ANKI_BENCHMARK === '1' },
+    })
+    let settled = false
+    worker.on('message', (result: { type?: string; stage?: string; elapsedMs?: number; ok?: boolean; message?: string }) => {
+      if (result?.type === 'timing') {
+        benchmarkMark(`legacy-migration-${result.stage}`, { workerElapsedMs: Number(result.elapsedMs?.toFixed(3)) })
+        return
+      }
+      if (settled) return
+      settled = true
+      if (result?.ok) {
+        try {
+          workspaceStore.acceptExternalLegacyMigration()
+          benchmarkMark('legacy-migration-completed')
+          resolveMigration()
+        } catch (error) { rejectMigration(error) }
+      } else {
+        rejectMigration(new Error(result?.message || 'Deferred legacy migration failed.'))
+      }
+    })
+    worker.once('error', (error) => {
+      if (settled) return
+      settled = true
+      rejectMigration(error)
+    })
+    worker.once('exit', (code) => {
+      if (settled || code === 0) return
+      settled = true
+      rejectMigration(new Error(`Deferred legacy migration worker exited with code ${code}.`))
+    })
+  })
+  deferredLegacyMigration.catch((error) => {
+    void diagnosticsLog.record({ source: 'main', level: 'error', code: 'legacy-migration-deferred-failed', message: error instanceof Error ? error.message : 'Deferred legacy migration failed.' })
+  })
+  saveQueue = saveQueue.catch(() => undefined).then(() => deferredLegacyMigration!)
+}
+
+const awaitDeferredLegacyMigration = async () => {
+  queueDeferredLegacyMigration()
+  if (deferredLegacyMigration) await deferredLegacyMigration
+}
+
+const scheduleDeferredLegacyMigration = () => {
+  if (deferredLegacyMigrationQueued || deferredLegacyMigrationTimer || !workspaceStore.hasDeferredLegacyMigration()) return
+  // Give the first useful screen, the initial plan, and likely first navigation
+  // uncontended access to the CPU. Any write bypasses this idle delay through
+  // awaitDeferredLegacyMigration(), so acknowledged mutations remain safe.
+  deferredLegacyMigrationTimer = setTimeout(queueDeferredLegacyMigration, 1_500)
+  deferredLegacyMigrationTimer.unref()
+}
 
 let rendererReady = false
 let rendererStartupTimer: NodeJS.Timeout | null = null
@@ -203,6 +267,7 @@ const queueSave = (changes: WorkspaceChangeSet) => {
   benchmarkMark('save-enqueued')
   saveQueue = saveQueue.catch(() => undefined).then(async () => {
     benchmarkMark('save-started')
+    await awaitDeferredLegacyMigration()
     workspaceStore.applyChanges(changes)
     await workspaceStore.createRollingBackup()
     benchmarkMark('save-completed')
@@ -247,11 +312,17 @@ const registerDesktopIpc = () => {
     benchmarkMark('renderer-ready')
     clearRendererStartupTimer()
   })
+  ipcMain.on('neo-anki:workspace-usable', (event) => {
+    assertTrustedSender(event)
+    benchmarkMark('workspace-usable')
+    scheduleDeferredLegacyMigration()
+  })
   ipcMain.on('neo-anki:load-data', (event) => {
     try {
       assertTrustedSender(event)
+      const data = workspaceStore.load()
       const status = workspaceStore.status()
-      event.returnValue = { data: workspaceStore.load(), storagePath: status.path, recoveredFromBackup: status.recoveredFromBackup, migratedLegacyData: status.migratedLegacyData, error: status.recoveryError, recoverySourcePath: status.recoverySourcePath }
+      event.returnValue = { data, storagePath: status.path, recoveredFromBackup: status.recoveredFromBackup, migratedLegacyData: status.migratedLegacyData, error: status.recoveryError, recoverySourcePath: status.recoverySourcePath }
     } catch (error) {
       event.returnValue = { data: null, storagePath: '', recoveredFromBackup: false, error: error instanceof Error ? error.message : 'Could not load data.' }
     }
@@ -260,8 +331,9 @@ const registerDesktopIpc = () => {
     benchmarkMark('workspace-load-started')
     try {
       assertTrustedSender(event)
+      const data = workspaceStore.load()
       const status = workspaceStore.status()
-      const result = { data: workspaceStore.load(), storagePath: status.path, recoveredFromBackup: status.recoveredFromBackup, migratedLegacyData: status.migratedLegacyData, error: status.recoveryError, recoverySourcePath: status.recoverySourcePath }
+      const result = { data, storagePath: status.path, recoveredFromBackup: status.recoveredFromBackup, migratedLegacyData: status.migratedLegacyData, error: status.recoveryError, recoverySourcePath: status.recoverySourcePath }
       benchmarkMark('workspace-load-completed')
       return result
     } catch (error) {
@@ -352,6 +424,12 @@ const registerDesktopIpc = () => {
     assertTrustedSender(event)
     await saveQueue.catch(() => undefined)
     return workspaceStore.workspaceV4Document()
+  })
+
+  ipcMain.handle('neo-anki:load-workspace-v4-editor-document', async (event) => {
+    assertTrustedSender(event)
+    await awaitDeferredLegacyMigration()
+    return workspaceStore.workspaceV4EditorDocument()
   })
 
   ipcMain.handle('neo-anki:apply-core-workspace-patch-v2', async (event, patch: WorkspacePatchV2) => {
@@ -672,7 +750,7 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   diagnosticsLog = new DiagnosticsLog(join(app.getPath('userData'), 'diagnostics'), app.getVersion())
   process.on('uncaughtException', (error) => { void diagnosticsLog.record({ source: 'main', level: 'error', code: 'uncaught-exception', message: error.message, stack: error.stack }) })
   process.on('unhandledRejection', (reason) => { const error = reason instanceof Error ? reason : new Error(String(reason)); void diagnosticsLog.record({ source: 'main', level: 'error', code: 'unhandled-rejection', message: error.message, stack: error.stack }) })
-  workspaceStore = new WorkspaceStore(app.getPath('userData'))
+  workspaceStore = new WorkspaceStore(app.getPath('userData'), { allowUnvalidatedLegacyProjection: true })
   syncManager = new DesktopSyncManager(app.getPath('userData'), {
     available: () => secureSecretStorageAvailable(process.platform, safeStorage.isEncryptionAvailable(), process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : undefined),
     seal: (value) => new Uint8Array(safeStorage.encryptString(value)),

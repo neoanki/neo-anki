@@ -108,7 +108,7 @@ describe('storage and migrations', () => {
       createImportCheckpoint: async () => '',
       commitWorkspaceV4Import: async () => data,
       loadWorkspaceV4ExportPayload: async () => ({ document: {}, media: [] }),
-      loadWorkspaceV4Document: async () => ({} as never), applyCoreWorkspacePatchV2: async () => ({ workspaceRevision: 1, data }),
+      loadWorkspaceV4Document: async () => ({} as never), applyCoreWorkspacePatchV2: async () => ({ workspaceRevision: 1, data } as never),
       extensionApplyPatchV2: async () => ({ workspaceRevision: 1, data }), extensionCreateMediaV2: async () => ({ id: 'media', sha256: 'a'.repeat(64), byteLength: 1, workspaceRevision: 1 }), extensionSecretReadBatchV2: async () => ({}), extensionSecretMutateBatchV2: async () => undefined, extensionConfigReadV2: async () => null, extensionConfigWriteV2: async () => ({ workspaceRevision: 1, data }), extensionContentListNotesV2: async () => ({ workspaceRevision: 1, notes: [], availableMediaIds: [] }), extensionMigrationExportV2: async () => ({ document: {}, media: [] }), extensionMigrationCommitV2: async () => ({ workspaceRevision: 1, summary: { notes: data.items.length, cards: data.cards.length }, data }), extensionCancelV2: async () => undefined,
       reportDiagnostic: async () => undefined,
       exportDiagnostics: async () => ({ canceled: true }),
@@ -159,19 +159,21 @@ describe('storage and migrations', () => {
 
       let releaseFirst!: () => void
       const firstBlocked = new Promise<void>((resolve) => { releaseFirst = resolve })
-      window.neoAnkiDesktop.saveData = async (value) => { saved.push(value); if (saved.length === 3) await firstBlocked }
+      window.neoAnkiDesktop!.saveData = async (value) => { saved.push(value); if (saved.length === 3) await firstBlocked }
       const card = afterDirectCommit.cards[0]
       const reviewA = { id: 'rapid-review-a', cardId: card.id, rating: 3 as const, kind: 'review' as const, reviewedAt: '2026-07-19T10:00:00.000Z', durationSeconds: 3, previousDue: card.fsrs.due, nextDue: card.fsrs.due }
       const reviewB = { ...reviewA, id: 'rapid-review-b', reviewedAt: '2026-07-19T10:00:01.000Z' }
       const firstRapid = { ...afterDirectCommit, reviews: [reviewA], updatedAt: reviewA.reviewedAt }
       const secondRapid = { ...firstRapid, reviews: [reviewA, reviewB], updatedAt: reviewB.reviewedAt }
       const firstSave = saveData(firstRapid)
-      await Promise.resolve()
       const secondSave = saveData(secondRapid)
       releaseFirst()
       await Promise.all([firstSave, secondSave])
-      expect((saved[2] as { upsert: { reviews: Array<{ id: string }> } }).upsert.reviews.map((value) => value.id)).toEqual(['rapid-review-a'])
-      expect((saved[3] as { upsert: { reviews: Array<{ id: string }> } }).upsert.reviews.map((value) => value.id)).toEqual(['rapid-review-b'])
+      expect(saved).toHaveLength(3)
+      expect((saved[2] as { upsert: { reviews: Array<{ id: string }> } }).upsert.reviews.map((value) => value.id)).toEqual([
+        'rapid-review-a',
+        'rapid-review-b',
+      ])
     } finally {
       window.neoAnkiDesktop = original
     }

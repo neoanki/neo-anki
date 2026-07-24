@@ -13,9 +13,35 @@ const parseSteps = (value: string) => {
 }
 
 const changed = (left: unknown, right: unknown) => JSON.stringify(left) !== JSON.stringify(right)
+const applyAcceptedEditorPatch = (
+  source: WorkspaceDocumentV4,
+  operations: WorkspacePatchOperationV2[],
+  accepted: { workspaceRevision: number; updatedAt: string },
+) => {
+  const workspace = { ...source.workspace }
+  const apply = <T extends { id: string }>(values: T[], operation: WorkspacePatchOperationV2) => {
+    if (operation.op === 'delete') return values.filter((value) => value.id !== operation.id)
+    const next = operation.value as unknown as T
+    const index = values.findIndex((value) => value.id === operation.id)
+    if (index < 0) return [...values, next]
+    const copy = [...values]
+    copy[index] = next
+    return copy
+  }
+  for (const operation of operations) {
+    if (operation.kind === 'noteType') workspace.noteTypes = apply(workspace.noteTypes, operation)
+    else if (operation.kind === 'field') workspace.fields = apply(workspace.fields, operation)
+    else if (operation.kind === 'template') workspace.templates = apply(workspace.templates, operation)
+    else if (operation.kind === 'preset') workspace.presets = apply(workspace.presets, operation)
+    else if (operation.kind === 'deck') workspace.decks = apply(workspace.decks, operation)
+  }
+  workspace.revision = accepted.workspaceRevision
+  workspace.updatedAt = accepted.updatedAt
+  return { ...source, workspace }
+}
 
 export const TemplateManager = () => {
-  const { loadWorkspaceDocument, applyCoreWorkspacePatch } = useApp()
+  const { loadTemplateWorkspaceDocument, applyCoreWorkspacePatch } = useApp()
   const [document, setDocument] = useState<WorkspaceDocumentV4 | null>(null)
   const [noteTypeId, setNoteTypeId] = useState('')
   const [templateId, setTemplateId] = useState('')
@@ -63,7 +89,7 @@ export const TemplateManager = () => {
 
   useEffect(() => {
     let current = true
-    void loadWorkspaceDocument().then((next) => {
+    void loadTemplateWorkspaceDocument().then((next) => {
       if (!current) return
       const firstType = next.workspace.noteTypes[0] || null
       const firstTemplateId = firstType?.templateIds[0] || ''
@@ -76,15 +102,7 @@ export const TemplateManager = () => {
       setDeckId(firstDeck?.id || ''); setDeck(firstDeck ? structuredClone(firstDeck) : null)
     }).catch((reason) => { if (current) setError(reason instanceof Error ? reason.message : 'Could not load card templates.') })
     return () => { current = false }
-  }, [loadWorkspaceDocument])
-
-  const reload = async (preferredNoteTypeId = noteTypeId, preferredTemplateId = templateId) => {
-    const next = await loadWorkspaceDocument()
-    setDocument(next)
-    chooseNoteType(next, next.workspace.noteTypes.some((value) => value.id === preferredNoteTypeId) ? preferredNoteTypeId : next.workspace.noteTypes[0]?.id || '', preferredTemplateId)
-    choosePreset(next, next.workspace.presets.some((value) => value.id === presetId) ? presetId : next.workspace.presets[0]?.id || '')
-    chooseDeck(next, next.workspace.decks.some((value) => value.id === deckId) ? deckId : next.workspace.decks[0]?.id || '')
-  }
+  }, [loadTemplateWorkspaceDocument])
 
   const preview = useMemo(() => {
     if (!document || !noteType || !template) return null
@@ -100,9 +118,13 @@ export const TemplateManager = () => {
     if (!document || !operations.length) { setMessage('No changes to save.'); return false }
     setBusy(true); setError(''); setMessage('')
     try {
-      await applyCoreWorkspacePatch({ version: 2, idempotencyKey: `core-editor:${crypto.randomUUID()}`, expectedWorkspaceRevision: document.workspace.revision, owner: { type: 'core' }, operations })
+      const accepted = await applyCoreWorkspacePatch({ version: 2, idempotencyKey: `core-editor:${crypto.randomUUID()}`, expectedWorkspaceRevision: document.workspace.revision, owner: { type: 'core' }, operations })
+      const next = applyAcceptedEditorPatch(document, operations, accepted)
+      setDocument(next)
+      chooseNoteType(next, next.workspace.noteTypes.some((value) => value.id === (selection?.noteTypeId || noteTypeId)) ? (selection?.noteTypeId || noteTypeId) : next.workspace.noteTypes[0]?.id || '', selection?.templateId || templateId)
+      choosePreset(next, next.workspace.presets.some((value) => value.id === presetId) ? presetId : next.workspace.presets[0]?.id || '')
+      chooseDeck(next, next.workspace.decks.some((value) => value.id === deckId) ? deckId : next.workspace.decks[0]?.id || '')
       setMessage(`${label} saved atomically.`)
-      await reload(selection?.noteTypeId, selection?.templateId)
       return true
     } catch (reason) { setError(reason instanceof Error ? reason.message : `Could not save ${label.toLowerCase()}. Reload and try again.`) }
     finally { setBusy(false) }

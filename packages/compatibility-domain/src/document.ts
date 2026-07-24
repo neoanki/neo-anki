@@ -19,10 +19,21 @@ export const createWorkspaceDocumentV4 = (workspace: WorkspaceV4, clientState: W
   format: 'neo-anki-workspace', schemaVersion: 4, workspace: validateWorkspaceV4Invariants(workspace), clientState: validateClientState(structuredClone(clientState)),
 })
 
-export const migrateWorkspaceDocumentV3ToV4 = (legacy: LegacyWorkspaceV3): WorkspaceDocumentV4 => createWorkspaceDocumentV4(
-  migrateWorkspaceV3ToV4(legacy),
-  { settings: structuredClone(legacy.settings), goals: structuredClone(legacy.goals || []), views: structuredClone(legacy.views || []), packs: structuredClone(legacy.packs || []), packConflicts: structuredClone(legacy.packConflicts || []), trash: structuredClone(legacy.trash || []) },
-)
+export const migrateWorkspaceDocumentV3ToV4 = (legacy: LegacyWorkspaceV3): WorkspaceDocumentV4 => {
+  // migrateWorkspaceV3ToV4 already performs the complete graph invariant pass.
+  // Repeating it here made large v3 upgrades validate hundreds of thousands of
+  // entities and source envelopes twice.
+  const workspace = migrateWorkspaceV3ToV4(legacy)
+  const clientState = validateClientState({
+    settings: structuredClone(legacy.settings),
+    goals: structuredClone(legacy.goals || []),
+    views: structuredClone(legacy.views || []),
+    packs: structuredClone(legacy.packs || []),
+    packConflicts: structuredClone(legacy.packConflicts || []),
+    trash: structuredClone(legacy.trash || []),
+  })
+  return { format: 'neo-anki-workspace', schemaVersion: 4, workspace, clientState }
+}
 
 export const parseWorkspaceDocumentV4 = (input: unknown): WorkspaceDocumentV4 => {
   const candidate = normalizeImportedWorkspaceDocument(input) as Partial<WorkspaceDocumentV4>

@@ -28,7 +28,7 @@ import {
 
 const DATABASE_FILE = 'neo-anki.sqlite'
 const LEGACY_FILE = 'neo-anki-data.json'
-const DATABASE_SCHEMA_VERSION = 4
+const DATABASE_SCHEMA_VERSION = 6
 const MAX_AUTOMATIC_BACKUPS = 7
 const MEDIA_SCHEME = 'neoanki-media'
 
@@ -119,8 +119,14 @@ export class WorkspaceStore {
   private readonly statusValue: WorkspaceStoreStatus
   private readonly sourceArchiveCache = new Map<string, Uint8Array>()
   private documentCache: WorkspaceDocumentV4 | null | undefined
+  private projectionCache: AppData | null | undefined
+  private deferredLegacyData: AppData | null = null
+  private deferredLegacyInput: unknown | undefined
+  private deferredLegacyMigrationStarted = false
+  private readonly allowUnvalidatedLegacyProjection: boolean
 
-  constructor(private readonly userDataRoot: string) {
+  constructor(private readonly userDataRoot: string, options: { preserveLegacySource?: boolean; allowUnvalidatedLegacyProjection?: boolean } = {}) {
+    this.allowUnvalidatedLegacyProjection = options.allowUnvalidatedLegacyProjection === true
     mkdirSync(userDataRoot, { recursive: true })
     this.backupRoot = join(userDataRoot, 'backups')
     mkdirSync(this.backupRoot, { recursive: true })
@@ -132,12 +138,18 @@ export class WorkspaceStore {
     this.statusValue = { path: this.dbPath, recoveredFromBackup: opened.recovered, recoveryError: opened.error, recoverySourcePath: opened.recoverySourcePath, migratedLegacyData: false }
     this.configure()
     this.initializeSchema()
-    if (!this.statusValue.recoveryError) {
-      try { this.statusValue.migratedLegacyData = this.migrateLegacyJsonIfNeeded() }
-      catch (error) {
-        const legacyPath = join(this.userDataRoot, LEGACY_FILE)
-        this.statusValue.recoveryError = `The legacy workspace could not be migrated. The original JSON was preserved. ${error instanceof Error ? error.message : ''}`.trim()
-        this.statusValue.recoverySourcePath = existsSync(legacyPath) ? legacyPath : undefined
+    if (!this.statusValue.recoveryError && !this.hasWorkspace()) {
+      const legacyPath = join(this.userDataRoot, LEGACY_FILE)
+      if (existsSync(legacyPath)) {
+        if (options.preserveLegacySource !== false) {
+          const preserved = join(this.backupRoot, `legacy-json-${new Date().toISOString().replace(/[:.]/g, '-')}.json`)
+          copyFileSync(legacyPath, preserved)
+        }
+        try { this.deferredLegacyInput = JSON.parse(readFileSync(legacyPath, 'utf8')) as unknown }
+        catch (error) {
+          this.statusValue.recoverySourcePath = legacyPath
+          this.statusValue.recoveryError = `The legacy workspace could not be migrated. The original JSON was preserved. ${error instanceof Error ? error.message : ''}`.trim()
+        }
       }
     }
   }
@@ -153,6 +165,11 @@ export class WorkspaceStore {
           const table = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='workspace_v4'").get()
           const invalid = table && db.prepare('SELECT 1 FROM workspace_v4 WHERE id = 1 AND json_valid(json) = 0').get()
           if (invalid) throw new Error('Workspace v4 JSON is invalid.')
+          const journalTable = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='workspace_journal'").get()
+          if (journalTable) {
+            const journal = db.prepare('SELECT json, content_hash FROM workspace_journal').all() as Array<{ json: string; content_hash: string }>
+            if (journal.some((row) => sha256(Buffer.from(row.json)) !== row.content_hash)) throw new Error('Workspace journal integrity check failed.')
+          }
         } catch (error) { db.close(); throw error }
       }
       return db
@@ -240,7 +257,8 @@ export class WorkspaceStore {
         id INTEGER PRIMARY KEY CHECK (id = 1),
         revision INTEGER NOT NULL,
         updated_at TEXT NOT NULL,
-        json TEXT NOT NULL
+        json TEXT NOT NULL,
+        content_hash TEXT
       ) STRICT;
       CREATE TABLE IF NOT EXISTS patch_receipts (
         owner TEXT NOT NULL,
@@ -250,28 +268,107 @@ export class WorkspaceStore {
         applied_at TEXT NOT NULL,
         PRIMARY KEY(owner, idempotency_key)
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS workspace_journal (
+        sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('changes', 'core-patch')),
+        json TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      ) STRICT;
     `)
     if (current > 0 && current < 4) {
       this.db.exec("UPDATE cards SET json = json_remove(json, '$.rendering'); DROP TABLE IF EXISTS rendering_styles;")
     }
+    const workspaceColumns = this.db.prepare('PRAGMA table_info(workspace_v4)').all() as Array<{ name: string }>
+    if (!workspaceColumns.some((column) => column.name === 'content_hash')) this.db.exec('ALTER TABLE workspace_v4 ADD COLUMN content_hash TEXT')
     if (current === 1 && this.hasWorkspace() && !this.db.prepare('SELECT 1 FROM workspace_v4 WHERE id = 1').get()) {
       const legacy = this.loadLegacyProjectionFromDatabase(this.db)
       if (!legacy) throw new Error('The pre-v4 workspace migration found no workspace.')
       this.storeWorkspaceDocument(appDataToWorkspaceDocumentV4(legacy))
     }
+    if (current > 0 && current < 5) {
+      const row = this.db.prepare('SELECT json FROM workspace_v4 WHERE id = 1').get() as { json: string } | undefined
+      if (row) {
+        // Validate the last pre-hash document once. Future launches can trust a
+        // matching digest after SQLite integrity and JSON checks succeed.
+        parseWorkspaceDocumentV4(parseJson(row.json))
+        this.db.prepare('UPDATE workspace_v4 SET content_hash = ? WHERE id = 1').run(sha256(Buffer.from(row.json)))
+      }
+    }
     this.db.exec(`PRAGMA user_version = ${DATABASE_SCHEMA_VERSION};`)
   }
 
-  private migrateLegacyJsonIfNeeded() {
-    if (this.hasWorkspace()) return false
+  private readDeferredLegacyData() {
+    if (this.deferredLegacyData) return this.deferredLegacyData
+    if (this.hasWorkspace()) return null
     const legacyPath = join(this.userDataRoot, LEGACY_FILE)
-    if (!existsSync(legacyPath)) return false
-    const legacy = JSON.parse(readFileSync(legacyPath, 'utf8')) as unknown
-    const migrated = migrateWorkspaceData(legacy as Parameters<typeof migrateWorkspaceData>[0])
-    const preserved = join(this.backupRoot, `legacy-json-${new Date().toISOString().replace(/[:.]/g, '-')}.json`)
-    copyFileSync(legacyPath, preserved)
-    this.replaceAll(migrated)
-    return true
+    if (!existsSync(legacyPath)) return null
+    if (this.statusValue.recoveryError) return null
+    try {
+      const legacy = this.deferredLegacyInput ?? JSON.parse(readFileSync(legacyPath, 'utf8')) as unknown
+      const candidate = legacy as Partial<AppData>
+      const canProjectBeforeValidation = this.allowUnvalidatedLegacyProjection
+        && candidate?.version === 3
+        && typeof candidate.deviceId === 'string'
+        && candidate.settings !== null
+        && typeof candidate.settings === 'object'
+        && typeof candidate.updatedAt === 'string'
+        && ['items', 'cards', 'reviews', 'assets', 'goals', 'views', 'packs', 'packConflicts', 'trash']
+          .every((key) => Array.isArray((candidate as Record<string, unknown>)[key]))
+      this.deferredLegacyData = canProjectBeforeValidation
+        ? legacy as AppData
+        : migrateWorkspaceData(legacy as Parameters<typeof migrateWorkspaceData>[0])
+      this.deferredLegacyInput = undefined
+      this.statusValue.migratedLegacyData = true
+      return this.deferredLegacyData
+    } catch (error) {
+      this.statusValue.recoverySourcePath = legacyPath
+      this.statusValue.recoveryError = `The legacy workspace could not be migrated. The original JSON was preserved. ${error instanceof Error ? error.message : ''}`.trim()
+      throw error
+    }
+  }
+
+  /**
+   * Finish first-run materialization after the validated projection has reached
+   * the renderer. The original JSON remains recoverable, and every mutation
+   * forces this commit first, so acknowledged writes can never overtake it.
+   */
+  finishDeferredLegacyMigration() {
+    if (!this.deferredLegacyData || this.deferredLegacyMigrationStarted || this.hasWorkspace()) return
+    this.deferredLegacyMigrationStarted = true
+    try {
+      const data = this.deferredLegacyData
+      const document = appDataToWorkspaceDocumentV4(data)
+      this.transaction(() => {
+        this.db.exec('DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; DELETE FROM assets; DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM workspace_meta; DELETE FROM workspace_v4; DELETE FROM patch_receipts; DELETE FROM workspace_journal;')
+        this.persistCanonicalProjectionMetadata(data)
+        this.storeValidatedWorkspaceDocument(document)
+      })
+      this.documentCache = document
+      this.projectionCache = data
+      this.deferredLegacyData = null
+      this.deferredLegacyInput = undefined
+    } catch (error) {
+      this.deferredLegacyMigrationStarted = false
+      this.statusValue.recoveryError = `The legacy workspace remains usable but could not be committed to the local database. ${error instanceof Error ? error.message : ''}`.trim()
+      throw error
+    }
+  }
+
+  /**
+   * Adopt a migration committed by the background worker through its own
+   * SQLite connection. The renderer keeps the already-loaded projection, while
+   * subsequent document reads use the newly committed canonical snapshot.
+   */
+  acceptExternalLegacyMigration() {
+    if (!this.hasWorkspace() || !this.db.prepare('SELECT 1 FROM workspace_v4 WHERE id = 1').get()) {
+      throw new Error('The background legacy migration did not commit a complete workspace.')
+    }
+    this.documentCache = undefined
+    this.deferredLegacyData = null
+    this.deferredLegacyInput = undefined
+    this.deferredLegacyMigrationStarted = false
+    this.statusValue.migratedLegacyData = true
   }
 
   private transaction<T>(run: () => T): T {
@@ -283,6 +380,7 @@ export class WorkspaceStore {
   private hasWorkspace() { return Boolean(this.db.prepare('SELECT 1 FROM workspace_meta WHERE id = 1').get()) }
 
   status(): WorkspaceStoreStatus { return { ...this.statusValue } }
+  hasDeferredLegacyMigration() { return Boolean(this.deferredLegacyData) }
 
   private loadLegacyProjectionFromDatabase(database: DatabaseSync): AppData | null {
     const meta = database.prepare('SELECT version, device_id, settings_json, updated_at FROM workspace_meta WHERE id = 1').get() as { version: number; device_id: string; settings_json: string; updated_at: string } | undefined
@@ -317,17 +415,35 @@ export class WorkspaceStore {
     if (database === this.db && this.documentCache !== undefined) return this.documentCache
     const table = database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='workspace_v4'").get()
     if (!table) return null
-    const row = database.prepare('SELECT json FROM workspace_v4 WHERE id = 1').get() as { json: string } | undefined
-    const document = row ? parseWorkspaceDocumentV4(parseJson(row.json)) : null
+    const row = database.prepare('SELECT json, content_hash FROM workspace_v4 WHERE id = 1').get() as { json: string; content_hash?: string } | undefined
+    let document: WorkspaceDocumentV4 | null = null
+    if (row) {
+      const digest = sha256(Buffer.from(row.json))
+      if (row.content_hash && row.content_hash === digest) {
+        const candidate = parseJson<WorkspaceDocumentV4>(row.json)
+        if (candidate.format !== 'neo-anki-workspace' || candidate.schemaVersion !== 4 || !candidate.workspace || !candidate.clientState) throw new Error('Workspace v4 JSON has an invalid envelope.')
+        document = candidate
+      } else {
+        document = parseWorkspaceDocumentV4(parseJson(row.json))
+        if (database === this.db) database.prepare('UPDATE workspace_v4 SET content_hash = ? WHERE id = 1').run(digest)
+      }
+    }
     if (database === this.db) this.documentCache = document
     return document
   }
 
   private storeValidatedWorkspaceDocument(parsed: WorkspaceDocumentV4) {
-    this.db.prepare(`INSERT INTO workspace_v4(id, revision, updated_at, json) VALUES (1, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET revision=excluded.revision, updated_at=excluded.updated_at, json=excluded.json`)
-      .run(parsed.workspace.revision, parsed.workspace.updatedAt, stringify(parsed))
+    const json = stringify(parsed)
+    this.db.prepare(`INSERT INTO workspace_v4(id, revision, updated_at, json, content_hash) VALUES (1, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET revision=excluded.revision, updated_at=excluded.updated_at, json=excluded.json, content_hash=excluded.content_hash`)
+      .run(parsed.workspace.revision, parsed.workspace.updatedAt, json, sha256(Buffer.from(json)))
+    this.db.exec('DELETE FROM workspace_journal')
     this.documentCache = parsed
+  }
+
+  private appendJournal(kind: 'changes' | 'core-patch', value: unknown) {
+    const json = stringify(value)
+    this.db.prepare('INSERT INTO workspace_journal(kind, json, content_hash, created_at) VALUES (?, ?, ?, ?)').run(kind, json, sha256(Buffer.from(json)), new Date().toISOString())
   }
 
   private storeWorkspaceDocument(document: WorkspaceDocumentV4) { this.storeValidatedWorkspaceDocument(parseWorkspaceDocumentV4(document)) }
@@ -338,16 +454,40 @@ export class WorkspaceStore {
   }
 
   private loadFromDatabase(database: DatabaseSync): AppData | null {
-    const storedProjection = this.loadLegacyProjectionFromDatabase(database)
-    const document = this.readWorkspaceDocument(database)
-    if (!document) return storedProjection
-    const projected = projectValidatedWorkspaceDocumentV4ToAppData(document)
-    const assetUrls = new Map((storedProjection?.assets || []).map((asset) => [asset.id, asset.dataUrl]))
-    projected.assets = projected.assets.map((asset) => ({ ...asset, dataUrl: assetUrls.get(asset.id) || asset.dataUrl }))
+    const loadedDocument = this.readWorkspaceDocument(database)
+    if (!loadedDocument) return this.loadLegacyProjectionFromDatabase(database)
+    let document: WorkspaceDocumentV4 = loadedDocument
+    let projected = projectValidatedWorkspaceDocumentV4ToAppData(document)
+    if (database === this.db) {
+      const journal = database.prepare('SELECT kind, json, content_hash FROM workspace_journal ORDER BY sequence').all() as Array<{ kind: 'changes' | 'core-patch'; json: string; content_hash: string }>
+      for (const row of journal) {
+        if (sha256(Buffer.from(row.json)) !== row.content_hash) throw new Error('The workspace journal failed its integrity check.')
+        if (row.kind === 'changes') {
+          const changes = parseJson<WorkspaceChangeSet>(row.json)
+          const nextProjection = this.projectionAfterChanges(projected, changes)
+          this.documentCache = document
+          document = this.incrementalDocumentAfterChanges(changes, projected, nextProjection)
+            || refreshWorkspaceDocumentV4FromProjection(nextProjection, document)
+          projected = nextProjection
+        } else {
+          const patch = parseJson<WorkspacePatchV2>(row.json)
+          const previous: WorkspaceDocumentV4 = document
+          document = { ...previous, workspace: applyDomainPatchV2(previous.workspace, patch) }
+          projected = this.projectionAfterWorkspacePatch(patch, previous, document, projected)
+        }
+      }
+      this.documentCache = document
+    }
+    projected.assets = projected.assets.map((asset) => ({ ...asset, dataUrl: mediaUrl(asset) }))
     return projected
   }
 
-  load(): AppData | null { return this.loadFromDatabase(this.db) }
+  load(): AppData | null {
+    if (this.projectionCache !== undefined) return this.projectionCache
+    const deferred = this.readDeferredLegacyData()
+    this.projectionCache = deferred || this.loadFromDatabase(this.db)
+    return this.projectionCache
+  }
 
   private upsertAsset(input: unknown, suppliedBytes?: Uint8Array) {
     const asset = mediaAssetSchema.parse(input) as MediaAsset
@@ -363,26 +503,219 @@ export class WorkspaceStore {
       .run(asset.id, asset.mimeType, digest, asset.updatedAt, stringify(metadata), bytes)
   }
 
+  private projectionAfterChanges(previous: AppData, changes: WorkspaceChangeSet): AppData {
+    const merge = <T extends { id: string }>(current: T[], upsert: T[], remove: string[], appendNew = false) => {
+      if (!upsert.length && !remove.length) return current
+      const removed = new Set(remove)
+      const replacements = new Map(upsert.map((value) => [value.id, value]))
+      const existing = new Set(current.map((value) => value.id))
+      const retained = current.filter((value) => !removed.has(value.id)).map((value) => replacements.get(value.id) || value)
+      const added = upsert.filter((value) => !existing.has(value.id))
+      return appendNew ? [...retained, ...added] : [...added, ...retained]
+    }
+    return {
+      ...previous,
+      ...(changes.meta ? { deviceId: changes.meta.deviceId, settings: changes.meta.settings, updatedAt: changes.meta.updatedAt } : {}),
+      items: merge(previous.items, changes.upsert.items, changes.remove.items),
+      cards: merge(previous.cards, changes.upsert.cards, changes.remove.cards),
+      reviews: merge(previous.reviews, changes.upsert.reviews, changes.remove.reviews, true),
+      assets: merge(previous.assets, changes.upsert.assets, changes.remove.assets),
+      goals: merge(previous.goals, changes.upsert.goals, changes.remove.goals),
+      views: merge(previous.views, changes.upsert.views, changes.remove.views),
+      packs: merge(previous.packs, changes.upsert.packs, changes.remove.packs),
+      packConflicts: merge(previous.packConflicts, changes.upsert.packConflicts, changes.remove.packConflicts),
+      trash: merge(previous.trash, changes.upsert.trash, changes.remove.trash),
+    }
+  }
+
+  /**
+   * Incrementally refresh the durable compatibility graph for the common
+   * interaction path. Inputs have already passed the per-entity schemas in the
+   * same SQLite transaction; unchanged graph collections retain identity.
+   */
+  private incrementalDocumentAfterChanges(changes: WorkspaceChangeSet, previousProjection: AppData, nextProjection: AppData) {
+    const previous = this.readWorkspaceDocument(this.db)
+    if (!previous) return null
+    const unsupportedUpserts = changes.upsert.assets.length || changes.upsert.goals.length || changes.upsert.views.length
+      || changes.upsert.packs.length || changes.upsert.packConflicts.length || changes.upsert.trash.length
+    const unsupportedRemovals = Object.values(changes.remove).some((values) => values.length)
+    if (unsupportedUpserts || unsupportedRemovals) return null
+
+    const previousItems = new Map(previousProjection.items.map((value) => [value.id, value]))
+    const noteIndexes = new Map(previous.workspace.notes.map((value, index) => [value.id, index]))
+    const cardIndexes = new Map(previous.workspace.cards.map((value, index) => [value.id, index]))
+    const reviewIds = new Set(previous.workspace.reviews.map((value) => value.id))
+    if (changes.upsert.items.some((value) => !noteIndexes.has(value.id) || previousItems.get(value.id)?.collection !== value.collection)) return null
+    if (changes.upsert.cards.some((value) => !cardIndexes.has(value.id))) return null
+    if (changes.upsert.reviews.some((value) => reviewIds.has(value.id))) return null
+
+    const workspace = { ...previous.workspace }
+    let notes = previous.workspace.notes
+    let cards = previous.workspace.cards
+    let reviews = previous.workspace.reviews
+    let presets = previous.workspace.presets
+    let sourceEnvelopes = previous.workspace.sourceEnvelopes
+    const envelopeIndexes = new Map(sourceEnvelopes.map((value, index) => [value.id, index]))
+    let envelopesChanged = false
+    const updateLegacyEnvelope = (entity: { id: string; profileId: string; sourceEnvelopeId?: string }, legacy: Record<string, unknown>, updatedAt: string) => {
+      let index = entity.sourceEnvelopeId ? envelopeIndexes.get(entity.sourceEnvelopeId) : undefined
+      if (index === undefined) {
+        const id = `source:neo-v3:${entity.id}`
+        if (!envelopesChanged) { sourceEnvelopes = [...sourceEnvelopes]; envelopesChanged = true }
+        index = sourceEnvelopes.length
+        sourceEnvelopes.push({ id, revision: 1, createdAt: updatedAt, updatedAt, profileId: entity.profileId, format: 'neo-v3', sourceId: entity.id, schemaVersion: '3', opaque: { legacy: structuredClone(legacy) } })
+        envelopeIndexes.set(id, index)
+        entity.sourceEnvelopeId = id
+        return
+      }
+      const current = sourceEnvelopes[index]
+      const opaque = { ...current.opaque, legacy: structuredClone(legacy) }
+      if (stringify(opaque) === stringify(current.opaque)) return
+      if (!envelopesChanged) { sourceEnvelopes = [...sourceEnvelopes]; envelopesChanged = true }
+      sourceEnvelopes[index] = { ...current, opaque, revision: current.revision + 1, updatedAt }
+    }
+
+    if (changes.upsert.items.length) {
+      notes = [...notes]
+      const noteTypes = new Map(workspace.noteTypes.map((value) => [value.id, value]))
+      for (const raw of changes.upsert.items) {
+        const item = knowledgeItemSchema.parse(raw)
+        const index = noteIndexes.get(item.id)!
+        const current = notes[index]
+        const type = noteTypes.get(current.noteTypeId)
+        if (!type) return null
+        const fields = item.contentModel?.contentTypeId === type.id
+          ? Object.fromEntries(item.contentModel.fields.filter((field) => type.fieldIds.includes(field.id)).map((field) => [field.id, field.value]))
+          : Object.fromEntries(type.fieldIds.map((fieldId, ordinal) => [fieldId, ordinal === 0 ? item.prompt : ordinal === 1 ? item.answer : ordinal === 2 ? item.context : current.fields[fieldId] || '']))
+        const next = { ...current, fields, tags: [...item.tags], revision: current.revision + 1, updatedAt: item.updatedAt }
+        updateLegacyEnvelope(next, { source: item.source, citations: item.citations, mediaIds: item.mediaIds, occlusions: item.occlusions, provenance: item.provenance, extensionData: item.extensionData }, item.updatedAt)
+        notes[index] = next
+      }
+    }
+
+    if (changes.upsert.cards.length) {
+      cards = [...cards]
+      for (const raw of changes.upsert.cards) {
+        const card = practiceCardSchema.parse(raw)
+        const index = cardIndexes.get(card.id)!
+        const current = cards[index]
+        const next = {
+          ...current,
+          suspended: card.suspended,
+          buriedUntil: card.buriedUntil,
+          buriedBy: card.buriedBy,
+          flags: (card.flags || 0) as WorkspaceDocumentV4['workspace']['cards'][number]['flags'],
+          leech: card.leech,
+          scheduling: {
+            strategy: 'neo-fsrs' as const,
+            queue: card.scheduling?.queue || (card.fsrs.reps ? 'review' as const : 'new' as const),
+            dueAt: card.fsrs.due,
+            stability: card.fsrs.stability,
+            difficulty: card.fsrs.difficulty,
+            elapsedDays: card.fsrs.elapsed_days,
+            scheduledDays: card.fsrs.scheduled_days,
+            reps: card.fsrs.reps,
+            lapses: card.fsrs.lapses,
+            state: card.fsrs.state,
+            lastReviewAt: card.fsrs.last_review,
+            continuityOverrideDueAt: card.scheduling?.continuityOverrideDueAt,
+          },
+          revision: current.revision + 1,
+          updatedAt: card.updatedAt,
+        }
+        updateLegacyEnvelope(next, { variant: card.variant, occlusionId: card.occlusionId, promptData: card.promptData, estimatedSeconds: card.estimatedSeconds, leech: card.leech }, card.updatedAt)
+        cards[index] = next
+      }
+    }
+
+    if (changes.upsert.reviews.length) {
+      reviews = [...reviews]
+      const cardById = new Map(cards.map((value) => [value.id, value]))
+      const reviewById = new Map(reviews.map((value) => [value.id, value]))
+      const reversed = new Set(reviews.filter((value) => value.kind === 'reversal' && value.reversesReviewId).map((value) => value.reversesReviewId!))
+      const profile = workspace.profiles.find((value) => value.active) || workspace.profiles[0]
+      if (!profile) return null
+      for (const raw of changes.upsert.reviews) {
+        const review = reviewEventSchema.parse(raw)
+        const card = cardById.get(review.cardId)
+        if (!card) return null
+        if (review.kind === 'reversal') {
+          const target = review.reversesReviewId && reviewById.get(review.reversesReviewId)
+          if (!target || target.kind === 'reversal' || target.cardId !== review.cardId || reversed.has(target.id)) return null
+          reversed.add(target.id)
+        }
+        const entity: WorkspaceDocumentV4['workspace']['reviews'][number] = {
+          id: review.id, revision: 1, createdAt: review.reviewedAt, updatedAt: review.reviewedAt,
+          profileId: card.profileId || profile.id, cardId: review.cardId, kind: review.kind || 'review' as const,
+          rating: review.rating, reviewedAt: review.reviewedAt, durationMilliseconds: Math.max(0, Math.round(review.durationSeconds * 1000)),
+          intervalBefore: review.previousCard?.scheduled_days || 0,
+          intervalAfter: Math.max(0, Math.round((Date.parse(review.nextDue) - Date.parse(review.reviewedAt)) / 86_400_000)),
+          reversesReviewId: review.reversesReviewId,
+          previousScheduling: review.previousScheduling ? structuredClone(review.previousScheduling) : undefined,
+          nextScheduling: structuredClone(card.scheduling),
+          previousEstimatedSeconds: review.previousEstimatedSeconds,
+          previousCardState: review.previousCardState ? {
+            ...structuredClone(review.previousCardState),
+            flags: review.previousCardState.flags as WorkspaceDocumentV4['workspace']['cards'][number]['flags'] | undefined,
+          } : undefined,
+          siblingChanges: review.siblingChanges ? structuredClone(review.siblingChanges) : undefined,
+          sourceEnvelopeId: undefined as string | undefined,
+        }
+        updateLegacyEnvelope(entity, { deviceId: review.deviceId, rawDurationSeconds: review.rawDurationSeconds, previousDue: review.previousDue, nextDue: review.nextDue, previousCard: review.previousCard }, review.reviewedAt)
+        reviews.push(entity)
+        reviewById.set(entity.id, entity)
+      }
+    }
+
+    let clientState = previous.clientState
+    if (changes.meta) {
+      clientState = { ...clientState, settings: { ...structuredClone(clientState.settings), ...structuredClone(nextProjection.settings) } }
+      const activeProfile = workspace.profiles.find((value) => value.active) || workspace.profiles[0]
+      const presetIndex = presets.findIndex((value) => value.profileId === activeProfile?.id)
+      if (presetIndex >= 0) {
+        presets = [...presets]
+        const current = presets[presetIndex]
+        const next = { ...current, desiredRetention: nextProjection.settings.retention, buryNewSiblings: nextProjection.settings.burySiblings, buryReviewSiblings: nextProjection.settings.burySiblings, leechThreshold: nextProjection.settings.leechThreshold, leechAction: nextProjection.settings.leechAction }
+        if (stringify(next) !== stringify(current)) presets[presetIndex] = { ...next, revision: current.revision + 1, updatedAt: changes.meta.updatedAt }
+      }
+    }
+
+    workspace.notes = notes
+    workspace.cards = cards
+    workspace.reviews = reviews
+    workspace.presets = presets
+    workspace.sourceEnvelopes = sourceEnvelopes
+    workspace.revision = previous.workspace.revision + 1
+    workspace.updatedAt = changes.meta?.updatedAt || nextProjection.updatedAt
+    return { ...previous, workspace, clientState }
+  }
+
   applyChanges(changes: WorkspaceChangeSet) {
     if (!changes || changes.version !== 1 || !changes.upsert || !changes.remove) throw new Error('Workspace change set is invalid.')
     if (changes.remove.reviews.length) throw new Error('Review history is append-only; append a reversal event instead of deleting a review.')
+    if (this.deferredLegacyData) this.finishDeferredLegacyMigration()
+    const loadedProjection = this.load()
+    const previousProjection: AppData = loadedProjection || {
+      version: 3,
+      deviceId: changes.meta?.deviceId || '',
+      settings: changes.meta?.settings as AppData['settings'],
+      updatedAt: changes.meta?.updatedAt || new Date().toISOString(),
+      items: [], cards: [], reviews: [], assets: [], goals: [], views: [], packs: [], packConflicts: [], trash: [],
+    }
+    if (!changes.meta && !loadedProjection) throw new Error('An initial workspace commit requires metadata.')
+    const nextProjection = this.projectionAfterChanges(previousProjection, changes)
     this.transaction(() => {
-      for (const value of changes.upsert.items) { const item = knowledgeItemSchema.parse(value); this.db.prepare('INSERT INTO items(id, created_at, updated_at, json) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET created_at=excluded.created_at, updated_at=excluded.updated_at, json=excluded.json').run(item.id, item.createdAt, item.updatedAt, stringify(item)) }
-      for (const value of changes.upsert.cards) {
-        const card = practiceCardSchema.parse(value)
-        this.db.prepare('INSERT INTO cards(id, item_id, due, suspended, created_at, updated_at, json) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET item_id=excluded.item_id, due=excluded.due, suspended=excluded.suspended, created_at=excluded.created_at, updated_at=excluded.updated_at, json=excluded.json').run(card.id, card.itemId, card.fsrs.due, card.suspended ? 1 : 0, card.createdAt, card.updatedAt, stringify(this.cardForStorage(card)))
-      }
-      for (const value of changes.upsert.reviews) { const review = reviewEventSchema.parse(value); this.db.prepare('INSERT INTO reviews(id, card_id, reviewed_at, json) VALUES (?, ?, ?, ?)').run(review.id, review.cardId, review.reviewedAt, stringify(review)) }
+      for (const value of changes.upsert.items) knowledgeItemSchema.parse(value)
+      for (const value of changes.upsert.cards) practiceCardSchema.parse(value)
+      for (const value of changes.upsert.reviews) reviewEventSchema.parse(value)
       for (const value of changes.upsert.assets) this.upsertAsset(value)
-      for (const value of changes.upsert.goals) { const goal = learningGoalSchema.parse(value); this.db.prepare('INSERT INTO goals(id, created_at, updated_at, json) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET created_at=excluded.created_at, updated_at=excluded.updated_at, json=excluded.json').run(goal.id, goal.createdAt, goal.updatedAt, stringify(goal)) }
-      for (const value of changes.upsert.views) { const view = savedViewSchema.parse(value); this.db.prepare('INSERT INTO views(id, created_at, updated_at, json) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET created_at=excluded.created_at, updated_at=excluded.updated_at, json=excluded.json').run(view.id, view.createdAt, view.updatedAt, stringify(view)) }
-      for (const value of changes.upsert.packs) { const pack = packSubscriptionSchema.parse(value); this.db.prepare('INSERT INTO packs(id, installed_at, updated_at, json) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET installed_at=excluded.installed_at, updated_at=excluded.updated_at, json=excluded.json').run(pack.id, pack.installedAt, pack.updatedAt, stringify(pack)) }
-      for (const value of changes.upsert.packConflicts) { const conflict = packConflictSchema.parse(value); this.db.prepare('INSERT INTO pack_conflicts(id, created_at, json) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET created_at=excluded.created_at, json=excluded.json').run(conflict.id, conflict.createdAt, stringify(conflict)) }
-      for (const value of changes.upsert.trash) { const entry = trashEntrySchema.parse(value); this.db.prepare('INSERT INTO trash(id, deleted_at, json) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET deleted_at=excluded.deleted_at, json=excluded.json').run(entry.id, entry.deletedAt, stringify(entry)) }
-
-      const remove = (table: string, ids: string[]) => { const statement = this.db.prepare(`DELETE FROM ${table} WHERE id = ?`); ids.forEach((value) => statement.run(value)) }
-      remove('cards', changes.remove.cards); remove('items', changes.remove.items)
-      remove('assets', changes.remove.assets); remove('goals', changes.remove.goals); remove('views', changes.remove.views); remove('packs', changes.remove.packs); remove('pack_conflicts', changes.remove.packConflicts); remove('trash', changes.remove.trash)
+      for (const value of changes.upsert.goals) learningGoalSchema.parse(value)
+      for (const value of changes.upsert.views) savedViewSchema.parse(value)
+      for (const value of changes.upsert.packs) packSubscriptionSchema.parse(value)
+      for (const value of changes.upsert.packConflicts) packConflictSchema.parse(value)
+      for (const value of changes.upsert.trash) trashEntrySchema.parse(value)
+      const removeAsset = this.db.prepare('DELETE FROM assets WHERE id = ?')
+      changes.remove.assets.forEach((value) => removeAsset.run(value))
 
       if (changes.meta) {
         const settings = userSettingsSchema.parse(changes.meta.settings)
@@ -391,12 +724,18 @@ export class WorkspaceStore {
         this.db.prepare('INSERT INTO workspace_meta(id, version, device_id, settings_json, updated_at) VALUES (1, 3, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET version=3, device_id=excluded.device_id, settings_json=excluded.settings_json, updated_at=excluded.updated_at').run(changes.meta.deviceId, stringify(settings), updatedAt.toISOString())
       }
       if (this.hasWorkspace()) {
-        const projected = this.loadLegacyProjectionFromDatabase(this.db)
-        if (!projected) throw new Error('Workspace projection disappeared during commit.')
-        const previous = this.readWorkspaceDocument(this.db) || undefined
-        this.storeWorkspaceDocument(refreshWorkspaceDocumentV4FromProjection(projected, previous))
+        const existingDocument = this.readWorkspaceDocument(this.db)
+        if (!existingDocument) {
+          this.storeValidatedWorkspaceDocument(refreshWorkspaceDocumentV4FromProjection(nextProjection))
+        } else {
+          const document = this.incrementalDocumentAfterChanges(changes, previousProjection, nextProjection)
+            || refreshWorkspaceDocumentV4FromProjection(nextProjection, existingDocument)
+          this.appendJournal('changes', changes)
+          this.documentCache = document
+        }
       }
     })
+    this.projectionCache = nextProjection
   }
 
   replaceAll(input: unknown) {
@@ -404,10 +743,12 @@ export class WorkspaceStore {
     const document = isV4 ? parseWorkspaceDocumentV4(input) : appDataToWorkspaceDocumentV4(parseWorkspaceData(input))
     const data = workspaceDocumentV4ToAppData(document)
     this.transaction(() => {
-      this.db.exec('DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; DELETE FROM assets; DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM workspace_meta; DELETE FROM workspace_v4; DELETE FROM patch_receipts;')
+      this.db.exec('DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; DELETE FROM assets; DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM workspace_meta; DELETE FROM workspace_v4; DELETE FROM patch_receipts; DELETE FROM workspace_journal;')
       this.applyChangesWithoutTransaction(data)
       this.storeWorkspaceDocument(document)
     })
+    this.projectionCache = data
+    this.deferredLegacyData = null
   }
 
   commitWorkspaceV4Import(input: { document: unknown; media: unknown[]; sourceArchive?: Uint8Array; operation: 'additive' | 'replace-profile' }) {
@@ -528,6 +869,7 @@ export class WorkspaceStore {
     } catch (error) { if (createdArchivePath) rmSync(createdArchivePath, { force: true }); throw error }
     finally { this.db.exec('PRAGMA wal_autocheckpoint = 1000') }
     importTiming('transaction-committed', timingStarted, timingPrevious)
+    this.projectionCache = projected
     return projected
   }
 
@@ -559,9 +901,116 @@ export class WorkspaceStore {
     return structuredClone(document)
   }
 
-  workspaceRevision() { return Number((this.db.prepare('SELECT revision FROM workspace_v4 WHERE id = 1').get() as { revision?: number } | undefined)?.revision || 0) }
+  workspaceV4EditorDocument() {
+    const document = this.readWorkspaceDocument(this.db)
+    if (!document) throw new Error('Workspace v4 is not active.')
+    const noteIds = new Set<string>()
+    for (const type of document.workspace.noteTypes) {
+      const note = document.workspace.notes.find((candidate) => candidate.noteTypeId === type.id)
+      if (note) noteIds.add(note.id)
+    }
+    return {
+      ...document,
+      workspace: {
+        ...document.workspace,
+        notes: document.workspace.notes.filter((note) => noteIds.has(note.id)),
+        cards: document.workspace.cards.filter((card) => noteIds.has(card.noteId)),
+        reviews: [],
+        media: [],
+        extensionRecords: [],
+        sourceEnvelopes: [],
+      },
+      clientState: { ...document.clientState, goals: [], views: [], packs: [], packConflicts: [], trash: [], tombstones: [] },
+    } satisfies WorkspaceDocumentV4
+  }
+
+  workspaceRevision() { return this.readWorkspaceDocument(this.db)?.workspace.revision || 0 }
+
+  private projectionAfterWorkspacePatch(patch: WorkspacePatchV2, previousDocument: WorkspaceDocumentV4, document: WorkspaceDocumentV4, currentProjection?: AppData) {
+    const current = currentProjection || this.load()
+    if (!current) return projectValidatedWorkspaceDocumentV4ToAppData(document)
+    if (patch.operations.some((operation) => !['noteType', 'field', 'template', 'preset', 'deck'].includes(operation.kind))) {
+      return projectValidatedWorkspaceDocumentV4ToAppData(document)
+    }
+    let items = current.items
+    let cards = current.cards
+    for (const operation of patch.operations) {
+      if (operation.op === 'delete' || !operation.value) return projectValidatedWorkspaceDocumentV4ToAppData(document)
+      if (operation.kind === 'noteType') {
+        const noteType = operation.value as WorkspaceDocumentV4['workspace']['noteTypes'][number]
+        items = items.map((item) => item.contentModel?.contentTypeId === noteType.id
+          ? { ...item, contentModel: { ...item.contentModel, contentTypeName: noteType.name } }
+          : item)
+      } else if (operation.kind === 'preset') {
+        const preset = operation.value as WorkspaceDocumentV4['workspace']['presets'][number]
+        const schedulerOptions = {
+          desiredRetention: preset.desiredRetention,
+          maximumIntervalDays: preset.maximumIntervalDays,
+          learningStepsMinutes: [...preset.learningStepsMinutes],
+          relearningStepsMinutes: [...preset.relearningStepsMinutes],
+          newCardsPerDay: preset.newCardsPerDay,
+          reviewsPerDay: preset.reviewsPerDay,
+          buryNewSiblings: preset.buryNewSiblings,
+          buryReviewSiblings: preset.buryReviewSiblings,
+          leechThreshold: preset.leechThreshold,
+          leechAction: preset.leechAction,
+        }
+        cards = cards.map((card) => card.presetId === preset.id ? { ...card, schedulerOptions } : card)
+      } else if (operation.kind === 'deck') {
+        const deck = operation.value as WorkspaceDocumentV4['workspace']['decks'][number]
+        const affected = new Set(previousDocument.workspace.cards.filter((card) => card.deckId === deck.id).map((card) => card.id))
+        cards = cards.map((card) => affected.has(card.id) ? { ...card, deckName: deck.name, presetId: deck.presetId } : card)
+      }
+    }
+    const renderingCardIds = this.renderingCardIdsAfterPatch(patch, previousDocument, document)
+    if (renderingCardIds.size) cards = cards.map((card) => renderingCardIds.has(card.id) ? { ...card, rendering: undefined } : card)
+    return { ...current, items, cards, updatedAt: document.workspace.updatedAt }
+  }
+
+  private renderingCardIdsAfterPatch(patch: WorkspacePatchV2, previousDocument: WorkspaceDocumentV4, document: WorkspaceDocumentV4) {
+    const noteTypeIds = new Set<string>()
+    const templateIds = new Set<string>()
+    for (const operation of patch.operations) {
+      if (operation.kind === 'noteType') noteTypeIds.add(operation.id)
+      if (operation.kind === 'template') {
+        templateIds.add(operation.id)
+        const value = operation.value as WorkspaceDocumentV4['workspace']['templates'][number] | undefined
+        const previous = previousDocument.workspace.templates.find((candidate) => candidate.id === operation.id)
+        if (value?.noteTypeId) noteTypeIds.add(value.noteTypeId)
+        if (previous?.noteTypeId) noteTypeIds.add(previous.noteTypeId)
+      }
+      if (operation.kind === 'field') {
+        const value = operation.value as WorkspaceDocumentV4['workspace']['fields'][number] | undefined
+        const previous = previousDocument.workspace.fields.find((candidate) => candidate.id === operation.id)
+        if (value?.noteTypeId) noteTypeIds.add(value.noteTypeId)
+        if (previous?.noteTypeId) noteTypeIds.add(previous.noteTypeId)
+      }
+    }
+    for (const template of document.workspace.templates) if (noteTypeIds.has(template.noteTypeId)) templateIds.add(template.id)
+    return new Set(document.workspace.cards.filter((card) => templateIds.has(card.templateId)).map((card) => card.id))
+  }
+
+  private coreProjectionPatch(patch: WorkspacePatchV2, previousDocument: WorkspaceDocumentV4, document: WorkspaceDocumentV4) {
+    const renderingCardIds = this.renderingCardIdsAfterPatch(patch, previousDocument, document)
+    const relevantTemplateIds = new Set(document.workspace.cards.filter((card) => renderingCardIds.has(card.id)).map((card) => card.templateId))
+    const relevantNoteTypeIds = new Set(document.workspace.templates.filter((template) => relevantTemplateIds.has(template.id)).map((template) => template.noteTypeId))
+    const deckCards: Array<{ deckId: string; cardIds: string[] }> = []
+    for (const operation of patch.operations) {
+      if (operation.kind !== 'deck') continue
+      deckCards.push({ deckId: operation.id, cardIds: previousDocument.workspace.cards.filter((card) => card.deckId === operation.id).map((card) => card.id) })
+    }
+    return {
+      updatedAt: document.workspace.updatedAt,
+      noteTypes: document.workspace.noteTypes.filter((value) => relevantNoteTypeIds.has(value.id)),
+      fields: document.workspace.fields.filter((value) => relevantNoteTypeIds.has(value.noteTypeId)),
+      templates: document.workspace.templates.filter((value) => relevantTemplateIds.has(value.id)),
+      renderingCards: document.workspace.cards.filter((card) => renderingCardIds.has(card.id)).map((card) => ({ id: card.id, templateId: card.templateId })),
+      deckCards,
+    }
+  }
 
   applyCoreWorkspacePatch(patch: WorkspacePatchV2) {
+    if (this.deferredLegacyData) this.finishDeferredLegacyMigration()
     const previous = this.readWorkspaceDocument(this.db)
     if (!previous) throw new Error('Workspace v4 is not active.')
     if (patch.owner.type !== 'core') throw new Error('Core workspace patches must use the core owner.')
@@ -569,20 +1018,18 @@ export class WorkspaceStore {
     const receipt = this.db.prepare('SELECT request_hash FROM patch_receipts WHERE owner=? AND idempotency_key=?').get(owner, patch.idempotencyKey) as { request_hash: string } | undefined
     if (receipt) {
       if (receipt.request_hash !== requestHash) throw new Error('A different core patch already used this idempotency key.')
-      return { workspaceRevision: previous.workspace.revision, data: this.load()! }
+      return { workspaceRevision: previous.workspace.revision, updatedAt: previous.workspace.updatedAt, projectionPatch: this.coreProjectionPatch(patch, previous, previous) }
     }
-    const document = createWorkspaceDocumentV4(applyDomainPatchV2(previous.workspace, patch), previous.clientState)
-    const projected = workspaceDocumentV4ToAppData(document)
-    const existing = this.loadLegacyProjectionFromDatabase(this.db)
-    const urls = new Map((existing?.assets || []).map((value) => [value.id, value.dataUrl]))
-    projected.assets = projected.assets.map((value) => ({ ...value, dataUrl: urls.get(value.id) || value.dataUrl }))
+    const document: WorkspaceDocumentV4 = { ...previous, workspace: applyDomainPatchV2(previous.workspace, patch) }
+    const projected = this.projectionAfterWorkspacePatch(patch, previous, document)
+    const projectionPatch = this.coreProjectionPatch(patch, previous, document)
     this.transaction(() => {
-      this.db.exec('DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM workspace_meta; DELETE FROM workspace_v4;')
-      this.applyChangesWithoutTransaction(projected)
-      this.storeWorkspaceDocument(document)
+      this.appendJournal('core-patch', patch)
       this.db.prepare('INSERT INTO patch_receipts(owner, idempotency_key, request_hash, workspace_revision, applied_at) VALUES (?, ?, ?, ?, ?)').run(owner, patch.idempotencyKey, requestHash, document.workspace.revision, new Date().toISOString())
     })
-    return { workspaceRevision: document.workspace.revision, data: this.load()! }
+    this.documentCache = document
+    this.projectionCache = projected
+    return { workspaceRevision: document.workspace.revision, updatedAt: document.workspace.updatedAt, projectionPatch }
   }
 
   applyExtensionWorkspacePatch(extensionId: string, patch: WorkspacePatchV2) {
@@ -597,16 +1044,16 @@ export class WorkspaceStore {
     }
     const document = createWorkspaceDocumentV4(applyDomainPatchV2(previous.workspace, patch), previous.clientState)
     const projected = workspaceDocumentV4ToAppData(document)
-    const existing = this.loadLegacyProjectionFromDatabase(this.db)
+    const existing = this.load()
     const urls = new Map((existing?.assets || []).map((value) => [value.id, value.dataUrl]))
     projected.assets = projected.assets.map((value) => ({ ...value, dataUrl: urls.get(value.id) || value.dataUrl }))
     this.transaction(() => {
-      this.db.exec('DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM workspace_meta; DELETE FROM workspace_v4;')
-      this.applyChangesWithoutTransaction(projected)
-      this.storeWorkspaceDocument(document)
+      this.storeValidatedWorkspaceDocument(document)
+      this.db.prepare('UPDATE workspace_meta SET settings_json = ?, updated_at = ? WHERE id = 1').run(stringify(projected.settings), document.workspace.updatedAt)
       this.db.prepare('INSERT INTO patch_receipts(owner, idempotency_key, request_hash, workspace_revision, applied_at) VALUES (?, ?, ?, ?, ?)').run(owner, patch.idempotencyKey, requestHash, document.workspace.revision, new Date().toISOString())
     })
-    return { workspaceRevision: document.workspace.revision, data: this.load()! }
+    this.projectionCache = projected
+    return { workspaceRevision: document.workspace.revision, data: projected }
   }
 
   readExtensionConfig(extensionId: string) {
@@ -639,7 +1086,8 @@ export class WorkspaceStore {
       this.storeWorkspaceDocument(validated)
       this.db.prepare('UPDATE workspace_meta SET settings_json = ?, updated_at = ? WHERE id = 1').run(stringify(projected.settings), validated.workspace.updatedAt)
     })
-    return { workspaceRevision: validated.workspace.revision, data: this.load()! }
+    this.projectionCache = projected
+    return { workspaceRevision: validated.workspace.revision, data: projected }
   }
 
   extensionContentNotes(extensionId: string, query: { cursor?: string; limit?: number; noteIds?: string[] } = {}) {
@@ -689,12 +1137,13 @@ export class WorkspaceStore {
     document.workspace.revision += 1; document.workspace.updatedAt = now
     const validated = createWorkspaceDocumentV4(document.workspace, document.clientState)
     const projected = workspaceDocumentV4ToAppData(validated)
-    const current = this.loadLegacyProjectionFromDatabase(this.db)
+    const current = this.load()
     const urls = new Map((current?.assets || []).map((value) => [value.id, value.dataUrl]))
     projected.assets = projected.assets.map((value) => value.id === id ? { ...value, dataUrl: `data:${input.mimeType};base64,${Buffer.from(bytes).toString('base64')}`, altText: input.altText || '' } : { ...value, dataUrl: urls.get(value.id) || value.dataUrl })
     this.transaction(() => {
-      this.db.exec('DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM workspace_meta; DELETE FROM workspace_v4;')
-      this.applyChangesWithoutTransaction(projected); this.storeWorkspaceDocument(validated)
+      this.upsertAsset(projected.assets.find((value) => value.id === id)!, bytes)
+      this.storeValidatedWorkspaceDocument(validated)
+      this.db.prepare('UPDATE workspace_meta SET settings_json = ?, updated_at = ? WHERE id = 1').run(stringify(projected.settings), validated.workspace.updatedAt)
     })
     return { id, sha256, byteLength: bytes.byteLength, workspaceRevision: validated.workspace.revision }
   }
@@ -743,6 +1192,21 @@ export class WorkspaceStore {
     for (const value of changes.upsert.packConflicts) insertConflict.run(value.id, value.createdAt, stringify(value))
     for (const value of changes.upsert.trash) insertTrash.run(value.id, value.deletedAt, stringify(value))
     this.db.prepare('INSERT INTO workspace_meta(id, version, device_id, settings_json, updated_at) VALUES (1, 3, ?, ?, ?)').run(data.deviceId, stringify(data.settings), data.updatedAt)
+  }
+
+  private persistCanonicalProjectionMetadata(data: AppData, suppliedMedia = new Map<string, Uint8Array>(), archivedMedia = new Map<string, ArchivedMediaLocation>()) {
+    for (const value of data.assets) {
+      const archived = archivedMedia.get(value.id)
+      if (archived) {
+        const { dataUrl: _dataUrl, ...metadata } = value
+        this.db.prepare('INSERT INTO assets(id, mime_type, hash, updated_at, metadata_json, data) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET mime_type=excluded.mime_type, hash=excluded.hash, updated_at=excluded.updated_at, metadata_json=excluded.metadata_json, data=excluded.data')
+          .run(value.id, value.mimeType, value.hash, value.updatedAt, stringify({ ...metadata, archivedMedia: archived }), new Uint8Array())
+      } else {
+        this.upsertAsset(value, suppliedMedia.get(value.id))
+      }
+    }
+    this.db.prepare('INSERT INTO workspace_meta(id, version, device_id, settings_json, updated_at) VALUES (1, 3, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET version=3, device_id=excluded.device_id, settings_json=excluded.settings_json, updated_at=excluded.updated_at')
+      .run(data.deviceId, stringify(data.settings), data.updatedAt)
   }
 
   readAsset(id: string) {
@@ -804,24 +1268,31 @@ export class WorkspaceStore {
     try {
       const check = candidate.prepare('PRAGMA integrity_check').get() as Record<string, unknown> | undefined
       const version = Number((candidate.prepare('PRAGMA user_version').get() as { user_version: number }).user_version)
-      if (!check || !Object.values(check).includes('ok') || version !== DATABASE_SCHEMA_VERSION) throw new Error('This is not a compatible Neo Anki backup.')
+      if (!check || !Object.values(check).includes('ok') || version < 4 || version > DATABASE_SCHEMA_VERSION) throw new Error('This is not a compatible Neo Anki backup.')
       const required = new Set(['workspace_meta', 'workspace_v4', 'items', 'cards', 'reviews', 'assets', 'goals', 'views', 'packs', 'pack_conflicts', 'trash'])
       const present = new Set((candidate.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>).map((row) => row.name))
       if ([...required].some((table) => !present.has(table))) throw new Error('This backup is missing required workspace tables.')
-      if (!this.loadFromDatabase(candidate)) throw new Error('This backup does not contain a workspace.')
+      const row = candidate.prepare('SELECT json FROM workspace_v4 WHERE id = 1').get() as { json: string } | undefined
+      if (!row) throw new Error('This backup does not contain a workspace.')
+      parseWorkspaceDocumentV4(parseJson(row.json))
     } finally { candidate.close() }
   }
 
   async restoreBackup(source: string) {
     this.validateBackup(source)
     this.documentCache = undefined
+    this.projectionCache = undefined
 
     await this.createAutomaticBackup('before-restore')
     this.db.prepare('ATTACH DATABASE ? AS restore_source').run(source)
     try {
+      const sourceVersion = Number((this.db.prepare('PRAGMA restore_source.user_version').get() as { user_version: number }).user_version)
       this.transaction(() => {
-        this.db.exec('DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; DELETE FROM assets; DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM workspace_meta; DELETE FROM workspace_v4; DELETE FROM patch_receipts;')
-        this.db.exec('INSERT INTO workspace_meta SELECT * FROM restore_source.workspace_meta; INSERT INTO workspace_v4 SELECT * FROM restore_source.workspace_v4; INSERT INTO items SELECT * FROM restore_source.items; INSERT INTO cards SELECT * FROM restore_source.cards; INSERT INTO reviews SELECT * FROM restore_source.reviews; INSERT INTO assets SELECT * FROM restore_source.assets; INSERT INTO goals SELECT * FROM restore_source.goals; INSERT INTO views SELECT * FROM restore_source.views; INSERT INTO packs SELECT * FROM restore_source.packs; INSERT INTO pack_conflicts SELECT * FROM restore_source.pack_conflicts; INSERT INTO trash SELECT * FROM restore_source.trash;')
+        this.db.exec('DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; DELETE FROM assets; DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM workspace_meta; DELETE FROM workspace_v4; DELETE FROM patch_receipts; DELETE FROM workspace_journal;')
+        this.db.exec(`INSERT INTO workspace_meta SELECT * FROM restore_source.workspace_meta;
+          INSERT INTO workspace_v4(id, revision, updated_at, json, content_hash) SELECT id, revision, updated_at, json, ${sourceVersion >= 5 ? 'content_hash' : 'NULL'} FROM restore_source.workspace_v4;
+          INSERT INTO items SELECT * FROM restore_source.items; INSERT INTO cards SELECT * FROM restore_source.cards; INSERT INTO reviews SELECT * FROM restore_source.reviews; INSERT INTO assets SELECT * FROM restore_source.assets; INSERT INTO goals SELECT * FROM restore_source.goals; INSERT INTO views SELECT * FROM restore_source.views; INSERT INTO packs SELECT * FROM restore_source.packs; INSERT INTO pack_conflicts SELECT * FROM restore_source.pack_conflicts; INSERT INTO trash SELECT * FROM restore_source.trash;`)
+        if (sourceVersion >= 6) this.db.exec('INSERT INTO workspace_journal(sequence, kind, json, content_hash, created_at) SELECT sequence, kind, json, content_hash, created_at FROM restore_source.workspace_journal;')
       })
     } finally { this.db.exec('DETACH DATABASE restore_source') }
     // Full parsing catches semantic corruption that SQLite's integrity check cannot see.
@@ -886,19 +1357,29 @@ export class WorkspaceStore {
     try { syncDirectory(root) } catch { /* Directory fsync is unavailable on some platforms. */ }
   }
 
-  async createRollingBackup() { return this.createAutomaticBackup() }
+  async createRollingBackup() {
+    const date = localDateKey(new Date())
+    if (this.automaticBackupPathsSync().some((path) => basename(path).startsWith(`auto-${date}-`))) return null
+    return this.createAutomaticBackup()
+  }
 
   suggestedBackupRestorePath() {
     return this.automaticBackupPathsSync()[0] || this.backupRoot
   }
 
   clear() {
-    this.transaction(() => this.db.exec('DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; DELETE FROM assets; DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM workspace_meta; DELETE FROM workspace_v4; DELETE FROM patch_receipts;'))
+    this.transaction(() => this.db.exec('DELETE FROM reviews; DELETE FROM cards; DELETE FROM items; DELETE FROM assets; DELETE FROM goals; DELETE FROM views; DELETE FROM packs; DELETE FROM pack_conflicts; DELETE FROM trash; DELETE FROM workspace_meta; DELETE FROM workspace_v4; DELETE FROM patch_receipts; DELETE FROM workspace_journal;'))
     this.documentCache = null
+    this.projectionCache = null
+    this.deferredLegacyData = null
+    this.deferredLegacyInput = undefined
     this.statusValue.recoveryError = undefined
     this.statusValue.recoverySourcePath = undefined
     this.statusValue.recoveredFromBackup = false
   }
 
-  close() { this.db.close() }
+  close() {
+    try { this.db.exec('PRAGMA wal_checkpoint(TRUNCATE)') } catch { /* A committed WAL remains recoverable. */ }
+    this.db.close()
+  }
 }

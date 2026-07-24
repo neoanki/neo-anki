@@ -4,12 +4,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatDue } from '../lib/date'
 import { analyzeCardHealth, normalizeAnswer } from '../lib/content'
 import { useApp } from '../state/AppContext'
-import type { KnowledgeItem, PracticeCard } from '../types'
+import type { AppData, KnowledgeItem, PracticeCard } from '../types'
 import { extensionLibraryPresetsV2 } from '../extensions/v2/registry'
 import { KnowledgeItemEditor } from '../components/KnowledgeItemEditor'
 import { matchesLibraryQuery, sortLibraryItems, type LibrarySort } from '../lib/library-query'
 
 const LIBRARY_PAGE_SIZE = 100
+const EMPTY_CARDS_BY_ITEM = new Map<string, PracticeCard[]>()
+const EMPTY_PROMPTS = new Set<string>()
 const itemHealth = (item: KnowledgeItem, cards: PracticeCard[], duplicatePrompts: Set<string>, assetIds: Set<string>) => ({
   empty: !item.prompt.trim() || !item.answer.trim(),
   duplicate: duplicatePrompts.has(normalizeAnswer(item.prompt)),
@@ -18,7 +20,7 @@ const itemHealth = (item: KnowledgeItem, cards: PracticeCard[], duplicatePrompts
 })
 
 export const LibraryPage = () => {
-  const { data, navigate, startCustomSession, deleteItem, deleteItems, restoreItem, purgeItem, toggleSuspend, setCardsSuspended, setCardsBuried, setCardsFlag, setCardsDeck, setCardsDueDate, updateItemsBulk } = useApp()
+  const { data, route, navigate, startCustomSession, deleteItem, deleteItems, restoreItem, purgeItem, toggleSuspend, setCardsSuspended, setCardsBuried, setCardsFlag, setCardsDeck, setCardsDueDate, updateItemsBulk } = useApp()
   const [query, setQuery] = useState('')
   const [collection, setCollection] = useState('All collections')
   const [editing, setEditing] = useState<KnowledgeItem | null>(null)
@@ -32,10 +34,24 @@ export const LibraryPage = () => {
   const [bulkMessage, setBulkMessage] = useState('')
   const [bulkBusy, setBulkBusy] = useState(false)
   const [healthFilter, setHealthFilter] = useState<'all' | 'quality' | 'empty' | 'duplicate' | 'media'>('all')
+  const [derivedFor, setDerivedFor] = useState<{ items: AppData['items']; cards: AppData['cards'] } | null>(null)
+  const derivedReady = derivedFor?.items === data.items && derivedFor.cards === data.cards
   const searchRef = useRef<HTMLInputElement>(null)
-  const collections = ['All collections', ...new Set([...data.items.map((item) => item.collection), ...data.cards.map((card) => card.deckName).filter((value): value is string => Boolean(value))])]
+  useEffect(() => {
+    let current = true
+    const timer = window.setTimeout(() => { if (current) setDerivedFor({ items: data.items, cards: data.cards }) }, 0)
+    return () => { current = false; window.clearTimeout(timer) }
+  }, [data.cards, data.items])
+  const collections = useMemo(() => derivedReady ? [
+    'All collections',
+    ...new Set([
+      ...data.items.map((item) => item.collection),
+      ...data.cards.map((card) => card.deckName).filter((value): value is string => Boolean(value)),
+    ]),
+  ] : ['All collections'], [data.cards, data.items, derivedReady])
   const libraryPresets = extensionLibraryPresetsV2()
   const cardsByItem = useMemo(() => {
+    if (!derivedReady) return EMPTY_CARDS_BY_ITEM
     const result = new Map<string, PracticeCard[]>()
     for (const card of data.cards) {
       const existing = result.get(card.itemId)
@@ -43,33 +59,60 @@ export const LibraryPage = () => {
       else result.set(card.itemId, [card])
     }
     return result
-  }, [data.cards])
+  }, [data.cards, derivedReady])
   const duplicatePrompts = useMemo(() => {
+    if (!derivedReady) return EMPTY_PROMPTS
     const counts = new Map<string, number>()
     data.items.forEach((item) => { const key = normalizeAnswer(item.prompt); if (key) counts.set(key, (counts.get(key) || 0) + 1) })
     return new Set([...counts].filter(([, count]) => count > 1).map(([key]) => key))
-  }, [data.items])
+  }, [data.items, derivedReady])
   const assetIds = useMemo(() => new Set(data.assets.map((asset) => asset.id)), [data.assets])
-  const checkCounts = useMemo(() => data.items.reduce((counts, item) => { const health = itemHealth(item, cardsByItem.get(item.id) || [], duplicatePrompts, assetIds); (Object.keys(health) as Array<keyof typeof health>).forEach((key) => { if (health[key]) counts[key] += 1 }); return counts }, { quality: 0, empty: 0, duplicate: 0, media: 0 }), [data.items, cardsByItem, duplicatePrompts, assetIds])
-  const filtered = useMemo(() => sortLibraryItems(data.items.filter((item) => matchesLibraryQuery(item, cardsByItem.get(item.id) || [], query) && (healthFilter === 'all' || itemHealth(item, cardsByItem.get(item.id) || [], duplicatePrompts, assetIds)[healthFilter]) && (collection === 'All collections' || item.collection === collection)), cardsByItem, sort), [data.items, cardsByItem, query, collection, sort, healthFilter, duplicatePrompts, assetIds])
+  const [checkCounts, setCheckCounts] = useState<{ items: AppData['items']; counts: { quality: number; empty: number; duplicate: number; media: number } } | null>(null)
+  const visibleCheckCounts = checkCounts?.items === data.items ? checkCounts.counts : null
+  useEffect(() => {
+    if (!derivedReady) return
+    let current = true
+    let offset = 0
+    const counts = { quality: 0, empty: 0, duplicate: 0, media: 0 }
+    const run = () => {
+      if (!current) return
+      const end = Math.min(data.items.length, offset + 1_000)
+      for (; offset < end; offset += 1) {
+        const item = data.items[offset]
+        const health = itemHealth(item, cardsByItem.get(item.id) || [], duplicatePrompts, assetIds)
+        ;(Object.keys(health) as Array<keyof typeof health>).forEach((key) => { if (health[key]) counts[key] += 1 })
+      }
+      if (offset < data.items.length) window.setTimeout(run, 0)
+      else setCheckCounts({ items: data.items, counts })
+    }
+    window.setTimeout(run, 0)
+    return () => { current = false }
+  }, [assetIds, cardsByItem, data.items, derivedReady, duplicatePrompts])
+  const filtered = useMemo(() => {
+    const candidates = !query && healthFilter === 'all' && collection === 'All collections'
+      ? data.items
+      : data.items.filter((item) => matchesLibraryQuery(item, cardsByItem.get(item.id) || [], query) && (healthFilter === 'all' || itemHealth(item, cardsByItem.get(item.id) || [], duplicatePrompts, assetIds)[healthFilter]) && (collection === 'All collections' || item.collection === collection))
+    return derivedReady ? sortLibraryItems(candidates, cardsByItem, sort) : candidates
+  }, [data.items, cardsByItem, query, collection, sort, healthFilter, duplicatePrompts, assetIds, derivedReady])
   const visibleItems = filtered.slice(0, visibleCount)
-  const itemById = useMemo(() => new Map(data.items.map((item) => [item.id, item])), [data.items])
-  const cardItemOrder = useMemo(() => new Map(sortLibraryItems(data.items, cardsByItem, sort).map((item, index) => [item.id, index])), [data.items, cardsByItem, sort])
-  const filteredCards = useMemo(() => data.cards.filter((card) => {
+  const itemById = useMemo(() => mode === 'cards' || selected.size > 0 ? new Map(data.items.map((item) => [item.id, item])) : new Map<string, KnowledgeItem>(), [data.items, mode, selected.size])
+  const cardItemOrder = useMemo(() => mode === 'cards' ? new Map(sortLibraryItems(data.items, cardsByItem, sort).map((item, index) => [item.id, index])) : new Map<string, number>(), [data.items, cardsByItem, mode, sort])
+  const filteredCards = useMemo(() => mode === 'cards' ? data.cards.filter((card) => {
     const item = itemById.get(card.itemId)
     return Boolean(item && matchesLibraryQuery(item, [card], query) && (healthFilter === 'all' || itemHealth(item, [card], duplicatePrompts, assetIds)[healthFilter]) && (collection === 'All collections' || (card.deckName || item.collection) === collection))
-  }).sort((left, right) => sort === 'due-asc' ? Date.parse(left.fsrs.due) - Date.parse(right.fsrs.due) || left.id.localeCompare(right.id) : (cardItemOrder.get(left.itemId) || 0) - (cardItemOrder.get(right.itemId) || 0) || left.id.localeCompare(right.id)), [data.cards, itemById, query, collection, sort, cardItemOrder, healthFilter, duplicatePrompts, assetIds])
+  }).sort((left, right) => sort === 'due-asc' ? Date.parse(left.fsrs.due) - Date.parse(right.fsrs.due) || left.id.localeCompare(right.id) : (cardItemOrder.get(left.itemId) || 0) - (cardItemOrder.get(right.itemId) || 0) || left.id.localeCompare(right.id)) : [], [data.cards, itemById, query, collection, sort, cardItemOrder, healthFilter, duplicatePrompts, assetIds, mode])
   const visibleCards = filteredCards.slice(0, visibleCount)
-  const selectedCards = mode === 'notes' ? data.cards.filter((card) => selected.has(card.itemId)) : data.cards.filter((card) => selected.has(card.id))
-  const deckNames = useMemo(() => [...new Set(data.cards.map((card) => card.deckName || itemById.get(card.itemId)?.collection).filter((value): value is string => Boolean(value)))].sort((left, right) => left.localeCompare(right)), [data.cards, itemById])
+  const selectedCards = useMemo(() => selected.size === 0 ? [] : mode === 'notes' ? data.cards.filter((card) => selected.has(card.itemId)) : data.cards.filter((card) => selected.has(card.id)), [data.cards, mode, selected])
+  const deckNames = useMemo(() => selected.size === 0 ? [] : [...new Set(data.cards.map((card) => card.deckName || itemById.get(card.itemId)?.collection).filter((value): value is string => Boolean(value)))].sort((left, right) => left.localeCompare(right)), [data.cards, itemById, selected.size])
   const visibleSelectionIds = mode === 'notes' ? visibleItems.map((item) => item.id) : visibleCards.map((card) => card.id)
   const visibleTotal = mode === 'notes' ? filtered.length : filteredCards.length
 
   useEffect(() => {
-    const handler = (event: KeyboardEvent) => { if (event.key === '/' && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)) { event.preventDefault(); searchRef.current?.focus() } }
+    const handler = (event: KeyboardEvent) => { if (route === 'library' && event.key === '/' && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)) { event.preventDefault(); searchRef.current?.focus() } }
     window.addEventListener('keydown', handler); return () => window.removeEventListener('keydown', handler)
-  }, [])
+  }, [route])
 
+  if (route !== 'library') return null
   return (
     <div className="page library-page">
       <header className="page-header library-header">
@@ -82,7 +125,7 @@ export const LibraryPage = () => {
         <label className="search-field"><Search size={19} /><span className="visually-hidden">Search knowledge</span><input ref={searchRef} type="search" value={query} onChange={(event) => { setQuery(event.target.value); setVisibleCount(LIBRARY_PAGE_SIZE) }} placeholder="Search prompts, answers, tags…  /" /></label>
         <label className="filter-field"><Filter size={18} /><span className="visually-hidden">Filter by collection</span><select value={collection} onChange={(event) => { setCollection(event.target.value); setVisibleCount(LIBRARY_PAGE_SIZE) }}>{collections.map((name) => <option key={name}>{name}</option>)}</select></label>
         <label className="filter-field"><span className="visually-hidden">Sort Library</span><select aria-label="Sort Library" value={sort} onChange={(event) => setSort(event.target.value as LibrarySort)}><option value="updated-desc">Recently edited</option><option value="created-desc">Recently added</option><option value="due-asc">Next due</option><option value="difficulty-desc">Highest difficulty</option><option value="deck-asc">Collection name</option></select></label>
-        <label className="filter-field"><span className="visually-hidden">Collection check</span><select aria-label="Collection check" value={healthFilter} onChange={(event) => { setHealthFilter(event.target.value as typeof healthFilter); setVisibleCount(LIBRARY_PAGE_SIZE) }}><option value="all">All checks</option><option value="quality">Quality warnings ({checkCounts.quality})</option><option value="empty">Empty prompts or answers ({checkCounts.empty})</option><option value="duplicate">Duplicate prompts ({checkCounts.duplicate})</option><option value="media">Missing media ({checkCounts.media})</option></select></label>
+        <label className="filter-field"><span className="visually-hidden">Collection check</span><select aria-label="Collection check" value={healthFilter} onChange={(event) => { setHealthFilter(event.target.value as typeof healthFilter); setVisibleCount(LIBRARY_PAGE_SIZE) }}><option value="all">All checks</option><option value="quality">Quality warnings ({visibleCheckCounts?.quality ?? '…'})</option><option value="empty">Empty prompts or answers ({visibleCheckCounts?.empty ?? '…'})</option><option value="duplicate">Duplicate prompts ({visibleCheckCounts?.duplicate ?? '…'})</option><option value="media">Missing media ({visibleCheckCounts?.media ?? '…'})</option></select></label>
         {libraryPresets.length > 0 && <label className="filter-field"><span className="visually-hidden">Apply saved view</span><select defaultValue="" onChange={(event) => { const preset = libraryPresets.find((candidate) => candidate.id === event.target.value); if (preset) { setQuery(preset.query); setCollection(preset.collection || 'All collections'); setVisibleCount(LIBRARY_PAGE_SIZE) } }}><option value="">Saved views</option>{libraryPresets.map((preset) => <option value={preset.id} key={preset.id}>{preset.label}</option>)}</select></label>}
       </div>
 

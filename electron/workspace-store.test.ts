@@ -23,6 +23,108 @@ describe('WorkspaceStore', () => {
     store.close()
   })
 
+  it('replays durable journaled mutations and compatibility patches after restart', async () => {
+    const root = await temporaryRoot()
+    let store = new WorkspaceStore(root)
+    const initial = createSeedData()
+    store.applyChanges(createWorkspaceChangeSet(null, initial))
+    const changed = { ...initial, settings: { ...initial.settings, dailyMinutes: 47 }, updatedAt: new Date().toISOString() }
+    store.applyChanges(createWorkspaceChangeSet(initial, changed))
+    const document = store.workspaceV4Document()
+    const noteType = document.workspace.noteTypes[0]
+    store.applyCoreWorkspacePatch({ version: 2, idempotencyKey: 'test:journal-restart', expectedWorkspaceRevision: document.workspace.revision, owner: { type: 'core' }, operations: [{ op: 'update', kind: 'noteType', id: noteType.id, expectedRevision: noteType.revision, value: { ...noteType, name: 'Journal Basic', revision: noteType.revision + 1, updatedAt: changed.updatedAt } }] })
+    store.close()
+
+    const database = new DatabaseSync(join(root, 'neo-anki.sqlite'), { readOnly: true })
+    expect((database.prepare('SELECT COUNT(*) AS count FROM workspace_journal').get() as { count: number }).count).toBe(2)
+    database.close()
+
+    store = new WorkspaceStore(root)
+    expect(store.load()?.settings.dailyMinutes).toBe(47)
+    expect(store.workspaceV4Document().workspace.noteTypes[0].name).toBe('Journal Basic')
+    store.close()
+  })
+
+  it('blocks recovery when a durable journal record is corrupted', async () => {
+    const root = await temporaryRoot()
+    const store = new WorkspaceStore(root)
+    const initial = createSeedData()
+    store.applyChanges(createWorkspaceChangeSet(null, initial))
+    const changed = { ...initial, settings: { ...initial.settings, dailyMinutes: 49 }, updatedAt: new Date().toISOString() }
+    store.applyChanges(createWorkspaceChangeSet(initial, changed))
+    store.close()
+
+    const database = new DatabaseSync(join(root, 'neo-anki.sqlite'))
+    database.prepare("UPDATE workspace_journal SET json = json || ' ' WHERE sequence = (SELECT MAX(sequence) FROM workspace_journal)").run()
+    database.close()
+
+    const blocked = new WorkspaceStore(root)
+    expect(blocked.status().recoveryError).toContain('Workspace journal integrity check failed')
+    expect(blocked.status().recoverySourcePath).toMatch(/neo-anki\.corrupt-.*\.sqlite$/)
+    expect(blocked.load()).toBeNull()
+    blocked.close()
+  })
+
+  it('backs up and restores uncheckpointed journal mutations', async () => {
+    const sourceRoot = await temporaryRoot()
+    const backup = join(sourceRoot, 'journal.neoanki-backup')
+    const initial = createSeedData()
+    let store = new WorkspaceStore(sourceRoot)
+    store.applyChanges(createWorkspaceChangeSet(null, initial))
+    const changed = { ...initial, settings: { ...initial.settings, dailyMinutes: 51 }, updatedAt: new Date().toISOString() }
+    store.applyChanges(createWorkspaceChangeSet(initial, changed))
+    await store.exportBackup(backup)
+    store.close()
+
+    const targetRoot = await temporaryRoot()
+    store = new WorkspaceStore(targetRoot)
+    store.applyChanges(createWorkspaceChangeSet(null, createSeedData()))
+    await store.restoreBackup(backup)
+    expect(store.load()?.settings.dailyMinutes).toBe(51)
+    store.close()
+  })
+
+  it('restores schema-v5 backups through the versioned compatibility path', async () => {
+    const sourceRoot = await temporaryRoot()
+    const backup = join(sourceRoot, 'schema-v5.neoanki-backup')
+    const initial = createSeedData()
+    initial.settings.dailyMinutes = 43
+    let store = new WorkspaceStore(sourceRoot)
+    store.applyChanges(createWorkspaceChangeSet(null, initial))
+    await store.exportBackup(backup)
+    store.close()
+
+    const legacy = new DatabaseSync(backup)
+    legacy.exec('DROP TABLE workspace_journal; PRAGMA user_version = 5;')
+    legacy.close()
+
+    const targetRoot = await temporaryRoot()
+    store = new WorkspaceStore(targetRoot)
+    store.applyChanges(createWorkspaceChangeSet(null, createSeedData()))
+    await store.restoreBackup(backup)
+    expect(store.load()?.settings.dailyMinutes).toBe(43)
+    store.close()
+  })
+
+  it('keeps the original legacy workspace usable when background migration is interrupted', async () => {
+    const root = await temporaryRoot()
+    const initial = createSeedData()
+    await writeFile(join(root, 'neo-anki-data.json'), JSON.stringify(initial), 'utf8')
+    let store = new WorkspaceStore(root, { allowUnvalidatedLegacyProjection: true })
+    expect(store.load()?.items).toHaveLength(initial.items.length)
+    store.close()
+
+    store = new WorkspaceStore(root)
+    expect(store.load()?.items).toHaveLength(initial.items.length)
+    store.finishDeferredLegacyMigration()
+    store.close()
+
+    store = new WorkspaceStore(root)
+    expect(store.load()?.items).toHaveLength(initial.items.length)
+    expect(store.hasDeferredLegacyMigration()).toBe(false)
+    store.close()
+  })
+
   it('keeps extension configuration in the authoritative workspace', async () => {
     const store = new WorkspaceStore(await temporaryRoot()); const initial = createSeedData()
     store.applyChanges(createWorkspaceChangeSet(null, initial)); store.writeExtensionConfig('org.neoanki.fixture', { enabled: true })
@@ -166,7 +268,7 @@ describe('WorkspaceStore', () => {
     blocked.close()
   })
 
-  it('keeps bounded rolling backups of the latest accepted workspace state', async () => {
+  it('creates at most one rolling recovery snapshot per local day', async () => {
     const root = await temporaryRoot()
     const store = new WorkspaceStore(root)
     let previous = createSeedData()
@@ -181,15 +283,14 @@ describe('WorkspaceStore', () => {
     store.close()
 
     const backups = (await readdir(join(root, 'backups'))).filter((name) => name.startsWith('auto-')).sort().reverse()
-    expect(backups).toHaveLength(7)
+    expect(backups).toHaveLength(1)
     const retainedMinutes = backups.map((name) => {
       const backup = new DatabaseSync(join(root, 'backups', name), { readOnly: true })
       const json = (backup.prepare('SELECT settings_json FROM workspace_meta WHERE id = 1').get() as { settings_json: string }).settings_json
       backup.close()
       return (JSON.parse(json) as { dailyMinutes: number }).dailyMinutes
     })
-    expect(retainedMinutes).toContain(40)
-    expect(Math.max(...retainedMinutes)).toBe(40)
+    expect(retainedMinutes).toEqual([30])
   })
 
   it('turns a legacy JSON migration failure into an explicit preserved-source recovery state', async () => {
