@@ -98,6 +98,18 @@ const inspectAnkiArchive = (bytes: Uint8Array) => {
   return { modern, database, mediaManifest, archiveEntries: entries.map((entry) => entry.name).sort(), media }
 }
 const rendererStartupTimeoutMs = process.env.NEO_ANKI_STARTUP_TIMEOUT_MS ? Math.max(500, Number(process.env.NEO_ANKI_STARTUP_TIMEOUT_MS) || 12_000) : 12_000
+const benchmarkStartedAt = performance.now()
+const benchmarkMark = (label: string, detail: Record<string, unknown> = {}) => {
+  if (process.env.NEO_ANKI_BENCHMARK !== '1') return
+  console.error(JSON.stringify({
+    type: 'neo-anki-benchmark',
+    label,
+    elapsedMs: Number((performance.now() - benchmarkStartedAt).toFixed(3)),
+    at: Date.now(),
+    ...detail,
+  }))
+}
+benchmarkMark('main-module-loaded')
 
 protocol.registerSchemesAsPrivileged([
   { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
@@ -188,9 +200,12 @@ const installApplicationMenu = () => {
 }
 
 const queueSave = (changes: WorkspaceChangeSet) => {
+  benchmarkMark('save-enqueued')
   saveQueue = saveQueue.catch(() => undefined).then(async () => {
+    benchmarkMark('save-started')
     workspaceStore.applyChanges(changes)
     await workspaceStore.createRollingBackup()
+    benchmarkMark('save-completed')
   })
   return saveQueue
 }
@@ -229,6 +244,7 @@ const registerDesktopIpc = () => {
   ipcMain.on('neo-anki:renderer-ready', (event) => {
     assertTrustedSender(event)
     rendererReady = true
+    benchmarkMark('renderer-ready')
     clearRendererStartupTimer()
   })
   ipcMain.on('neo-anki:load-data', (event) => {
@@ -241,11 +257,15 @@ const registerDesktopIpc = () => {
     }
   })
   ipcMain.handle('neo-anki:load-data-async', (event) => {
+    benchmarkMark('workspace-load-started')
     try {
       assertTrustedSender(event)
       const status = workspaceStore.status()
-      return { data: workspaceStore.load(), storagePath: status.path, recoveredFromBackup: status.recoveredFromBackup, migratedLegacyData: status.migratedLegacyData, error: status.recoveryError, recoverySourcePath: status.recoverySourcePath }
+      const result = { data: workspaceStore.load(), storagePath: status.path, recoveredFromBackup: status.recoveredFromBackup, migratedLegacyData: status.migratedLegacyData, error: status.recoveryError, recoverySourcePath: status.recoverySourcePath }
+      benchmarkMark('workspace-load-completed')
+      return result
     } catch (error) {
+      benchmarkMark('workspace-load-failed')
       return { data: null, storagePath: '', recoveredFromBackup: false, error: error instanceof Error ? error.message : 'Could not load data.' }
     }
   })
@@ -609,6 +629,7 @@ const registerAppProtocol = () => {
 }
 
 const createWindow = async (query = '') => {
+  benchmarkMark('window-create-started')
   const window = new BrowserWindow({
     title: 'Neo Anki',
     width: 1280,
@@ -624,8 +645,10 @@ const createWindow = async (query = '') => {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      backgroundThrottling: process.env.NEO_ANKI_BENCHMARK !== '1',
     },
   })
+  benchmarkMark('window-created')
   mainWindow = window
 
   window.webContents.setWindowOpenHandler(({ url }) => {
@@ -635,15 +658,17 @@ const createWindow = async (query = '') => {
   window.webContents.on('will-navigate', (event, url) => {
     if (!isTrustedUrl(url)) event.preventDefault()
   })
-  window.on('closed', () => { if (mainWindow === window) mainWindow = null })
+  window.on('closed', () => { benchmarkMark('window-closed'); if (mainWindow === window) mainWindow = null })
   window.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => { if (isMainFrame && !isInPlace) { rendererReady = false; armRendererStartupWatchdog() } })
-  window.webContents.on('did-finish-load', armRendererStartupWatchdog)
+  window.webContents.on('did-finish-load', () => { benchmarkMark('renderer-document-loaded'); armRendererStartupWatchdog() })
 
   if (devServerUrl) await window.loadURL(`${devServerUrl}${query}`)
   else await window.loadURL(`${APP_SCHEME}://app/index.html${query}`)
+  benchmarkMark('window-load-completed')
 }
 
 if (hasSingleInstanceLock) app.whenReady().then(async () => {
+  benchmarkMark('electron-ready')
   diagnosticsLog = new DiagnosticsLog(join(app.getPath('userData'), 'diagnostics'), app.getVersion())
   process.on('uncaughtException', (error) => { void diagnosticsLog.record({ source: 'main', level: 'error', code: 'uncaught-exception', message: error.message, stack: error.stack }) })
   process.on('unhandledRejection', (reason) => { const error = reason instanceof Error ? reason : new Error(String(reason)); void diagnosticsLog.record({ source: 'main', level: 'error', code: 'unhandled-rejection', message: error.message, stack: error.stack }) })
@@ -677,6 +702,7 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
     }
   }
   await createWindow()
+  benchmarkMark('application-window-ready')
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow() })
 }).catch((error) => {
   dialog.showErrorBox('Neo Anki could not start', error instanceof Error ? error.message : 'The local workspace could not be opened.')
@@ -685,10 +711,13 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
 
 app.on('before-quit', (event) => {
   if (quitAfterFlush) return
+  benchmarkMark('quit-requested')
   event.preventDefault()
   void saveQueue.catch(() => undefined).finally(() => {
+    benchmarkMark('save-queue-flushed')
     quitAfterFlush = true
     workspaceStore?.close()
+    benchmarkMark('workspace-store-closed')
     app.quit()
   })
 })

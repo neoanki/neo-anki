@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "types": ["node", "@playwright/test", "vitest/globals"]
+  },
+  "include": [
+    "benchmarks/desktop/**/*.ts",
+    "scripts/compare-desktop-benchmarks.ts",
+    "playwright.benchmark.config.ts",
+    "vitest.benchmark.config.ts",
+    "e2e/support/playwright.ts",
+    "src"
+  ]
+}

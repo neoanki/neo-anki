@@ -138,3 +138,28 @@ jobs:
             playwright-report/desktop/
           if-no-files-found: ignore
           retention-days: 14
+
+  desktop-benchmark:
+    name: Packaged desktop benchmark — macOS arm64
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium
+      - run: npm run benchmark:desktop:catalog
+      - run: npm run benchmark:desktop:pack
+      - run: npm run benchmark:desktop:smoke
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: desktop-benchmark-macos-arm64
+          path: |
+            test-results/desktop-benchmark/
+            playwright-report/desktop-benchmark/
+          if-no-files-found: ignore
+          retention-days: 30

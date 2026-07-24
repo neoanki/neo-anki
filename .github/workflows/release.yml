@@ -94,6 +94,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$app_path"
           codesign -dv --verbose=4 "$app_path" 2>&1 | grep -F 'Signature=adhoc'
           NEO_ANKI_RELEASE_APP="$executable" npm run test:acceptance:release -- --grep 'clean core journey'
+          NEO_ANKI_BENCHMARK_APP="$executable" npm run benchmark:desktop:full
       - name: Verify Windows payload and launch
         if: runner.os == 'Windows'
         shell: pwsh

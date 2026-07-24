@@ -17,11 +17,14 @@ Native Android runs create a dedicated emulator with `-no-window`; they refuse t
 | Source browser | `npm run test:e2e` | Chromium, Firefox, WebKit, responsive/mobile-web, accessibility, recovery, offline, and adversarial journeys |
 | Source Electron | `npm run test:desktop` | Hidden-window desktop persistence, restart, extension, import, and security journeys |
 | Released binary | `NEO_ANKI_RELEASE_APP=/absolute/path npm run test:acceptance:release` | Exact packaged executable with isolated application data and restart verification |
+| macOS arm64 benchmark | `npm run benchmark:desktop:pack && npm run benchmark:desktop:smoke` | Packaged Apple Silicon app lifecycle, interaction, persistence, renderer, CPU, and memory measurements |
 | Known bugs | `npm run test:known-bugs` | Deterministic, non-gating reproducers linked to unresolved issues |
 | Android native | `NEO_ANKI_MOBILE_APP=/absolute/app.apk NEO_ANKI_ANDROID_AVD=qa npm run mobile:e2e:android` | Built APK on a runner-created no-window emulator |
 | iOS native | `NEO_ANKI_MOBILE_APP=/absolute/NeoAnki.app NEO_ANKI_IOS_SIMULATOR_UDID=... npm run mobile:e2e:ios` | Built simulator binary through headless `simctl` plus Maestro |
 
 Pull requests run contracts, deterministic tests, browser journeys, and hidden-window Electron tests. The nightly workflow increases property-test cases, runs the cross-browser matrix, and keeps known-bug reproducers non-gating. Release workflows must test the exact packaged executable and upload failure evidence. A mobile release candidate additionally needs both native suites against built binaries.
+
+The packaged performance program is documented in [macOS arm64 desktop benchmarks](desktop-benchmarks.md). Pull requests use the critical smoke journey, nightly QA runs the full catalog, and calibration uses 20 repetitions before budgets become gating. Performance artifacts identify the exact executable hash and host hardware.
 
 ## Evidence and isolation
 

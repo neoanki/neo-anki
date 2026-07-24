@@ -1,0 +1,1014 @@
+[
+  {
+    "operationId": "lifecycle.launch.fresh",
+    "stage": "lifecycle",
+    "absoluteLimitMs": 3000,
+    "enforcement": "gated",
+    "calibratedMedianMs": 422.74633299999186,
+    "calibratedMadMs": 17.334520499985956
+  },
+  {
+    "operationId": "lifecycle.launch.established",
+    "stage": "lifecycle",
+    "absoluteLimitMs": 3000,
+    "enforcement": "gated",
+    "calibratedMedianMs": 2604.4467704999697,
+    "calibratedMadMs": 9.976895999992848
+  },
+  {
+    "operationId": "lifecycle.launch.large",
+    "stage": "lifecycle",
+    "absoluteLimitMs": 5000,
+    "enforcement": "debt",
+    "calibratedMedianMs": 17140.54887499998,
+    "calibratedMadMs": 107.43279099988285
+  },
+  {
+    "operationId": "lifecycle.relaunch.warm",
+    "stage": "lifecycle",
+    "absoluteLimitMs": 3000,
+    "enforcement": "gated",
+    "calibratedMedianMs": 433.1836875000008,
+    "calibratedMadMs": 4.718542000002344
+  },
+  {
+    "operationId": "lifecycle.quit.idle",
+    "stage": "lifecycle",
+    "absoluteLimitMs": 2000,
+    "enforcement": "gated",
+    "calibratedMedianMs": 94.99849999999788,
+    "calibratedMadMs": 2.036270999997214
+  },
+  {
+    "operationId": "lifecycle.quit.pending-save",
+    "stage": "lifecycle",
+    "absoluteLimitMs": 5000,
+    "enforcement": "gated",
+    "calibratedMedianMs": 329.93679150001844,
+    "calibratedMadMs": 14.624228500004392
+  },
+  {
+    "operationId": "lifecycle.quit.pending-save",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "calibrating"
+  },
+  {
+    "operationId": "lifecycle.restart.durable",
+    "stage": "lifecycle",
+    "absoluteLimitMs": 3000,
+    "enforcement": "calibrating"
+  },
+  {
+    "operationId": "lifecycle.restart.durable",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "calibrating"
+  },
+  {
+    "operationId": "lifecycle.window.close",
+    "stage": "lifecycle",
+    "absoluteLimitMs": 3000,
+    "enforcement": "gated",
+    "calibratedMedianMs": 103.28749999999127,
+    "calibratedMadMs": 0.4263120000032359
+  },
+  {
+    "operationId": "lifecycle.window.reopen",
+    "stage": "lifecycle",
+    "absoluteLimitMs": 3000,
+    "enforcement": "gated",
+    "calibratedMedianMs": 141.67562499999622,
+    "calibratedMadMs": 1.1472915000049397
+  },
+  {
+    "operationId": "recovery.corrupt-launch",
+    "stage": "lifecycle",
+    "absoluteLimitMs": 3000,
+    "enforcement": "gated",
+    "calibratedMedianMs": 427.73464600002626,
+    "calibratedMadMs": 5.842583499965258
+  },
+  {
+    "operationId": "recovery.corrupt-launch",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "calibrating"
+  },
+  {
+    "operationId": "recovery.actions",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 13,
+    "calibratedMadMs": 1
+  },
+  {
+    "operationId": "recovery.actions",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 67.99443750001956,
+    "calibratedMadMs": 42.56089600006817
+  },
+  {
+    "operationId": "recovery.actions",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "gated",
+    "calibratedMedianMs": 387.3057090000366,
+    "calibratedMadMs": 259.40212499996414
+  },
+  {
+    "operationId": "navigation.onboarding.start-fresh",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 9.200000047683716,
+    "calibratedMadMs": 1.7499999403953552
+  },
+  {
+    "operationId": "navigation.onboarding.start-fresh",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 320.67289549999987,
+    "calibratedMadMs": 2.750229500004025
+  },
+  {
+    "operationId": "navigation.onboarding.complete",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 14,
+    "calibratedMadMs": 0.5
+  },
+  {
+    "operationId": "navigation.onboarding.complete",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 39.236916500005464,
+    "calibratedMadMs": 2.295791500003361
+  },
+  {
+    "operationId": "navigation.onboarding.complete",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "gated",
+    "calibratedMedianMs": 43.67891650000092,
+    "calibratedMadMs": 2.9123960000006264
+  },
+  {
+    "operationId": "navigation.routes.cold",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 13.599999964237213,
+    "calibratedMadMs": 1.0499999523162842
+  },
+  {
+    "operationId": "navigation.routes.cold",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 338.90291699999216,
+    "calibratedMadMs": 310.08554149998963
+  },
+  {
+    "operationId": "navigation.routes.warm",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 13.200000047683716,
+    "calibratedMadMs": 0.30000007152557373
+  },
+  {
+    "operationId": "navigation.routes.warm",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 29.148271499994735,
+    "calibratedMadMs": 1.2225619999953778
+  },
+  {
+    "operationId": "navigation.shortcuts",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 11.5,
+    "calibratedMadMs": 1.949999988079071
+  },
+  {
+    "operationId": "navigation.shortcuts",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 8.474063000001479,
+    "calibratedMadMs": 1.316812500001106
+  },
+  {
+    "operationId": "navigation.history",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "calibrating"
+  },
+  {
+    "operationId": "navigation.history",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 6.381187500001033,
+    "calibratedMadMs": 0.6107080000001588
+  },
+  {
+    "operationId": "navigation.settings.open-close",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 15.000000059604645,
+    "calibratedMadMs": 2.199999988079071
+  },
+  {
+    "operationId": "navigation.settings.open-close",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 20.36166649999359,
+    "calibratedMadMs": 15.168207999995502
+  },
+  {
+    "operationId": "navigation.window.resize",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 5.494896000001972,
+    "calibratedMadMs": 0.45433399999274116
+  },
+  {
+    "operationId": "today.render.available",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 35.59058350000123,
+    "calibratedMadMs": 1.344770999990942
+  },
+  {
+    "operationId": "today.daily-target",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 14.300000011920929,
+    "calibratedMadMs": 0.8499999642372131
+  },
+  {
+    "operationId": "today.daily-target",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 111.50104149999606,
+    "calibratedMadMs": 3.865542000006826
+  },
+  {
+    "operationId": "today.daily-target",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "gated",
+    "calibratedMedianMs": 113.6663959999969,
+    "calibratedMadMs": 4.053375000006781
+  },
+  {
+    "operationId": "today.session-options",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 11.449999988079071,
+    "calibratedMadMs": 1.449999988079071
+  },
+  {
+    "operationId": "today.session-options",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 14.048083000001498,
+    "calibratedMadMs": 1.462583500000619
+  },
+  {
+    "operationId": "today.planning-details",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 10.599999964237213,
+    "calibratedMadMs": 1.0999999642372131
+  },
+  {
+    "operationId": "today.planning-details",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 198.87104149999504,
+    "calibratedMadMs": 1.61739600000692
+  },
+  {
+    "operationId": "today.session.start",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 13.149999976158142,
+    "calibratedMadMs": 0.2000001072883606
+  },
+  {
+    "operationId": "today.session.start",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 820.6417085000066,
+    "calibratedMadMs": 1.9013119999981427
+  },
+  {
+    "operationId": "today.planner.large",
+    "stage": "settled",
+    "absoluteLimitMs": 500,
+    "enforcement": "debt",
+    "calibratedMedianMs": 1942.141791000031,
+    "calibratedMadMs": 15.218875000020489
+  },
+  {
+    "operationId": "authoring.route-ready",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 835.663666000004,
+    "calibratedMadMs": 6.89910349999991
+  },
+  {
+    "operationId": "authoring.input-preview",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 11.649999976158142,
+    "calibratedMadMs": 0.8999999165534973
+  },
+  {
+    "operationId": "authoring.input-preview",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 37.598229499999434,
+    "calibratedMadMs": 2.410187999993468
+  },
+  {
+    "operationId": "authoring.content-type",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 10.699999988079071,
+    "calibratedMadMs": 2.600000023841858
+  },
+  {
+    "operationId": "authoring.content-type",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 11.355791499998304,
+    "calibratedMadMs": 0.9146665000007488
+  },
+  {
+    "operationId": "authoring.citations",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 12.499999940395355,
+    "calibratedMadMs": 0.800000011920929
+  },
+  {
+    "operationId": "authoring.citations",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 42.815354000005755,
+    "calibratedMadMs": 1.0704789999999775
+  },
+  {
+    "operationId": "authoring.create",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 11.400000035762787,
+    "calibratedMadMs": 0.550000011920929
+  },
+  {
+    "operationId": "authoring.create",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 39.44599949999974,
+    "calibratedMadMs": 2.8836244999984046
+  },
+  {
+    "operationId": "authoring.create",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "gated",
+    "calibratedMedianMs": 43.236250000001746,
+    "calibratedMadMs": 3.152041500004998
+  },
+  {
+    "operationId": "authoring.draft-reload",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 841.0633960000005,
+    "calibratedMadMs": 2.3361039999872446
+  },
+  {
+    "operationId": "authoring.draft-reload",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "calibrating"
+  },
+  {
+    "operationId": "library.render.small",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 825.0095215000038,
+    "calibratedMadMs": 3.056750000003376
+  },
+  {
+    "operationId": "library.render.typical",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 236.82022949997918,
+    "calibratedMadMs": 1.2298544999794103
+  },
+  {
+    "operationId": "library.render.large",
+    "stage": "settled",
+    "absoluteLimitMs": 500,
+    "enforcement": "gated",
+    "calibratedMedianMs": 362.7589170000283,
+    "calibratedMadMs": 11.649207999929786
+  },
+  {
+    "operationId": "library.mode",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 24.150000035762787,
+    "calibratedMadMs": 0.6499999761581421
+  },
+  {
+    "operationId": "library.mode",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 223.57345850003185,
+    "calibratedMadMs": 1.4141879999951925
+  },
+  {
+    "operationId": "library.search",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 11.950000047683716,
+    "calibratedMadMs": 1.300000011920929
+  },
+  {
+    "operationId": "library.search",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 12.397312500004773,
+    "calibratedMadMs": 0.4258129999980156
+  },
+  {
+    "operationId": "library.filters-sorts",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 24.25,
+    "calibratedMadMs": 6.249999940395355
+  },
+  {
+    "operationId": "library.filters-sorts",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 31.188188000000082,
+    "calibratedMadMs": 5.835916500014719
+  },
+  {
+    "operationId": "library.pagination",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 22.600000023841858,
+    "calibratedMadMs": 0.19999992847442627
+  },
+  {
+    "operationId": "library.pagination",
+    "stage": "settled",
+    "absoluteLimitMs": 500,
+    "enforcement": "gated",
+    "calibratedMedianMs": 50.55406250001397,
+    "calibratedMadMs": 0.8554789999907371
+  },
+  {
+    "operationId": "library.selection",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 11.300000011920929,
+    "calibratedMadMs": 0.15000003576278687
+  },
+  {
+    "operationId": "library.selection",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 63.71337500002119,
+    "calibratedMadMs": 0.7760630000266246
+  },
+  {
+    "operationId": "library.single-suspend",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "debt",
+    "calibratedMedianMs": 242.64999997615814,
+    "calibratedMadMs": 4.350000023841858
+  },
+  {
+    "operationId": "library.single-suspend",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 1203.7080000000133,
+    "calibratedMadMs": 9.880708500015317
+  },
+  {
+    "operationId": "library.single-suspend",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "debt",
+    "calibratedMedianMs": 1566.2777090000163,
+    "calibratedMadMs": 10.265688000043156
+  },
+  {
+    "operationId": "library.edit",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 12.650000035762787,
+    "calibratedMadMs": 0.5999999046325684
+  },
+  {
+    "operationId": "library.edit",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 116.65587550000419,
+    "calibratedMadMs": 84.85497900001064
+  },
+  {
+    "operationId": "library.edit",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "gated",
+    "calibratedMedianMs": 206.15416699999332,
+    "calibratedMadMs": 1.7418125000112923
+  },
+  {
+    "operationId": "library.bulk-state",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "debt",
+    "calibratedMedianMs": 228.44999998807907,
+    "calibratedMadMs": 1.649999976158142
+  },
+  {
+    "operationId": "library.bulk-state",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 1191.5528119999508,
+    "calibratedMadMs": 8.159895999997389
+  },
+  {
+    "operationId": "library.bulk-state",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "debt",
+    "calibratedMedianMs": 1555.9481245000206,
+    "calibratedMadMs": 5.122208499989938
+  },
+  {
+    "operationId": "library.bulk-metadata",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "debt",
+    "calibratedMedianMs": 231.75,
+    "calibratedMadMs": 2.25
+  },
+  {
+    "operationId": "library.bulk-metadata",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 1180.4549169999373,
+    "calibratedMadMs": 15.445145999954548
+  },
+  {
+    "operationId": "library.bulk-metadata",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "debt",
+    "calibratedMedianMs": 1544.3737504999735,
+    "calibratedMadMs": 17.350728999997955
+  },
+  {
+    "operationId": "library.trash",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 13.799999952316284,
+    "calibratedMadMs": 0.25
+  },
+  {
+    "operationId": "library.trash",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 30.985999999997148,
+    "calibratedMadMs": 3.563041500005056
+  },
+  {
+    "operationId": "library.trash",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "gated",
+    "calibratedMedianMs": 34.315624999995634,
+    "calibratedMadMs": 4.554250500012131
+  },
+  {
+    "operationId": "library.custom-study",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 15.449999988079071,
+    "calibratedMadMs": 2.649999976158142
+  },
+  {
+    "operationId": "library.custom-study",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 353.9916250000242,
+    "calibratedMadMs": 1.089937499986263
+  },
+  {
+    "operationId": "review.prompt",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 2.6669585000054212,
+    "calibratedMadMs": 0.22899999999208376
+  },
+  {
+    "operationId": "review.typed-input",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 11.450000047683716,
+    "calibratedMadMs": 1.050000011920929
+  },
+  {
+    "operationId": "review.typed-input",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 10.297167000011541,
+    "calibratedMadMs": 0.3912494999822229
+  },
+  {
+    "operationId": "review.reveal",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 12.199999928474426,
+    "calibratedMadMs": 0.34999996423721313
+  },
+  {
+    "operationId": "review.reveal",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 32.33912450000935,
+    "calibratedMadMs": 0.9120624999995925
+  },
+  {
+    "operationId": "review.grade",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 13,
+    "calibratedMadMs": 0.3999999761581421
+  },
+  {
+    "operationId": "review.grade",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 37.93022949999431,
+    "calibratedMadMs": 1.2411455000037677
+  },
+  {
+    "operationId": "review.grade",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "gated",
+    "calibratedMedianMs": 40.81306249999761,
+    "calibratedMadMs": 1.2597500000047148
+  },
+  {
+    "operationId": "review.undo",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "debt",
+    "calibratedMedianMs": 246.30000001192093,
+    "calibratedMadMs": 2.8000000715255737
+  },
+  {
+    "operationId": "review.undo",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 1163.766187500005,
+    "calibratedMadMs": 8.747125000023516
+  },
+  {
+    "operationId": "review.undo",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "debt",
+    "calibratedMedianMs": 1525.6317920000001,
+    "calibratedMadMs": 8.196125500020571
+  },
+  {
+    "operationId": "review.edit",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 12.5,
+    "calibratedMadMs": 0.5
+  },
+  {
+    "operationId": "review.edit",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 32.59258349999436,
+    "calibratedMadMs": 0.7259584999992512
+  },
+  {
+    "operationId": "review.edit",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "calibrating"
+  },
+  {
+    "operationId": "review.block-transition",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "debt",
+    "calibratedMedianMs": 222.3499999642372,
+    "calibratedMadMs": 1.050000011920929
+  },
+  {
+    "operationId": "review.block-transition",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 1174.5096044999955,
+    "calibratedMadMs": 5.683980000001611
+  },
+  {
+    "operationId": "review.end-complete",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 13.050000011920929,
+    "calibratedMadMs": 0.3999999761581421
+  },
+  {
+    "operationId": "review.end-complete",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 30.479583500000444,
+    "calibratedMadMs": 1.566208500011271
+  },
+  {
+    "operationId": "settings.theme",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 12.549999952316284,
+    "calibratedMadMs": 0.40000003576278687
+  },
+  {
+    "operationId": "settings.theme",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 201.2125415000064,
+    "calibratedMadMs": 1.2574375000094733
+  },
+  {
+    "operationId": "settings.theme",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "gated",
+    "calibratedMedianMs": 204.84160400000837,
+    "calibratedMadMs": 1.5803959999830113
+  },
+  {
+    "operationId": "settings.learning",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "debt",
+    "calibratedMedianMs": 221.55000001192093,
+    "calibratedMadMs": 9.25
+  },
+  {
+    "operationId": "settings.learning",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 3139.567666499992,
+    "calibratedMadMs": 58.60275000004913
+  },
+  {
+    "operationId": "settings.learning",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "debt",
+    "calibratedMedianMs": 3143.223833499971,
+    "calibratedMadMs": 59.27741649997188
+  },
+  {
+    "operationId": "settings.templates.load",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 13,
+    "calibratedMadMs": 0.8500000238418579
+  },
+  {
+    "operationId": "settings.templates.load",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 32.06245800000033,
+    "calibratedMadMs": 1.9456460000074003
+  },
+  {
+    "operationId": "settings.templates.save",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 13.399999976158142,
+    "calibratedMadMs": 0.24999994039535522
+  },
+  {
+    "operationId": "settings.templates.save",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 2694.8632705000346,
+    "calibratedMadMs": 24.05549999998766
+  },
+  {
+    "operationId": "settings.templates.save",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "debt",
+    "calibratedMedianMs": 2697.9307915000245,
+    "calibratedMadMs": 24.379770999978064
+  },
+  {
+    "operationId": "settings.presets.save",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 13.299999952316284,
+    "calibratedMadMs": 0.10000002384185791
+  },
+  {
+    "operationId": "settings.presets.save",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 2715.602437000023,
+    "calibratedMadMs": 22.02037599994219
+  },
+  {
+    "operationId": "settings.presets.save",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "debt",
+    "calibratedMedianMs": 2718.8433119999827,
+    "calibratedMadMs": 23.852646500017727
+  },
+  {
+    "operationId": "settings.backup.export",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 32.5,
+    "calibratedMadMs": 0.40000003576278687
+  },
+  {
+    "operationId": "settings.backup.export",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 308.3976875000517,
+    "calibratedMadMs": 1.5308330000552814
+  },
+  {
+    "operationId": "settings.backup.export",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "calibrating"
+  },
+  {
+    "operationId": "settings.backup.restore",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "calibrating"
+  },
+  {
+    "operationId": "settings.backup.restore",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 717.5161455000343,
+    "calibratedMadMs": 9.472415999975055
+  },
+  {
+    "operationId": "settings.backup.restore",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "debt",
+    "calibratedMedianMs": 2133.0135625000257,
+    "calibratedMadMs": 32.75706249993527
+  },
+  {
+    "operationId": "settings.workspace.erase",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "calibrating"
+  },
+  {
+    "operationId": "settings.workspace.erase",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "debt",
+    "calibratedMedianMs": 647.2782084999853,
+    "calibratedMadMs": 6.665312499993888
+  },
+  {
+    "operationId": "settings.workspace.erase",
+    "stage": "durable",
+    "absoluteLimitMs": 1000,
+    "enforcement": "debt",
+    "calibratedMedianMs": 927.9514795000032,
+    "calibratedMadMs": 8.93945800000256
+  },
+  {
+    "operationId": "settings.diagnostics.export",
+    "stage": "feedback",
+    "absoluteLimitMs": 100,
+    "enforcement": "gated",
+    "calibratedMedianMs": 30.849999964237213,
+    "calibratedMadMs": 0.34999996423721313
+  },
+  {
+    "operationId": "settings.diagnostics.export",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 66.54922950000037,
+    "calibratedMadMs": 2.0183124999748543
+  },
+  {
+    "operationId": "sync.status",
+    "stage": "settled",
+    "absoluteLimitMs": 250,
+    "enforcement": "gated",
+    "calibratedMedianMs": 2.6202495000325143,
+    "calibratedMadMs": 0.5754575000319164
+  }
+]

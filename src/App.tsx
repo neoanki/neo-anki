@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { AppShell } from './components/AppShell'
 import { Onboarding } from './components/Onboarding'
 import { TodayPage } from './pages/TodayPage'
@@ -16,6 +16,9 @@ const ExtensionsPage = lazy(() => import('./pages/ExtensionsPage').then((module)
 
 export const App = () => {
   const { data, route, plan, workspaceLoading, workspaceLoadFailure } = useApp()
+  useEffect(() => {
+    document.documentElement.dataset.neoAnkiWorkspaceReady = workspaceLoading ? 'false' : workspaceLoadFailure ? 'recovery' : 'true'
+  }, [workspaceLoadFailure, workspaceLoading])
   const isolatedPage = extensionPageV2(route)
   if (workspaceLoading) return <StartupScreen />
   if (workspaceLoadFailure) return <WorkspaceRecovery />
