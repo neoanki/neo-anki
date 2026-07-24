@@ -17,16 +17,16 @@ describe('Workspace v4 production document adapter', () => {
     expect(projected.cards[0]).toMatchObject({ id: source.cards[0].id, buriedUntil: source.cards[0].buriedUntil })
   })
 
-  it('updates named fields by stable field id without flattening the note model', () => {
+  it('updates named fields by stable field id without flattening the content model', () => {
     const document = appDataToWorkspaceDocumentV4(createSeedData())
     const projected = workspaceDocumentV4ToAppData(document)
     const item = projected.items[0]
-    expect(item.noteModel?.fields.length).toBe(3)
-    const target = item.noteModel!.fields[2]
-    item.noteModel = { ...item.noteModel!, fields: item.noteModel!.fields.map((field) => field.id === target.id ? { ...field, value: 'Edited named context' } : field) }
+    expect(item.contentModel?.fields.length).toBe(3)
+    const target = item.contentModel!.fields[2]
+    item.contentModel = { ...item.contentModel!, fields: item.contentModel!.fields.map((field) => field.id === target.id ? { ...field, value: 'Edited named context' } : field) }
     const refreshed = refreshWorkspaceDocumentV4FromProjection(projected, document)
     expect(refreshed.workspace.notes.find((note) => note.id === item.id)?.fields[target.id]).toBe('Edited named context')
-    expect(workspaceDocumentV4ToAppData(refreshed).items.find((candidate) => candidate.id === item.id)?.noteModel?.fields.find((field) => field.id === target.id)?.value).toBe('Edited named context')
+    expect(workspaceDocumentV4ToAppData(refreshed).items.find((candidate) => candidate.id === item.id)?.contentModel?.fields.find((field) => field.id === target.id)?.value).toBe('Edited named context')
   })
 
   it('durably round-trips native rich semantics and does not churn unchanged revisions', () => {

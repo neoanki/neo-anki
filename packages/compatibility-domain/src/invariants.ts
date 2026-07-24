@@ -25,18 +25,9 @@ const requireRef = (ids: Set<string>, id: string | undefined, path: string, labe
 }
 
 const validateSchedulingState = (scheduling: SchedulingState, path: string, issues: WorkspaceV4InvariantIssue[]) => {
-  if (scheduling.strategy === 'neo-fsrs') {
-    if (!iso(scheduling.dueAt) || (scheduling.lastReviewAt && !iso(scheduling.lastReviewAt))) issues.push({ path, message: 'FSRS scheduling timestamps are invalid.' })
-    if (![scheduling.stability, scheduling.difficulty, scheduling.elapsedDays, scheduling.scheduledDays, scheduling.reps, scheduling.lapses].every((value) => Number.isFinite(value) && value >= 0)) issues.push({ path, message: 'FSRS values must be finite and non-negative.' })
-    if (scheduling.difficulty > 10) issues.push({ path: `${path}.difficulty`, message: 'FSRS difficulty must not exceed 10.' })
-  } else {
-    if (![scheduling.due, scheduling.intervalDays, scheduling.easeFactor, scheduling.repetitions, scheduling.lapses, scheduling.remainingSteps, scheduling.mod].every(Number.isFinite)) issues.push({ path, message: 'Anki scheduling values must be finite.' })
-    if (scheduling.dueAt && !iso(scheduling.dueAt)) issues.push({ path: `${path}.dueAt`, message: 'Anki eligibility timestamp is invalid.' })
-    if (scheduling.lastReviewAt && !iso(scheduling.lastReviewAt)) issues.push({ path: `${path}.lastReviewAt`, message: 'Anki last-review timestamp is invalid.' })
-    const memory = [scheduling.stability, scheduling.difficulty, scheduling.desiredRetention, scheduling.decay].filter((value): value is number => value !== undefined)
-    if (!memory.every((value) => Number.isFinite(value) && value >= 0)) issues.push({ path, message: 'Anki FSRS memory values must be finite and non-negative.' })
-    if (scheduling.difficulty !== undefined && scheduling.difficulty > 10) issues.push({ path: `${path}.difficulty`, message: 'Anki FSRS difficulty must not exceed 10.' })
-  }
+  if (!iso(scheduling.dueAt) || (scheduling.lastReviewAt && !iso(scheduling.lastReviewAt))) issues.push({ path, message: 'FSRS scheduling timestamps are invalid.' })
+  if (![scheduling.stability, scheduling.difficulty, scheduling.elapsedDays, scheduling.scheduledDays, scheduling.reps, scheduling.lapses].every((value) => Number.isFinite(value) && value >= 0)) issues.push({ path, message: 'FSRS values must be finite and non-negative.' })
+  if (scheduling.difficulty > 10) issues.push({ path: `${path}.difficulty`, message: 'FSRS difficulty must not exceed 10.' })
 }
 
 const validateScheduling = (card: Card, index: number, issues: WorkspaceV4InvariantIssue[]) => {
@@ -145,11 +136,23 @@ export const collectWorkspaceV4InvariantIssues = (workspace: WorkspaceV4): Works
     if (ownedTemplates.some((template) => !value.templateIds.includes(template.id)) || value.templateIds.some((id) => !ownedTemplates.some((template) => template.id === id))) issues.push({ path: `noteTypes[${index}].templateIds`, message: 'Note type and template ownership must be reciprocal.' })
     if (new Set(ownedFields.map((field) => field.ordinal)).size !== ownedFields.length) issues.push({ path: `noteTypes[${index}].fieldIds`, message: 'Field ordinals must be unique within a note type.' })
     if (new Set(ownedTemplates.map((template) => template.ordinal)).size !== ownedTemplates.length) issues.push({ path: `noteTypes[${index}].templateIds`, message: 'Template ordinals must be unique within a note type.' })
+    if (!value.name.trim()) issues.push({ path: `noteTypes[${index}].name`, message: 'Content type name is required.' })
     envelope(value, `noteTypes[${index}].sourceEnvelopeId`)
   })
-  workspace.fields.forEach((value, index) => requireRef(noteTypeIds, value.noteTypeId, `fields[${index}].noteTypeId`, 'note type', issues))
+  workspace.fields.forEach((value, index) => {
+    requireRef(noteTypeIds, value.noteTypeId, `fields[${index}].noteTypeId`, 'note type', issues)
+    if (!value.name.trim()) issues.push({ path: `fields[${index}].name`, message: 'Field name is required.' })
+  })
   workspace.templates.forEach((value, index) => {
     requireRef(noteTypeIds, value.noteTypeId, `templates[${index}].noteTypeId`, 'note type', issues)
+    requireRef(fieldIds, value.promptFieldId, `templates[${index}].promptFieldId`, 'prompt field', issues)
+    requireRef(fieldIds, value.answerFieldId, `templates[${index}].answerFieldId`, 'answer field', issues)
+    value.supportingFieldIds.forEach((id, fieldIndex) => requireRef(fieldIds, id, `templates[${index}].supportingFieldIds[${fieldIndex}]`, 'supporting field', issues))
+    if (new Set(value.supportingFieldIds).size !== value.supportingFieldIds.length || value.supportingFieldIds.some((id) => id === value.promptFieldId || id === value.answerFieldId)) issues.push({ path: `templates[${index}]`, message: 'Supporting template fields must be unique.' })
+    const ownedFieldIds = new Set((fieldsByNoteType.get(value.noteTypeId) || []).map((field) => field.id))
+    if (![value.promptFieldId, value.answerFieldId, ...value.supportingFieldIds].every((id) => ownedFieldIds.has(id))) issues.push({ path: `templates[${index}]`, message: 'Every template field must belong to its content type.' })
+    if (value.promptFieldId === value.answerFieldId) issues.push({ path: `templates[${index}]`, message: 'Prompt and answer must use different fields.' })
+    if (!value.name.trim()) issues.push({ path: `templates[${index}].name`, message: 'Template name is required.' })
     requireRef(deckIds, value.deckOverrideId, `templates[${index}].deckOverrideId`, 'deck', issues)
   })
   workspace.decks.forEach((value, index) => {
@@ -176,17 +179,13 @@ export const collectWorkspaceV4InvariantIssues = (workspace: WorkspaceV4): Works
     requireRef(templateIds, value.templateId, `cards[${index}].templateId`, 'template', issues)
     requireRef(deckIds, value.deckId, `cards[${index}].deckId`, 'deck', issues)
     requireRef(presetIds, value.presetId, `cards[${index}].presetId`, 'preset', issues)
-    if (value.filteredDeck) {
-      requireRef(deckIds, value.filteredDeck.deckId, `cards[${index}].filteredDeck.deckId`, 'filtered deck', issues)
-      requireRef(deckIds, value.filteredDeck.originalDeckId, `cards[${index}].filteredDeck.originalDeckId`, 'original deck', issues)
-    }
     const note = noteById.get(value.noteId)
     const deck = deckById.get(value.deckId)
     const preset = presetById.get(value.presetId)
     const template = templateById.get(value.templateId)
     if ([note?.profileId, deck?.profileId, preset?.profileId].some((owner) => owner && owner !== value.profileId)) issues.push({ path: `cards[${index}]`, message: 'Card, note, deck, and preset must belong to the same profile.' })
     if (note && template && template.noteTypeId !== note.noteTypeId) issues.push({ path: `cards[${index}].templateId`, message: 'Card template must belong to the note type.' })
-    if (template && value.ordinal !== template.ordinal && value.clozeOrdinal === undefined) issues.push({ path: `cards[${index}].ordinal`, message: 'Standard card ordinal must match its template ordinal.' })
+    if (template && value.ordinal !== template.ordinal && value.deletionOrdinal === undefined) issues.push({ path: `cards[${index}].ordinal`, message: 'Standard card ordinal must match its template ordinal.' })
     validateScheduling(value, index, issues); envelope(value, `cards[${index}].sourceEnvelopeId`)
   })
   workspace.reviews.forEach((value, index) => {

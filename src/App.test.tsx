@@ -143,13 +143,13 @@ describe('application workflows', () => {
   it('creates basic knowledge and exposes it in the library', async () => {
     renderApp()
     await userEvent.click(screen.getByRole('button', { name: /new item/i }))
-    await userEvent.type(await screen.findByLabelText('Prompt'), 'What is the testing pyramid?')
-    await userEvent.type(screen.getByLabelText('Answer'), 'Unit, integration, and end-to-end tests')
+    await userEvent.type(await screen.findByLabelText('Front'), 'What is the testing pyramid?')
+    await userEvent.type(screen.getByLabelText('Back'), 'Unit, integration, and end-to-end tests')
     await userEvent.click(screen.getByRole('button', { name: 'Add knowledge item' }))
     expect(screen.getByRole('status')).toHaveTextContent(/safe new-material queue/i)
     await userEvent.click(screen.getAllByRole('button', { name: 'Library' })[0])
     const row = (await screen.findByText('What is the testing pyramid?')).closest('article')!
-    expect(within(row).getByRole('button', { name: 'Basic' })).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'Recall' })).toBeInTheDocument()
   })
 
   it('enables editor save only after the controlled draft has changed', async () => {
@@ -167,18 +167,18 @@ describe('application workflows', () => {
     data.settings.onboardingComplete = true
     const core = data.items[0]
     const custom = data.items[1]
-    core.noteModel = {
-      noteTypeId: 'note-type:neo-basic',
-      noteTypeName: 'Neo Basic',
+    core.contentModel = {
+      contentTypeId: 'note-type:neo-basic',
+      contentTypeName: 'Neo Basic',
       fields: [
         { id: 'field:front', name: 'Front', ordinal: 0, value: core.prompt },
         { id: 'field:back', name: 'Back', ordinal: 1, value: core.answer },
         { id: 'field:context', name: 'Context', ordinal: 2, value: core.context },
       ],
     }
-    custom.noteModel = {
-      noteTypeId: 'note-type:imported-custom',
-      noteTypeName: 'Imported Custom',
+    custom.contentModel = {
+      contentTypeId: 'note-type:imported-custom',
+      contentTypeName: 'Imported Custom',
       fields: [
         { id: 'field:question', name: 'Question text', ordinal: 0, value: custom.prompt },
         { id: 'field:response', name: 'Expected response', ordinal: 1, value: custom.answer },
@@ -209,11 +209,11 @@ describe('application workflows', () => {
       const stored = JSON.parse(localStorage.getItem('neo-anki:data:v1') || '{}') as typeof data
       const item = stored.items.find((candidate) => candidate.id === core.id)!
       expect(item).toMatchObject({ prompt: 'Edited product prompt', answer: 'Edited product answer', context: 'Edited optional context' })
-      expect(item.noteModel?.fields.map((field) => field.value)).toEqual(['Edited product prompt', 'Edited product answer', 'Edited optional context'])
+      expect(item.contentModel?.fields.map((field) => field.value)).toEqual(['Edited product prompt', 'Edited product answer', 'Edited optional context'])
     })
 
     await userEvent.click(screen.getByRole('button', { name: `Edit ${custom.prompt}` }))
-    expect(screen.getByRole('group', { name: 'Named fields · Imported Custom' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Fields · Imported Custom' })).toBeInTheDocument()
     expect(screen.getByLabelText('Question text')).toHaveValue(custom.prompt)
     expect(screen.getByLabelText('Expected response')).toHaveValue(custom.answer)
     expect(screen.getByLabelText('Hint')).toHaveValue(custom.context)
@@ -307,11 +307,10 @@ describe('application workflows', () => {
     expect(result.violations.filter((violation) => ['critical', 'serious'].includes(violation.impact || ''))).toEqual([])
   })
 
-  it('finds duplicate prompts and broken media references from Library checks', async () => {
+  it('finds duplicate prompts from Library checks', async () => {
     const data = createSeedData()
     data.settings.onboardingComplete = true
     data.items[1].prompt = data.items[0].prompt
-    data.cards[0].rendering = { questionHtml: '<img src="missing.png">', answerHtml: data.items[0].answer, css: '', source: 'neo-native' }
     localStorage.setItem('neo-anki:data:v1', JSON.stringify(data))
     render(<AppProvider><App /></AppProvider>)
     if (screen.queryByRole('heading', { name: /what are you bringing/i })) {
@@ -321,10 +320,7 @@ describe('application workflows', () => {
     }
     await userEvent.click(screen.getAllByRole('button', { name: 'Library' })[0])
     expect(await screen.findByRole('option', { name: 'Duplicate prompts (2)' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Missing media (1)' })).toBeInTheDocument()
     await userEvent.selectOptions(screen.getByLabelText('Collection check'), 'duplicate')
     expect(screen.getAllByText(data.items[0].prompt)).toHaveLength(2)
-    await userEvent.selectOptions(screen.getByLabelText('Collection check'), 'media')
-    expect(screen.getByText('missing media')).toBeInTheDocument()
   })
 })

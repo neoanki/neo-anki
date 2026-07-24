@@ -31,14 +31,13 @@ describe('mobile Workspace v4 study behavior', () => {
     expect(undone.workspace.reviews.at(-1)).toMatchObject({ kind: 'reversal', reversesReviewId: reviewed.workspace.reviews.at(-1)?.id })
   })
 
-  it('uses imported Anki memory/history for the first Neo transition without changing initial eligibility', () => {
+  it('uses the same native scheduling state before and after the first review', () => {
     const document = addBasicNote(createEmptyWorkspace(), 'imported', 'answer')
     const card = document.workspace.cards[0]!; const dueAt = new Date(Date.now() - 1_000).toISOString()
-    card.scheduling = { strategy: 'anki', queue: 'review', due: 10, dueAt, intervalDays: 10, easeFactor: 2500, repetitions: 3, lapses: 0, remainingSteps: 0, mod: 1 }
-    document.workspace.reviews.push({ id: 'anki-review', revision: 1, createdAt: new Date(Date.now() - 86_400_000).toISOString(), updatedAt: new Date(Date.now() - 86_400_000).toISOString(), profileId: card.profileId, cardId: card.id, kind: 'review', rating: 3, reviewedAt: new Date(Date.now() - 86_400_000).toISOString(), durationMilliseconds: 500, intervalBefore: 5, intervalAfter: 10, scheduler: 'anki' })
-    expect(dueCards(document)[0]!.scheduling).toMatchObject({ strategy: 'anki', dueAt })
+    card.scheduling = { strategy: 'neo-fsrs', queue: 'review', dueAt, stability: 10, difficulty: 4, elapsedDays: 10, scheduledDays: 10, reps: 3, lapses: 0, state: State.Review }
+    expect(dueCards(document)[0]!.scheduling).toMatchObject({ strategy: 'neo-fsrs', dueAt })
     const reviewed = reviewCard(document, card.id, 3, 900)
-    expect(reviewed.workspace.reviews.at(-1)?.previousScheduling).toMatchObject({ strategy: 'anki', dueAt })
+    expect(reviewed.workspace.reviews.at(-1)?.previousScheduling).toMatchObject({ strategy: 'neo-fsrs', dueAt })
     expect(reviewed.workspace.cards[0]!.scheduling.strategy).toBe('neo-fsrs')
   })
 })

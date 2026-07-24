@@ -29,9 +29,18 @@ export const migrateWorkspaceV3ToV4 = (legacy: LegacyWorkspaceV3, workspaceId: s
   const profileId = 'profile:neo-v3'
   const noteTypeId = 'note-type:neo-basic'
   const fieldIds = ['field:front', 'field:back', 'field:context']
-  const variants = [...new Set(legacy.cards.map((card) => card.variant))]
-  const templates: CardTemplate[] = variants.map((variant, ordinal) => ({ id: `template:${variant}`, revision: 1, createdAt: now, updatedAt: now, noteTypeId, name: variant, ordinal, questionFormat: '{{Front}}', answerFormat: '{{FrontSide}}<hr>{{Back}}' }))
-  const noteType: NoteType = { id: noteTypeId, revision: 1, createdAt: now, updatedAt: now, profileId, name: 'Neo Basic (migrated)', fieldIds, templateIds: templates.map((value) => value.id), css: '.card { font-family: system-ui, sans-serif; }', kind: variants.includes('cloze') ? 'cloze' : 'standard' }
+  const templateKind = (variant: string) => variant === 'reverse' ? 'reverse' : variant === 'typed' ? 'typed' : 'forward'
+  const templateKinds = [...new Set(['forward', ...legacy.cards.map((card) => templateKind(card.variant))])]
+  const templates: CardTemplate[] = templateKinds.map((kind, ordinal) => ({
+    id: `template:${kind}`, revision: 1, createdAt: now, updatedAt: now, noteTypeId,
+    name: kind === 'forward' ? 'Recall' : kind === 'reverse' ? 'Reverse recall' : 'Type the answer',
+    ordinal,
+    promptFieldId: kind === 'reverse' ? fieldIds[1] : fieldIds[0],
+    answerFieldId: kind === 'reverse' ? fieldIds[0] : fieldIds[1],
+    supportingFieldIds: [fieldIds[2]],
+    responseMode: kind === 'typed' ? 'type' : 'reveal',
+  }))
+  const noteType: NoteType = { id: noteTypeId, revision: 1, createdAt: now, updatedAt: now, profileId, name: 'Basic', fieldIds, templateIds: templates.map((value) => value.id), kind: 'standard' }
   const collectionNames = [...new Set(legacy.items.map((item) => item.collection || 'Default'))]
   const deckId = (name: string) => `deck:${encodeURIComponent(name)}`
   const decks: Deck[] = collectionNames.map((name) => ({ id: deckId(name), revision: 1, createdAt: now, updatedAt: now, profileId, name, presetId: 'preset:neo-v3' }))
@@ -54,14 +63,15 @@ export const migrateWorkspaceV3ToV4 = (legacy: LegacyWorkspaceV3, workspaceId: s
       { id: fieldIds[1], revision: 1, createdAt: now, updatedAt: now, noteTypeId, name: 'Back', ordinal: 1, rtl: false, sticky: false },
       { id: fieldIds[2], revision: 1, createdAt: now, updatedAt: now, noteTypeId, name: 'Context', ordinal: 2, rtl: false, sticky: false },
     ], templates, decks,
-    presets: [{ id: 'preset:neo-v3', revision: 1, createdAt: now, updatedAt: now, profileId, name: 'Migrated Neo defaults', scheduler: 'neo-fsrs', desiredRetention: legacy.settings.retention, maximumIntervalDays: 36500, learningStepsMinutes: [1, 10], relearningStepsMinutes: [10], newCardsPerDay: 20, reviewsPerDay: 200, buryNewSiblings: true, buryReviewSiblings: true, leechThreshold: 8, leechAction: 'flag' }],
+    presets: [{ id: 'preset:neo-v3', revision: 1, createdAt: now, updatedAt: now, profileId, name: 'Migrated Neo defaults', desiredRetention: legacy.settings.retention, maximumIntervalDays: 36500, learningStepsMinutes: [1, 10], relearningStepsMinutes: [10], newCardsPerDay: 20, reviewsPerDay: 200, buryNewSiblings: true, buryReviewSiblings: true, leechThreshold: 8, leechAction: 'flag' }],
     notes,
     cards: legacy.cards.map((card) => {
       const source = itemById.get(card.itemId)
       if (!source) throw new Error(`Legacy card ${card.id} references missing item ${card.itemId}.`)
-      return { id: card.id, revision: 1, createdAt: card.createdAt, updatedAt: card.updatedAt, profileId, noteId: card.itemId, templateId: `template:${card.variant}`, deckId: deckId(source.collection || 'Default'), presetId: 'preset:neo-v3', ordinal: Math.max(0, variants.indexOf(card.variant)), flags: card.flags || 0, suspended: card.suspended, leech: card.leech, buriedUntil: card.buriedUntil, buriedBy: card.buriedUntil ? card.buriedBy || 'user' : undefined, scheduling: { strategy: 'neo-fsrs' as const, queue: card.fsrs.reps === 0 ? 'new' as const : 'review' as const, dueAt: card.fsrs.due, stability: card.fsrs.stability, difficulty: card.fsrs.difficulty, elapsedDays: card.fsrs.elapsed_days, scheduledDays: card.fsrs.scheduled_days, reps: card.fsrs.reps, lapses: card.fsrs.lapses, state: card.fsrs.state, lastReviewAt: card.fsrs.last_review }, sourceEnvelopeId: `source:v3:card:${card.id}` }
+      const kind = templateKind(card.variant)
+      return { id: card.id, revision: 1, createdAt: card.createdAt, updatedAt: card.updatedAt, profileId, noteId: card.itemId, templateId: `template:${kind}`, deckId: deckId(source.collection || 'Default'), presetId: 'preset:neo-v3', ordinal: Math.max(0, templateKinds.indexOf(kind)), flags: card.flags || 0, suspended: card.suspended, leech: card.leech, buriedUntil: card.buriedUntil, buriedBy: card.buriedUntil ? card.buriedBy || 'user' : undefined, scheduling: { strategy: 'neo-fsrs' as const, queue: card.fsrs.reps === 0 ? 'new' as const : 'review' as const, dueAt: card.fsrs.due, stability: card.fsrs.stability, difficulty: card.fsrs.difficulty, elapsedDays: card.fsrs.elapsed_days, scheduledDays: card.fsrs.scheduled_days, reps: card.fsrs.reps, lapses: card.fsrs.lapses, state: card.fsrs.state, lastReviewAt: card.fsrs.last_review }, sourceEnvelopeId: `source:v3:card:${card.id}` }
     }),
-    reviews: legacy.reviews.map((review) => ({ id: review.id, revision: 1, createdAt: review.createdAt || review.reviewedAt, updatedAt: review.updatedAt || review.reviewedAt, profileId, cardId: review.cardId, kind: review.kind || 'review', rating: review.rating, reviewedAt: review.reviewedAt, durationMilliseconds: Math.max(0, review.durationSeconds * 1000), intervalBefore: 0, intervalAfter: 0, scheduler: 'neo-fsrs', reversesReviewId: review.reversesReviewId, sourceEnvelopeId: `source:v3:review:${review.id}` })),
+    reviews: legacy.reviews.map((review) => ({ id: review.id, revision: 1, createdAt: review.createdAt || review.reviewedAt, updatedAt: review.updatedAt || review.reviewedAt, profileId, cardId: review.cardId, kind: review.kind || 'review', rating: review.rating, reviewedAt: review.reviewedAt, durationMilliseconds: Math.max(0, review.durationSeconds * 1000), intervalBefore: 0, intervalAfter: 0, reversesReviewId: review.reversesReviewId, sourceEnvelopeId: `source:v3:review:${review.id}` })),
     media: legacy.assets.map((asset) => ({ id: asset.id, revision: 1, createdAt: asset.createdAt, updatedAt: asset.updatedAt, profileId, filename: asset.filename, mimeType: asset.mimeType, byteLength: asset.byteLength, sha256: asset.hash, storageKey: asset.hash, sourceEnvelopeId: `source:v3:media:${asset.id}` })),
     extensionRecords: [], sourceEnvelopes: envelopes,
   })

@@ -11,7 +11,7 @@ const wildcard = (value: string, candidate: string) => {
 }
 const withinDays = (timestamp: string | undefined, days: number, now: Date) => Boolean(timestamp && Number.isFinite(days) && days >= 0 && now.getTime() - new Date(timestamp).getTime() <= days * 86_400_000)
 
-/** A bounded mainstream subset of Anki search syntax; unknown operators match as text. */
+/** Native library search operators; unknown operators are treated as text. */
 export const matchesLibraryQuery = (item: KnowledgeItem, cards: PracticeCard[], query: string, now = new Date()) => {
   const tokens = tokenize(query).slice(0, 50)
   const haystack = `${item.prompt} ${item.answer} ${item.context} ${item.collection} ${item.tags.join(' ')}`.toLowerCase()
@@ -36,8 +36,8 @@ export const matchesLibraryQuery = (item: KnowledgeItem, cards: PracticeCard[], 
     else if (operator === 'is' && (value === 'learn' || value === 'learning')) matches = cards.some((card) => card.fsrs.state === State.Learning || card.fsrs.state === State.Relearning)
     else if (operator === 'flag') matches = value === 'any' ? cards.some((card) => Boolean(card.flags)) : value === 'none' || value === '0' ? cards.every((card) => !card.flags) : cards.some((card) => card.flags === Number(value))
     else if (operator === 'card') matches = cards.some((card) => wildcard(value, card.variant.toLowerCase()))
-    else if (operator === 'note') matches = wildcard(value, (item.noteModel?.noteTypeName || 'neo basic').toLowerCase())
-    else if (operator === 'has' && value === 'media') matches = item.mediaIds.length > 0 || cards.some((card) => /<(?:img|audio|video)\b|\[sound:/i.test(`${card.rendering?.questionHtml || ''}${card.rendering?.answerHtml || ''}`))
+    else if (operator === 'type') matches = wildcard(value, (item.contentModel?.contentTypeName || 'basic').toLowerCase())
+    else if (operator === 'has' && value === 'media') matches = item.mediaIds.length > 0
     else if (operator === 'added') matches = withinDays(item.createdAt, Number(value), now)
     else if (operator === 'edited') matches = withinDays(item.updatedAt, Number(value), now)
     else if (operator === 'rated') matches = cards.some((card) => withinDays(card.fsrs.last_review, Number(value.split(':')[0]), now))

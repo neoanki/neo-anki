@@ -16,11 +16,11 @@ describe('Library query syntax', () => {
     cards[0].buriedUntil = '2099-01-01T00:00:00.000Z'; expect(matchesLibraryQuery(item, cards, 'is:due', new Date('2026-07-18T12:00:00.000Z'))).toBe(false)
   })
 
-  it('supports common flag, card, note-type, media, date, wildcard, and due-property operators', () => {
+  it('supports common flag, card, content-type, media, date, wildcard, and due-property operators', () => {
     const data = createSeedData(); const item = data.items[0]; const cards = data.cards.filter((card) => card.itemId === item.id)
-    item.noteModel = { noteTypeId: 'type', noteTypeName: 'Migration Custom', fields: [] }
+    item.contentModel = { contentTypeId: 'type', contentTypeName: 'Migration Custom', fields: [] }
     cards[0].flags = 4; cards[0].variant = 'typed'; cards[0].fsrs.due = '2026-07-17T12:00:00.000Z'; cards[0].fsrs.last_review = '2026-07-17T12:00:00.000Z'
-    expect(matchesLibraryQuery(item, cards, 'flag:4 card:typ* note:"Migration Custom" prop:due<=0 rated:2', new Date('2026-07-18T12:00:00.000Z'))).toBe(true)
+    expect(matchesLibraryQuery(item, cards, 'flag:4 card:typ* type:"Migration Custom" prop:due<=0 rated:2', new Date('2026-07-18T12:00:00.000Z'))).toBe(true)
     cards[0].deckName = 'Migration Corpus::Core'
     expect(matchesLibraryQuery(item, cards, 'deck:"Migration Corpus::Core"')).toBe(true)
     expect(matchesLibraryQuery(item, cards, 'flag:none')).toBe(false)

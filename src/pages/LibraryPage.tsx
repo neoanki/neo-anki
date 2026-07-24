@@ -5,16 +5,15 @@ import { formatDue } from '../lib/date'
 import { analyzeCardHealth, normalizeAnswer } from '../lib/content'
 import { useApp } from '../state/AppContext'
 import type { KnowledgeItem, PracticeCard } from '../types'
-import { extensionLibraryPresetsV2, extensionPromptTypesV2 } from '../extensions/v2/registry'
+import { extensionLibraryPresetsV2 } from '../extensions/v2/registry'
 import { KnowledgeItemEditor } from '../components/KnowledgeItemEditor'
 import { matchesLibraryQuery, sortLibraryItems, type LibrarySort } from '../lib/library-query'
 
 const LIBRARY_PAGE_SIZE = 100
-const cardHasMissingMedia = (card: PracticeCard) => /class=["']media-missing|\b(?:src|href)=["'](?!data:|blob:|neoanki-media:|https?:|#|\/)/i.test(`${card.rendering?.questionHtml || ''}${card.rendering?.answerHtml || ''}`)
 const itemHealth = (item: KnowledgeItem, cards: PracticeCard[], duplicatePrompts: Set<string>, assetIds: Set<string>) => ({
   empty: !item.prompt.trim() || !item.answer.trim(),
   duplicate: duplicatePrompts.has(normalizeAnswer(item.prompt)),
-  media: item.mediaIds.some((id) => !assetIds.has(id)) || cards.some(cardHasMissingMedia),
+  media: item.mediaIds.some((id) => !assetIds.has(id)),
   quality: analyzeCardHealth(item.prompt, item.answer, item.citations).some((finding) => finding.severity !== 'info'),
 })
 
@@ -36,7 +35,6 @@ export const LibraryPage = () => {
   const searchRef = useRef<HTMLInputElement>(null)
   const collections = ['All collections', ...new Set([...data.items.map((item) => item.collection), ...data.cards.map((card) => card.deckName).filter((value): value is string => Boolean(value))])]
   const libraryPresets = extensionLibraryPresetsV2()
-  const promptTypeLabels = useMemo(() => new Map<string, string>([['forward', 'Basic'], ...extensionPromptTypesV2().map((type) => [type.id, type.label] as [string, string])]), [])
   const cardsByItem = useMemo(() => {
     const result = new Map<string, PracticeCard[]>()
     for (const card of data.cards) {
@@ -117,7 +115,7 @@ export const LibraryPage = () => {
             <article className="library-row" role="listitem" key={item.id}>
               <label className="row-select"><input type="checkbox" aria-label={`Select ${item.prompt}`} checked={selected.has(item.id)} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(item.id); else next.delete(item.id); return next })} /></label>
               <div className="knowledge-cell"><span className="collection-label">{item.collection}</span><strong>{item.prompt || 'Empty prompt'}</strong><p>{item.answer || 'Empty answer'}</p><div className="tag-row">{item.tags.map((tag) => <span key={tag}>{tag}</span>)}{checks.quality && <span className="health-warning" title={health.map((finding) => finding.message).join(' ')}>quality warning</span>}{checks.empty && <span className="health-error">empty content</span>}{checks.duplicate && <span className="health-warning">duplicate prompt</span>}{checks.media && <span className="health-error">missing media</span>}{item.citations.length > 0 && <span>{item.citations.length} source{item.citations.length === 1 ? '' : 's'}</span>}</div></div>
-              <div className="variant-cell">{cards.map((card) => <button key={card.id} aria-pressed={!card.suspended} className={card.suspended ? 'variant-pill suspended' : 'variant-pill'} onClick={() => toggleSuspend(card.id)} title={card.suspended ? 'Resume practice prompt' : 'Suspend practice prompt'}>{card.flags ? <Flag size={12} aria-label={`Flag ${card.flags}`} /> : null}{promptTypeLabels.get(card.variant) || card.variant}{card.suspended && ' · suspended'}{card.buriedUntil && new Date(card.buriedUntil) > new Date() ? ` · ${card.buriedBy === 'user' ? 'user buried' : 'sibling buried'}` : ''}</button>)}</div>
+              <div className="variant-cell">{cards.map((card) => <button key={card.id} aria-pressed={!card.suspended} className={card.suspended ? 'variant-pill suspended' : 'variant-pill'} onClick={() => toggleSuspend(card.id)} title={card.suspended ? 'Resume practice prompt' : 'Suspend practice prompt'}>{card.flags ? <Flag size={12} aria-label={`Flag ${card.flags}`} /> : null}{card.rendering?.templateName || 'Card'}{card.suspended && ' · suspended'}{card.buriedUntil && new Date(card.buriedUntil) > new Date() ? ` · ${card.buriedBy === 'user' ? 'user buried' : 'sibling buried'}` : ''}</button>)}</div>
               <div className="status-cell"><strong>{active.length ? (active.some((card) => card.fsrs.state === State.New) ? 'New' : nextDue ? formatDue(nextDue.toISOString()) : 'Active') : 'Paused'}</strong><span>{cards.reduce((sum, card) => sum + card.fsrs.reps, 0)} reviews</span></div>
               <div className="row-actions"><button className="icon-button" onClick={() => setEditing(item)} aria-label={`Edit ${item.prompt}`}><Edit3 size={18} /></button><button className="icon-button danger-hover" onClick={() => { if (window.confirm('Move this knowledge item to Trash? Its practice prompts and review history will be preserved.')) { deleteItem(item.id); setRecentlyTrashed({ id: item.id, name: item.prompt }) } }} aria-label={`Move ${item.prompt} to Trash`}><Trash2 size={18} /></button></div>
             </article>
@@ -129,8 +127,8 @@ export const LibraryPage = () => {
           const buried = Boolean(card.buriedUntil && new Date(card.buriedUntil) > new Date())
           return <article className="library-row card-browser-row" role="listitem" key={card.id}>
             <label className="row-select"><input type="checkbox" aria-label={`Select practice prompt ${item.prompt} ${card.variant}`} checked={selected.has(card.id)} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(card.id); else next.delete(card.id); return next })} /></label>
-            <div className="knowledge-cell"><span className="collection-label">{card.deckName || item.collection}</span><strong>{item.prompt}</strong><p>{item.answer}</p><div className="tag-row"><span>Practice prompt ID {card.id}</span>{item.noteModel && <span>{item.noteModel.noteTypeName}</span>}</div></div>
-            <div className="variant-cell"><button aria-pressed={!card.suspended} className={card.suspended ? 'variant-pill suspended' : 'variant-pill'} onClick={() => toggleSuspend(card.id)}>{card.flags ? <Flag size={12} aria-label={`Flag ${card.flags}`} /> : null}{promptTypeLabels.get(card.variant) || card.variant}{card.suspended ? ' · suspended' : ''}</button></div>
+            <div className="knowledge-cell"><span className="collection-label">{card.deckName || item.collection}</span><strong>{card.rendering?.prompt.value || item.prompt}</strong><p>{card.rendering?.answer.value || item.answer}</p><div className="tag-row"><span>Practice prompt ID {card.id}</span>{item.contentModel && <span>{item.contentModel.contentTypeName}</span>}{card.rendering && <span>{card.rendering.templateName}</span>}</div></div>
+            <div className="variant-cell"><button aria-pressed={!card.suspended} className={card.suspended ? 'variant-pill suspended' : 'variant-pill'} onClick={() => toggleSuspend(card.id)}>{card.flags ? <Flag size={12} aria-label={`Flag ${card.flags}`} /> : null}{card.rendering?.templateName || 'Card'}{card.suspended ? ' · suspended' : ''}</button></div>
             <div className="status-cell"><strong>{card.suspended ? 'Suspended' : buried ? (card.buriedBy === 'user' ? 'User buried' : 'Sibling buried') : formatDue(card.fsrs.due)}</strong><span>{card.fsrs.reps} reviews</span></div>
             <div className="row-actions"><button className="icon-button" onClick={() => setEditing(item)} aria-label={`Edit knowledge item for ${item.prompt}`}><Edit3 size={18} /></button></div>
           </article>

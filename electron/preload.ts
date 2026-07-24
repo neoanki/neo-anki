@@ -16,7 +16,6 @@ contextBridge.exposeInMainWorld('neoAnkiDesktop', {
   commitWorkspaceV4Import: (input: unknown) => ipcRenderer.invoke('neo-anki:commit-workspace-v4-import', input),
   loadWorkspaceV4ExportPayload: () => ipcRenderer.invoke('neo-anki:load-workspace-v4-export-payload'),
   loadWorkspaceV4Document: () => ipcRenderer.invoke('neo-anki:load-workspace-v4-document'),
-  loadCardRendering: (cardId: string) => ipcRenderer.invoke('neo-anki:load-card-rendering', cardId),
   applyCoreWorkspacePatchV2: (patch: unknown) => ipcRenderer.invoke('neo-anki:apply-core-workspace-patch-v2', patch),
   reportDiagnostic: (diagnostic: unknown) => ipcRenderer.invoke('neo-anki:report-diagnostic', diagnostic),
   exportDiagnostics: () => ipcRenderer.invoke('neo-anki:export-diagnostics'),

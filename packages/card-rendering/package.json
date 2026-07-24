@@ -1,7 +1,7 @@
 {
   "name": "@neo-anki/card-rendering",
   "version": "0.2.0",
-  "description": "Portable Anki/Neo template, cloze, typed-answer, and media renderer.",
+  "description": "Portable structured-field projector for native Neo Anki cards.",
   "type": "module",
   "license": "MIT",
   "sideEffects": false,

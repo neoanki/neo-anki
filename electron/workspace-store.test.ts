@@ -39,23 +39,18 @@ describe('WorkspaceStore', () => {
     store.close()
   })
 
-  it('checkpoints and validates extension-brokered Workspace v4 imports', async () => {
+  it('checkpoints imports while keeping native rendering derived from workspace data', async () => {
     const root = await temporaryRoot(); const store = new WorkspaceStore(root), seed = createSeedData(), checkpoint = await store.createImportCheckpoint()
-    seed.cards[0].scheduling = {
-      strategy: 'anki', queue: 'new', due: 1, intervalDays: 0, easeFactor: 2500,
-      repetitions: 0, lapses: 0, remainingSteps: 0, mod: 1_700_000_000,
-    }
     expect(checkpoint).toBeNull()
     const committed = store.commitWorkspaceV4Import({ document: appDataToWorkspaceDocumentV4(seed), media: [], operation: 'replace-profile' })
     expect(committed?.items).toHaveLength(seed.items.length)
-    expect(store.load()?.cards[0].rendering).toBeUndefined()
-    expect(store.cardRendering(seed.cards[0].id)).toMatchObject({ questionHtml: expect.any(String), answerHtml: expect.any(String), css: expect.any(String) })
+    expect(store.load()?.cards[0].rendering).toMatchObject({ prompt: { value: expect.any(String) }, answer: { value: expect.any(String) } })
     const database = new DatabaseSync(join(root, 'neo-anki.sqlite'), { readOnly: true })
-    expect((database.prepare("SELECT json_type(json, '$.rendering') AS type FROM cards WHERE id = ?").get(seed.cards[0].id) as { type: string }).type).toBe('object')
+    expect((database.prepare("SELECT json_type(json, '$.rendering') AS type FROM cards WHERE id = ?").get(seed.cards[0].id) as { type: string | null }).type).toBeNull()
     database.close()
     const changed = { ...committed!, cards: committed!.cards.map((card) => card.id === seed.cards[0].id ? { ...card, estimatedSeconds: card.estimatedSeconds + 1, updatedAt: new Date().toISOString() } : card), updatedAt: new Date().toISOString() }
     store.applyChanges(createWorkspaceChangeSet(committed!, changed))
-    expect(store.cardRendering(seed.cards[0].id)).toMatchObject({ questionHtml: expect.any(String) })
+    expect(store.load()?.cards[0].rendering).toMatchObject({ templateId: expect.any(String), responseMode: expect.stringMatching(/reveal|type/) })
     expect(await store.createImportCheckpoint()).toBeTruthy()
     store.close()
   })

@@ -77,9 +77,14 @@ const CustomStudyProbe = () => {
 
 const FailedAuthoringProbe = () => {
   const { addItem, data, persistenceState } = useApp()
+  const fields = [
+    { id: 'field:front', name: 'Front', ordinal: 0, value: 'Ghost item' },
+    { id: 'field:back', name: 'Back', ordinal: 1, value: 'Must roll back' },
+    { id: 'field:context', name: 'Context', ordinal: 2, value: '' },
+  ]
   return <div>
     <output aria-label="failed authoring state">{`${data.items.length}:${persistenceState}`}</output>
-    <button onClick={() => void addItem({ prompt: 'Ghost item', answer: 'Must roll back', context: '', collection: '', tags: [], citations: [], assets: [], occlusions: [], variants: ['forward'] }).catch(() => undefined)}>Fail add</button>
+    <button onClick={() => void addItem({ prompt: 'Ghost item', answer: 'Must roll back', context: '', contentModel: { contentTypeId: 'note-type:neo-basic', contentTypeName: 'Basic', fields }, templates: [{ id: 'template:forward', name: 'Forward', promptFieldId: 'field:front', answerFieldId: 'field:back', supportingFieldIds: ['field:context'], responseMode: 'reveal' }], collection: '', tags: [], citations: [], assets: [], occlusions: [] }).catch(() => undefined)}>Fail add</button>
   </div>
 }
 
@@ -119,21 +124,15 @@ describe('workspace safety actions', () => {
     expect(screen.getByLabelText('safeguards')).toHaveTextContent('false:false:0')
   })
 
-  it('converts imported scheduling explicitly on review and restores it on undo', async () => {
+  it('keeps native scheduling exact through review and undo', async () => {
     const source = createSeedData()
-    source.cards[0].scheduling = {
-      strategy: 'anki', queue: 'review', due: 100, dueAt: source.cards[0].fsrs.due,
-      intervalDays: 10, easeFactor: 2500, repetitions: 4, lapses: 1,
-      remainingSteps: 0, mod: 1_700_000_000, stability: 12, difficulty: 4.5,
-      desiredRetention: .9, lastReviewAt: source.cards[0].fsrs.last_review,
-    }
     localStorage.setItem('neo-anki:data:v1', JSON.stringify(source))
     render(<AppProvider><SchedulerProbe /></AppProvider>)
-    expect(screen.getByLabelText('scheduler')).toHaveTextContent('anki')
+    expect(screen.getByLabelText('scheduler')).toHaveTextContent('none')
     await userEvent.click(screen.getByRole('button', { name: 'Review imported card' }))
     expect(screen.getByLabelText('scheduler')).toHaveTextContent('neo-fsrs')
     await userEvent.click(screen.getByRole('button', { name: 'Undo imported review' }))
-    expect(screen.getByLabelText('scheduler')).toHaveTextContent('anki')
+    expect(screen.getByLabelText('scheduler')).toHaveTextContent('neo-fsrs')
   })
 
   it('applies explicit user-bury and flag state through Library actions', async () => {

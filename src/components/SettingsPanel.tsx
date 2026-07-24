@@ -4,7 +4,7 @@ import { useApp } from '../state/AppContext'
 import { downloadBackup, getStorageStatus, parseBackup } from '../lib/storage'
 import { UpdatePanel } from './UpdatePanel'
 import { useModalDialog } from './useModalDialog'
-import { CompatibilityManager } from './CompatibilityManager'
+import { TemplateManager } from './TemplateManager'
 import { SyncPanel } from './SyncPanel'
 
 const LARGE_IMPORT_BYTES = 128 * 1024 * 1024
@@ -113,7 +113,7 @@ export const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
           </button>
         </div>
 
-        <CompatibilityManager />
+        <TemplateManager />
 
         <SyncPanel />
 

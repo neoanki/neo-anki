@@ -1,5 +1,6 @@
 import { migrateWorkspaceV3ToV4, type LegacyWorkspaceV3 } from './migrate-v3.js'
 import { validateWorkspaceV4Invariants } from './invariants.js'
+import { normalizeImportedWorkspaceDocument } from './import-export-normalization.js'
 import type { WorkspaceDocumentV4, WorkspaceV4 } from './types.js'
 
 const MAX_CLIENT_STATE_BYTES = 8 * 1024 * 1024
@@ -24,7 +25,7 @@ export const migrateWorkspaceDocumentV3ToV4 = (legacy: LegacyWorkspaceV3): Works
 )
 
 export const parseWorkspaceDocumentV4 = (input: unknown): WorkspaceDocumentV4 => {
-  const candidate = input as Partial<WorkspaceDocumentV4>
+  const candidate = normalizeImportedWorkspaceDocument(input) as Partial<WorkspaceDocumentV4>
   if (candidate?.format !== 'neo-anki-workspace' || candidate.schemaVersion !== 4 || !candidate.workspace || !candidate.clientState) throw new Error('This is not a Neo Anki Workspace v4 document.')
   const workspace = structuredClone(candidate.workspace)
   // Workspace v4 gained extension-owned records before public release; accept

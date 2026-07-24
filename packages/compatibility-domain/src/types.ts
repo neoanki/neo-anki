@@ -1,7 +1,6 @@
 export type EntityId = string
 export type IsoTimestamp = string
 export type SourceFormat = 'neo-v3' | 'neo-v4' | 'anki-apkg' | 'anki-colpkg'
-export type SchedulerKind = 'anki' | 'neo-fsrs'
 export type CardQueue = 'new' | 'learn' | 'review' | 'relearn' | 'preview'
 export type ReviewRating = 1 | 2 | 3 | 4
 
@@ -23,8 +22,7 @@ export interface NoteType extends VersionedEntity {
   name: string
   fieldIds: EntityId[]
   templateIds: EntityId[]
-  css: string
-  kind: 'standard' | 'cloze'
+  kind: 'standard' | 'deletion'
   sourceEnvelopeId?: EntityId
 }
 
@@ -42,10 +40,10 @@ export interface CardTemplate extends VersionedEntity {
   noteTypeId: EntityId
   name: string
   ordinal: number
-  questionFormat: string
-  answerFormat: string
-  browserQuestionFormat?: string
-  browserAnswerFormat?: string
+  promptFieldId: EntityId
+  answerFieldId: EntityId
+  supportingFieldIds: EntityId[]
+  responseMode: 'reveal' | 'type'
   deckOverrideId?: EntityId
 }
 
@@ -60,7 +58,6 @@ export interface Deck extends VersionedEntity {
 export interface DeckPreset extends VersionedEntity {
   profileId: EntityId
   name: string
-  scheduler: SchedulerKind
   desiredRetention: number
   maximumIntervalDays: number
   learningStepsMinutes: number[]
@@ -83,28 +80,6 @@ export interface Note extends VersionedEntity {
   sourceEnvelopeId?: EntityId
 }
 
-export interface AnkiSchedulingState {
-  strategy: 'anki'
-  queue: CardQueue
-  due: number
-  intervalDays: number
-  easeFactor: number
-  repetitions: number
-  lapses: number
-  remainingSteps: number
-  originalDue?: number
-  originalDeckId?: EntityId
-  /** Exact eligibility instant derived from source queue semantics. */
-  dueAt?: IsoTimestamp
-  mod: number
-  /** Native Anki FSRS memory state, when present in the card data column. */
-  stability?: number
-  difficulty?: number
-  desiredRetention?: number
-  decay?: number
-  lastReviewAt?: IsoTimestamp
-}
-
 export interface NeoFsrsSchedulingState {
   strategy: 'neo-fsrs'
   queue: CardQueue
@@ -120,14 +95,7 @@ export interface NeoFsrsSchedulingState {
   continuityOverrideDueAt?: IsoTimestamp
 }
 
-export type SchedulingState = AnkiSchedulingState | NeoFsrsSchedulingState
-
-export interface FilteredDeckMembership {
-  deckId: EntityId
-  originalDeckId: EntityId
-  originalDue: number
-  reschedule: boolean
-}
+export type SchedulingState = NeoFsrsSchedulingState
 
 export interface Card extends VersionedEntity {
   profileId: EntityId
@@ -136,13 +104,12 @@ export interface Card extends VersionedEntity {
   deckId: EntityId
   presetId: EntityId
   ordinal: number
-  clozeOrdinal?: number
+  deletionOrdinal?: number
   flags: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7
   suspended: boolean
   leech?: boolean
   buriedUntil?: IsoTimestamp
   buriedBy?: 'user' | 'scheduler'
-  filteredDeck?: FilteredDeckMembership
   scheduling: SchedulingState
   sourceEnvelopeId?: EntityId
 }
@@ -157,7 +124,6 @@ export interface ReviewEvent extends VersionedEntity {
   intervalBefore: number
   intervalAfter: number
   easeFactor?: number
-  scheduler: SchedulerKind
   reversesReviewId?: EntityId
   /** Exact pre/post state makes append-only undo durable across restarts. */
   previousScheduling?: SchedulingState

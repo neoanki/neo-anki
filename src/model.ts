@@ -45,9 +45,9 @@ export interface ItemProvenance {
   packVersion: string
 }
 
-export interface NoteModelProjection {
-  noteTypeId: string
-  noteTypeName: string
+export interface ContentModelProjection {
+  contentTypeId: string
+  contentTypeName: string
   fields: Array<{ id: string; name: string; ordinal: number; value: string }>
 }
 
@@ -63,8 +63,8 @@ export interface KnowledgeItem {
   mediaIds: string[]
   occlusions: OcclusionRect[]
   provenance?: ItemProvenance
-  /** Editable named-field projection of the authoritative Workspace v4 note. */
-  noteModel?: NoteModelProjection
+  /** Editable named fields from the authoritative content model. */
+  contentModel?: ContentModelProjection
   /** Namespaced, extension-owned metadata. Extensions must only write their own manifest id. */
   extensionData?: Record<string, unknown>
   createdAt: string
@@ -83,32 +83,6 @@ export interface StoredFSRSCard extends Omit<FSRSCard, 'due' | 'last_review'> {
   last_review?: string
 }
 
-/**
- * Scheduler authority carried by the temporary v3/UI projection. This is not
- * a second persisted model: Workspace v4 remains authoritative, and the
- * adapter uses this value to avoid silently replacing imported Anki state
- * during an unrelated UI save.
- */
-export interface AnkiCardScheduling {
-  strategy: 'anki'
-  queue: 'new' | 'learn' | 'review' | 'relearn' | 'preview'
-  due: number
-  dueAt?: string
-  intervalDays: number
-  easeFactor: number
-  repetitions: number
-  lapses: number
-  remainingSteps: number
-  originalDue?: number
-  originalDeckId?: string
-  mod: number
-  stability?: number
-  difficulty?: number
-  desiredRetention?: number
-  decay?: number
-  lastReviewAt?: string
-}
-
 export interface NeoFsrsCardScheduling {
   strategy: 'neo-fsrs'
   queue: 'new' | 'learn' | 'review' | 'relearn' | 'preview'
@@ -124,15 +98,15 @@ export interface NeoFsrsCardScheduling {
   continuityOverrideDueAt?: string
 }
 
-export type CardScheduling = AnkiCardScheduling | NeoFsrsCardScheduling
+export type CardScheduling = NeoFsrsCardScheduling
 
 export interface CardRenderingProjection {
-  questionHtml: string
-  answerHtml: string
-  css: string
-  cssRef?: string
-  typedAnswer?: { fieldName: string; expected: string }
-  source: 'anki-template' | 'neo-native'
+  templateId: string
+  templateName: string
+  prompt: { id: string; label: string; value: string }
+  answer: { id: string; label: string; value: string }
+  supporting: Array<{ id: string; label: string; value: string }>
+  responseMode: 'reveal' | 'type'
 }
 
 export interface PracticeCard {
@@ -164,7 +138,7 @@ export interface PracticeCard {
   fsrs: StoredFSRSCard
   /** Exact scheduler state projected from the authoritative v4 card. */
   scheduling?: CardScheduling
-  /** Sandboxed, derived rendering view; never persisted as content authority. */
+  /** Derived native presentation; never persisted as content authority. */
   rendering?: CardRenderingProjection
   estimatedSeconds: number
   createdAt: string
@@ -186,7 +160,6 @@ export interface ReviewEvent {
   nextDue: string
   previousCard?: StoredFSRSCard
   previousScheduling?: CardScheduling
-  scheduler?: 'anki' | 'neo-fsrs'
   previousEstimatedSeconds?: number
   previousCardState?: { suspended: boolean; buriedUntil?: string; buriedBy?: 'user' | 'scheduler'; flags?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7; leech?: boolean }
   siblingChanges?: Array<{ cardId: string; previousBuriedUntil?: string; previousBuriedBy?: 'user' | 'scheduler' }>
@@ -306,8 +279,6 @@ export interface AppData {
   deviceId: string
   items: KnowledgeItem[]
   cards: PracticeCard[]
-  /** Deduplicated card CSS keyed by authoritative note-type id. */
-  renderingStyles?: Record<string, string>
   reviews: ReviewEvent[]
   assets: MediaAsset[]
   goals: LearningGoal[]
@@ -323,12 +294,20 @@ export interface CreateKnowledgeInput {
   prompt: string
   answer: string
   context: string
+  contentModel: ContentModelProjection
+  templates: Array<{
+    id: string
+    name: string
+    promptFieldId: string
+    answerFieldId: string
+    supportingFieldIds: string[]
+    responseMode: 'reveal' | 'type'
+  }>
   collection: string
   tags: string[]
   citations: Omit<Citation, 'id'>[]
   assets: MediaAsset[]
   occlusions: OcclusionRect[]
-  variants: PromptVariant[]
 }
 
 export interface PlannedCard {

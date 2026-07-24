@@ -19,6 +19,12 @@ Neo Anki takes rotating local-day online backups and a backup before destructive
 
 Only one process may own the workspace at a time. A second launch focuses the existing window instead of opening the database concurrently.
 
+## Native card presentation
+
+Cards are stored as references to a content record and a structured card template. Content types own named fields; each template selects one prompt field, one answer field, optional supporting fields, and either reveal or typed-answer interaction. The shared card-rendering package projects those records into inert structured text.
+
+Review, Library, authoring preview, Electron projection, and the native mobile client consume that same projection. Core card content never executes template markup, creates an iframe or WebView, injects CSS, or stores a second rendered HTML cache. Older external template markup is converted to native field values at the import boundary; export compatibility metadata remains isolated in source envelopes.
+
 ## Packaged content
 
 Production assets load from the privileged `neoanki://app/` protocol rather than a remote website. Navigation outside that origin is blocked. Explicit HTTPS and mail links open in the operating system browser, and renderer permission requests are denied by default.

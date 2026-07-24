@@ -16,11 +16,11 @@ describe('semantic workspace invariants', () => {
     expect(() => parseWorkspaceData(missingMedia)).toThrow(/Unknown media asset/)
   })
 
-  it('checks occlusions, cloze ordinals, FSRS bounds, reversals, and Trash ownership', () => {
+  it('checks occlusions, FSRS bounds, reversals, and Trash ownership', () => {
     const occlusion = createSeedData(); occlusion.items[0].occlusions = [{ id: 'mask', x: .9, y: 0, width: .2, height: 0 }]
     expect(collectWorkspaceInvariantIssues(occlusion).map((issue) => issue.message).join(' ')).toMatch(/positive|bounds/)
-    const cloze = createSeedData(); cloze.cards[0].variant = 'cloze'; cloze.cards[0].promptData = { clozeOrdinal: 0 }; cloze.cards[0].fsrs.stability = -1
-    expect(collectWorkspaceInvariantIssues(cloze).map((issue) => issue.message).join(' ')).toMatch(/Cloze ordinals.*FSRS values/s)
+    const invalidFsrs = createSeedData(); invalidFsrs.cards[0].fsrs.stability = -1
+    expect(collectWorkspaceInvariantIssues(invalidFsrs).map((issue) => issue.message).join(' ')).toMatch(/FSRS values/)
     const reversal = createSeedData(); const timestamp = reversal.updatedAt
     reversal.reviews = [{ id: 'r', cardId: reversal.cards[0].id, rating: 3, kind: 'reversal', reviewedAt: timestamp, durationSeconds: 0, previousDue: timestamp, nextDue: timestamp, reversesReviewId: 'missing' }]
     expect(() => parseWorkspaceData(reversal)).toThrow(/Unknown review/)

@@ -47,7 +47,7 @@ export const knowledgeItemSchema = z.object({
   mediaIds: z.array(id),
   occlusions: z.array(occlusionSchema),
   provenance: provenanceSchema.optional(),
-  noteModel: z.object({ noteTypeId: id, noteTypeName: text, fields: z.array(z.object({ id, name: text, ordinal: z.number().int().nonnegative(), value: text })) }).optional(),
+  contentModel: z.object({ contentTypeId: id, contentTypeName: text, fields: z.array(z.object({ id, name: text, ordinal: z.number().int().nonnegative(), value: text })) }).optional(),
   extensionData: z.record(z.string(), z.unknown()).optional(),
   createdAt: timestamp,
   updatedAt: timestamp,
@@ -67,26 +67,20 @@ const storedFsrsSchema = z.object({
 }).passthrough()
 
 const cardQueueSchema = z.enum(['new', 'learn', 'review', 'relearn', 'preview'])
-const ankiSchedulingSchema = z.object({
-  strategy: z.literal('anki'), queue: cardQueueSchema, due: finiteNumber, dueAt: optionalTimestamp,
-  intervalDays: finiteNumber.nonnegative(), easeFactor: finiteNumber.nonnegative(), repetitions: z.number().int().nonnegative(),
-  lapses: z.number().int().nonnegative(), remainingSteps: z.number().int().nonnegative(), originalDue: finiteNumber.optional(),
-  originalDeckId: id.optional(), mod: finiteNumber, stability: finiteNumber.positive().optional(),
-  difficulty: finiteNumber.min(0).max(10).optional(), desiredRetention: finiteNumber.min(0.7).max(0.99).optional(),
-  decay: finiteNumber.positive().optional(), lastReviewAt: optionalTimestamp,
-}).passthrough()
 const neoFsrsSchedulingSchema = z.object({
   strategy: z.literal('neo-fsrs'), queue: cardQueueSchema, dueAt: timestamp,
   stability: finiteNumber.nonnegative(), difficulty: finiteNumber.min(0).max(10), elapsedDays: finiteNumber.nonnegative(),
   scheduledDays: finiteNumber.nonnegative(), reps: z.number().int().nonnegative(), lapses: z.number().int().nonnegative(),
   state: z.number().int().min(0).max(3), lastReviewAt: optionalTimestamp, continuityOverrideDueAt: optionalTimestamp,
 }).passthrough()
-const cardSchedulingSchema = z.discriminatedUnion('strategy', [ankiSchedulingSchema, neoFsrsSchedulingSchema])
+const cardSchedulingSchema = neoFsrsSchedulingSchema
 const cardRenderingSchema = z.object({
-  questionHtml: text, answerHtml: text, css: text,
-  cssRef: id.optional(),
-  typedAnswer: z.object({ fieldName: text, expected: text }).optional(),
-  source: z.enum(['anki-template', 'neo-native']),
+  templateId: id,
+  templateName: text,
+  prompt: z.object({ id, label: text, value: text }),
+  answer: z.object({ id, label: text, value: text }),
+  supporting: z.array(z.object({ id, label: text, value: text })),
+  responseMode: z.enum(['reveal', 'type']),
 }).passthrough()
 
 export const practiceCardSchema = z.object({
@@ -130,7 +124,6 @@ export const reviewEventSchema = z.object({
   nextDue: timestamp,
   previousCard: storedFsrsSchema.optional(),
   previousScheduling: cardSchedulingSchema.optional(),
-  scheduler: z.enum(['anki', 'neo-fsrs']).optional(),
   previousEstimatedSeconds: finiteNumber.nonnegative().optional(),
   previousCardState: z.object({ suspended: z.boolean(), buriedUntil: optionalTimestamp, buriedBy: z.enum(['user', 'scheduler']).optional(), flags: z.number().int().min(0).max(7).optional(), leech: z.boolean().optional() }).optional(),
   siblingChanges: z.array(z.object({ cardId: id, previousBuriedUntil: optionalTimestamp, previousBuriedBy: z.enum(['user', 'scheduler']).optional() })).optional(),
@@ -221,7 +214,6 @@ export const trashEntrySchema = z.object({
   id,
   item: knowledgeItemSchema,
   cards: z.array(practiceCardSchema),
-  renderingStyles: z.record(z.string(), text).optional(),
   deletedAt: timestamp,
 }).passthrough()
 
@@ -317,7 +309,6 @@ export const collectWorkspaceInvariantIssues = (data: AppData): WorkspaceInvaria
       const item = data.items.find((candidate) => candidate.id === card.itemId)
       if (!item?.occlusions.some((candidate) => candidate.id === card.occlusionId)) add(`cards.${index}.occlusionId`, `Unknown occlusion ${card.occlusionId}.`)
     }
-    if (card.variant === 'cloze' && card.promptData?.clozeOrdinal !== undefined && (!Number.isInteger(card.promptData.clozeOrdinal) || Number(card.promptData.clozeOrdinal) < 1)) add(`cards.${index}.promptData.clozeOrdinal`, 'Cloze ordinals must be positive integers.')
     if (card.fsrs.stability < 0 || card.fsrs.difficulty < 0 || card.fsrs.elapsed_days < 0 || card.fsrs.scheduled_days < 0) add(`cards.${index}.fsrs`, 'FSRS values cannot be negative.')
   })
 
@@ -379,7 +370,7 @@ export const parseWorkspaceData = (input: unknown): AppData => {
 
 export type LegacyWorkspaceData = Partial<AppData> & {
   version?: number
-  items?: Array<Partial<KnowledgeItem> & Pick<KnowledgeItem, 'id' | 'prompt' | 'answer' | 'collection' | 'createdAt' | 'updatedAt'>>
+  items?: Array<Partial<KnowledgeItem> & Pick<KnowledgeItem, 'id' | 'prompt' | 'answer' | 'collection' | 'createdAt' | 'updatedAt'> & { noteModel?: { noteTypeId: string; noteTypeName: string; fields: Array<{ id: string; name: string; ordinal: number; value: string }> } }>
   cards?: Array<Partial<PracticeCard> & Pick<PracticeCard, 'id' | 'itemId' | 'variant' | 'suspended' | 'fsrs' | 'estimatedSeconds'>>
 }
 
@@ -387,7 +378,9 @@ export const migrateWorkspaceData = (input: LegacyWorkspaceData): AppData => {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Workspace data must be an object.')
   if (typeof input.version === 'number' && input.version > 3) throw new Error(`This workspace requires Neo Anki data version ${input.version}.`)
   const now = new Date().toISOString()
-  const items = (input.items || []).map((item) => ({
+  const items = (input.items || []).map((item) => {
+    const legacyNoteModel = (item as typeof item & { noteModel?: { noteTypeId: string; noteTypeName: string; fields: Array<{ id: string; name: string; ordinal: number; value: string }> } }).noteModel
+    return {
     id: item.id,
     prompt: item.prompt,
     answer: item.answer,
@@ -399,11 +392,15 @@ export const migrateWorkspaceData = (input: LegacyWorkspaceData): AppData => {
     mediaIds: item.mediaIds || [],
     occlusions: item.occlusions || [],
     provenance: item.provenance,
-    noteModel: item.noteModel,
+    contentModel: item.contentModel || (legacyNoteModel ? {
+      contentTypeId: legacyNoteModel.noteTypeId,
+      contentTypeName: legacyNoteModel.noteTypeName,
+      fields: legacyNoteModel.fields,
+    } : undefined),
     extensionData: item.extensionData,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
-  }))
+  }})
   const cards = (input.cards || []).map((card) => ({
     id: card.id,
     itemId: card.itemId,
