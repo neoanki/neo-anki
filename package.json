@@ -103,7 +103,7 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.65.0",
     "vite": "^8.1.5",
-    "vitest": "^4.1.10",
+    "vitest": "^4.1.11",
     "wait-on": "^9.0.10",
     "xcode": "^3.0.1"
   },
